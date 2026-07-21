@@ -99,6 +99,12 @@ function PageAccionesPendientes({ user }) {
   const [loadingLista, setLoadingLista]   = ap_uS(false);
   const [errorLista, setErrorLista]       = ap_uS(null);
 
+  // La cola Java vive en RAM: solo se sincroniza con MySQL al arrancar o con
+  // POST /api/recargar. Sin esto, las tareas creadas después no aparecen aquí.
+  const recargarCola = ap_uC(async () => {
+    await apFetch('/api/recargar', { method: 'POST' });
+  }, []);
+
   // Trae el próximo a atender (peek). No cambia estado en backend.
   const cargarSiguiente = ap_uC(async () => {
     setLoading(true);
@@ -144,8 +150,6 @@ function PageAccionesPendientes({ user }) {
     setError(r.error || 'No se pudo conectar con Servidor');
   }, [cargarSiguiente, user]);
 
-  ap_uE(() => { inicializar(); }, [inicializar]);
-
   // Lista completa de pendientes, filtrada por el usuario logeado.
   const cargarLista = ap_uC(async () => {
     setLoadingLista(true);
@@ -164,7 +168,21 @@ function PageAccionesPendientes({ user }) {
     setMisPendientes(u ? lista.filter((p) => String(p.usuario || '').trim().toLowerCase() === u) : lista);
   }, [user]);
 
-  ap_uE(() => { cargarLista(); }, [cargarLista]);
+  // Al montar: sincronizar la cola con MySQL PRIMERO, luego leer. Si se leyera
+  // en paralelo, la lista podría venir de una cola aún sin recargar.
+  ap_uE(() => {
+    (async () => {
+      await recargarCola();
+      inicializar();
+      cargarLista();
+    })();
+  }, [recargarCola, inicializar, cargarLista]);
+
+  // Refresco manual: mismo orden — sincronizar, luego recargar tarjeta + lista.
+  const refrescarTodo = ap_uC(async () => {
+    await recargarCola();
+    await Promise.all([cargarSiguiente(), cargarLista()]);
+  }, [recargarCola, cargarSiguiente, cargarLista]);
 
   // Atender: poll del backend -> estado 'en proceso'. Lo movemos a tarjeta activa.
   const atender = async () => {
@@ -227,7 +245,7 @@ function PageAccionesPendientes({ user }) {
           )}
           <button
             className="btn btn-ghost btn-sm"
-            onClick={cargarSiguiente}
+            onClick={refrescarTodo}
             disabled={loading || acting || !!enProceso}
             title={enProceso ? 'Termina la tarea actual primero' : 'Actualizar'}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
@@ -336,7 +354,7 @@ function PageAccionesPendientes({ user }) {
           </h3>
           <button
             className="btn btn-ghost btn-sm"
-            onClick={cargarLista}
+            onClick={refrescarTodo}
             disabled={loadingLista}
             title="Actualizar lista"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
