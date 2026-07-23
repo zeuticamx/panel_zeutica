@@ -451,7 +451,7 @@ function PageVentas({ user }) {
                 <Icon name="doc" size={13}/> Reimprimir
               </button>
             )}
-            <button className="btn btn-primary btn-sm" disabled={!puedeProcesar || submitting} onClick={() => askConfirm(`¿Confirmar venta de ${cart.length} producto(s) por ${window.fmt.mxn(total)}? Esta acción no se puede deshacer.`, procesar)}>
+            <button className="btn btn-primary btn-sm" disabled={!puedeProcesar || submitting} onClick={() => askConfirm(`¿Confirmar venta de ${cliente} por ${window.fmt.mxn(total)}? De verdad esta segur@ de realizar esta acción?, no se puede deshacer.`, procesar)}>
               {submitting
                 ? <><span className="spinner"/> Enviando...</>
                 : <><Icon name="check" size={13}/> Realizar venta{cart.length > 0 ? ` · ${window.fmt.mxn(total)}` : ''}</>}
