@@ -1,5 +1,5 @@
 // ===== Zeutica — Acciones Pendientes: cola de atención por usuario =====
-const { useState: ap_uS, useEffect: ap_uE, useCallback: ap_uC } = React;
+const { useState: ap_uS, useEffect: ap_uE, useCallback: ap_uC, useMemo: ap_uM } = React;
 
 const AP_API_JAVA = 'http://3.151.25.133:19999';   // backend Java (FDK) de Zeutica
 const AP_WEBHOOK_N8N = 'https://n8n-n8n.i4mjht.easypanel.host/webhook/zeutica-pendientes';
@@ -45,8 +45,19 @@ const apPrioTone = (p) => AP_PRIO_TONE[String(p || '').toLowerCase()] || 'info';
 const apMismoUsuario = (pendiente, user) =>
   String(pendiente?.usuario || '').trim().toLowerCase() === String(user || '').trim().toLowerCase();
 
-// Campos a ocultar en el detalle (ya se muestran arriba o son ruido).
-const AP_HIDE = new Set(['id', 'actividad', 'prioridad', 'prioridadNumerica', 'estado']);
+// Niveles de prioridad para agrupar (1 = más urgente). El backend también
+// valida esta regla en /{id}/atender; aquí solo se refleja en la UI.
+const AP_NIVELES = [
+  { num: 1, label: 'Prioridad alta' },
+  { num: 2, label: 'Prioridad media' },
+  { num: 3, label: 'Prioridad baja' },
+];
+const apNivelNum = (p) => {
+  const n = Number(p?.prioridadNumerica);
+  if (n >= 1 && n <= 3) return n;
+  const k = String(p?.prioridad || '').toLowerCase();
+  return k === 'alta' ? 1 : k === 'media' ? 2 : 3;
+};
 
 function DetalleFila({ etiqueta, valor }) {
   if (valor == null || valor === '') return null;
@@ -60,10 +71,17 @@ function DetalleFila({ etiqueta, valor }) {
   );
 }
 
-// Fila compacta de la lista inferior (todos mis pendientes).
-function PendienteFila({ p }) {
+// Tarjeta seleccionable de un pendiente dentro de su grupo de prioridad.
+function TarjetaPendiente({ p, habilitada, motivoBloqueo, acting, onAtender }) {
   return (
-    <article className="card" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+    <article
+      className="card"
+      title={motivoBloqueo || undefined}
+      style={{
+        padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12,
+        opacity: habilitada ? 1 : 0.55,
+      }}
+    >
       <span className={`badge badge-${apPrioTone(p.prioridad)}`} style={{ fontSize: 11, flexShrink: 0 }}>
         <span className="badge-dot"/> {p.prioridad || '—'}
       </span>
@@ -71,33 +89,34 @@ function PendienteFila({ p }) {
         <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {p.actividad}
         </div>
-        {p.fechaPromesa && (
-          <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 2 }}>
-            Promesa: {window.fmt.date(p.fechaPromesa)}
-          </div>
-        )}
+        <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 2, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {p.fechaPromesa && <span>Promesa: {window.fmt.date(p.fechaPromesa)}</span>}
+          {p.observaciones && (
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>
+              {p.observaciones}
+            </span>
+          )}
+        </div>
       </div>
-      {p.estado && (
-        <span className="td-muted" style={{ fontSize: 11, flexShrink: 0, textTransform: 'capitalize' }}>
-          {p.estado}
-        </span>
-      )}
+      <button
+        className="btn btn-primary btn-sm"
+        disabled={!habilitada || acting}
+        onClick={() => onAtender(p)}
+        style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+      >
+        <Icon name="chevRight" size={13}/> Atender
+      </button>
     </article>
   );
 }
 
 function PageAccionesPendientes({ user }) {
   const toast = window.useToast();
-  const [siguiente, setSiguiente] = ap_uS(null);   // peek de /siguiente
-  const [enProceso, setEnProceso] = ap_uS(null);    // item atendido (estado 'en proceso')
-  const [enCola, setEnCola]       = ap_uS(null);     // conteo restante (lo devuelve /atender)
-  const [loading, setLoading]     = ap_uS(false);    // carga de /siguiente
+  const [enProceso, setEnProceso] = ap_uS(null);    // tarea activa (estado 'en proceso')
   const [acting, setActing]       = ap_uS(false);    // POST atender/terminar en curso
   const [error, setError]         = ap_uS(null);
-  const [vacia, setVacia]         = ap_uS(false);    // cola vacía
-  const [misPendientes, setMisPendientes] = ap_uS([]);   // lista de /api/pendientes filtrada por usuario
+  const [misPendientes, setMisPendientes] = ap_uS([]);   // /api/pendientes del usuario
   const [loadingLista, setLoadingLista]   = ap_uS(false);
-  const [errorLista, setErrorLista]       = ap_uS(null);
 
   // La cola Java vive en RAM: solo se sincroniza con MySQL al arrancar o con
   // POST /api/recargar. Sin esto, las tareas creadas después no aparecen aquí.
@@ -105,95 +124,67 @@ function PageAccionesPendientes({ user }) {
     await apFetch('/api/recargar', { method: 'POST' });
   }, []);
 
-  // Trae el próximo a atender (peek). No cambia estado en backend.
-  const cargarSiguiente = ap_uC(async () => {
-    setLoading(true);
-    setError(null);
-    const url = `/api/pendientes/siguiente?usuario=${encodeURIComponent(user)}`;
-    const r = await apFetch(url);
-    setLoading(false);
-    if (r.ok) {
-      setSiguiente(r.data);
-      setVacia(false);
-    } else if (r.status === 404) {
-      setSiguiente(null);
-      setVacia(true);
-    } else {
-      setError(r.error || 'No se pudo conectar con localhost:8080');
+  // ¿Quedó una tarea 'en proceso' sin terminar? Mostrarla como activa.
+  const cargarEnProceso = ap_uC(async () => {
+    const r = await apFetch(`/api/pendientes/en-proceso?usuario=${encodeURIComponent(user)}`);
+    if (r.ok && r.data) {
+      setEnProceso(r.data?.atendido ?? r.data);
+      return;
     }
+    if (r.ok || r.status === 404) { setEnProceso(null); return; }
+    setError(r.error || 'No se pudo conectar con Servidor');
   }, [user]);
 
-  // Al montar: ¿hay tarea bloqueante en proceso? Si 200, mostrarla como activa.
-  // Solo si no hay bloqueo, hacemos peek del siguiente.
-  const inicializar = ap_uC(async () => {
-    setLoading(true);
-    setError(null);
-    const url = `/api/pendientes/en-proceso?usuario=${encodeURIComponent(user)}`;
-    const r = await apFetch(url);
-    if (r.ok && r.data) {
-      // Backend puede devolver la tarea directa o envuelta en { atendido, enCola }.
-      setEnProceso(r.data?.atendido ?? r.data);
-      setEnCola(r.data?.enCola ?? null);
-      setSiguiente(null);
-      setVacia(false);
-      setLoading(false);
-      return;
-    }
-    // 404 o 200 sin tarea = no hay bloqueo -> peek del siguiente.
-    if (r.ok || r.status === 404) {
-      setLoading(false);
-      cargarSiguiente();
-      return;
-    }
-    // Cualquier otro fallo = error real (red, 5xx).
-    setLoading(false);
-    setError(r.error || 'No se pudo conectar con Servidor');
-  }, [cargarSiguiente, user]);
-
-  // Lista completa de pendientes, filtrada por el usuario logeado.
+  // Lista completa de pendientes del usuario logeado (el backend filtra por ?usuario=).
   const cargarLista = ap_uC(async () => {
     setLoadingLista(true);
-    setErrorLista(null);
-    const url = `/api/pendientes?usuario=${encodeURIComponent(user)}`;
-    const r = await apFetch(url);
+    const r = await apFetch(`/api/pendientes?usuario=${encodeURIComponent(user)}`);
     setLoadingLista(false);
     if (!r.ok) {
-      setErrorLista(r.error || 'No se pudo cargar la lista');
+      setError(r.error || 'No se pudo cargar la lista');
       setMisPendientes([]);
       return;
     }
-    // Backend puede devolver array directo o envuelto en { pendientes } / { items }.
     const lista = Array.isArray(r.data) ? r.data : (r.data?.pendientes ?? r.data?.items ?? []);
     const u = String(user || '').trim().toLowerCase();
     setMisPendientes(u ? lista.filter((p) => String(p.usuario || '').trim().toLowerCase() === u) : lista);
   }, [user]);
 
-  // Al montar: sincronizar la cola con MySQL PRIMERO, luego leer. Si se leyera
-  // en paralelo, la lista podría venir de una cola aún sin recargar.
+  // Al montar: sincronizar la cola con MySQL PRIMERO, luego leer.
   ap_uE(() => {
     (async () => {
+      setError(null);
       await recargarCola();
-      inicializar();
-      cargarLista();
+      await Promise.all([cargarEnProceso(), cargarLista()]);
     })();
-  }, [recargarCola, inicializar, cargarLista]);
+  }, [recargarCola, cargarEnProceso, cargarLista]);
 
-  // Refresco manual: mismo orden — sincronizar, luego recargar tarjeta + lista.
   const refrescarTodo = ap_uC(async () => {
+    setError(null);
     await recargarCola();
-    await Promise.all([cargarSiguiente(), cargarLista()]);
-  }, [recargarCola, cargarSiguiente, cargarLista]);
+    await Promise.all([cargarEnProceso(), cargarLista()]);
+  }, [recargarCola, cargarEnProceso, cargarLista]);
 
-  // Atender: poll del backend -> estado 'en proceso'. Lo movemos a tarjeta activa.
-  const atender = async () => {
-    // No permitir atender pendiente de otro usuario.
-    if (!apMismoUsuario(siguiente, user)) {
-      toast.error('No autorizado', `Esta tarea pertenece a ${siguiente?.usuario || 'otro usuario'}`);
+  // Agrupar por nivel de prioridad. El nivel activo es el más urgente con tareas:
+  // sus tarjetas quedan habilitadas; los niveles inferiores se bloquean.
+  const grupos = ap_uM(() => {
+    const g = { 1: [], 2: [], 3: [] };
+    misPendientes.forEach((p) => { g[apNivelNum(p)].push(p); });
+    return g;
+  }, [misPendientes]);
+  const nivelActivo = ap_uM(
+    () => AP_NIVELES.map(n => n.num).find(num => grupos[num].length > 0) ?? null,
+    [grupos]
+  );
+
+  // Atender una tarea elegida. El backend re-valida nivel y pertenencia (409/404).
+  const atender = async (p) => {
+    if (!apMismoUsuario(p, user)) {
+      toast.error('No autorizado', `Esta tarea pertenece a ${p?.usuario || 'otro usuario'}`);
       return;
     }
     setActing(true);
-    const url = `/api/pendientes/atender?usuario=${encodeURIComponent(user)}`;
-    const r = await apFetch(url, { method: 'POST' });
+    const r = await apFetch(`/api/pendientes/${p.id}/atender?usuario=${encodeURIComponent(user)}`, { method: 'POST' });
     setActing(false);
     if (!r.ok) {
       toast.error('No se pudo atender', r.error || 'Sin conexión');
@@ -202,83 +193,112 @@ function PageAccionesPendientes({ user }) {
     const atendido = r.data?.atendido ?? null;
     apNotificarN8n('pendiente_en_proceso', atendido, user);
     setEnProceso(atendido);
-    setEnCola(r.data?.enCola ?? null);
-    setSiguiente(null);
     toast.info('En proceso', atendido?.actividad || 'Tarea tomada');
+    cargarLista();
   };
 
-  // Atendido: marca terminado y avanza al siguiente en cola.
+  // Atendido: marca terminado y libera el bloqueo.
   const terminar = async () => {
     const id = enProceso?.id;
     if (id == null) return;
     const tarea = enProceso;
     setActing(true);
-    const url = `/api/pendientes/${id}/terminar?usuario=${encodeURIComponent(user)}`;
-    const r = await apFetch(url, { method: 'POST' });
+    const r = await apFetch(`/api/pendientes/${id}/terminar?usuario=${encodeURIComponent(user)}`, { method: 'POST' });
     setActing(false);
     if (!r.ok) {
       toast.error('No se pudo terminar', r.error || 'Sin conexión');
       return;
     }
     apNotificarN8n('pendiente_cerrado', tarea, user);
-    toast.success('Tarea completada', enProceso?.actividad || '');
+    toast.success('Tarea completada', tarea?.actividad || '');
     window.fireConfetti?.();
     setEnProceso(null);
-    setEnCola(null);
-    cargarSiguiente();
     cargarLista();
   };
 
-  const item = enProceso || siguiente;
-  const puedeAtender = apMismoUsuario(siguiente, user);   // botón Atender solo si la tarea es del usuario logeado
+  const sinTareas = !loadingLista && !error && misPendientes.length === 0 && !enProceso;
 
   return (
     <div className="page">
       <div className="section-header">
         <div>
           <h2 className="section-title">Pendientes</h2>
-          <p className="section-subtitle">Atiende las tareas en orden de prioridad, una a la vez.</p>
+          <p className="section-subtitle">Elige cualquier tarea del nivel más urgente; los niveles inferiores se desbloquean al vaciarlo.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {enCola != null && (
-            <span className="td-muted" style={{ fontSize: 12 }}>En cola: <b>{enCola}</b></span>
+          {misPendientes.length > 0 && (
+            <span className="td-muted" style={{ fontSize: 12 }}>En cola: <b>{misPendientes.length}</b></span>
           )}
           <button
             className="btn btn-ghost btn-sm"
             onClick={refrescarTodo}
-            disabled={loading || acting || !!enProceso}
-            title={enProceso ? 'Termina la tarea actual primero' : 'Actualizar'}
+            disabled={loadingLista || acting}
+            title="Actualizar"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Icon name="refresh" size={13} style={loading ? { animation: 'spin 1s linear infinite' } : undefined}/>
+            <Icon name="refresh" size={13} style={loadingLista ? { animation: 'spin 1s linear infinite' } : undefined}/>
             Actualizar
           </button>
         </div>
       </div>
 
-      <div style={{ maxWidth: 560, margin: '24px auto 0' }}>
-        {/* Estado: cargando */}
-        {loading && !item && (
-          <div className="empty" style={{ padding: 56 }}>
-            <div className="spinner" style={{ width: 24, height: 24, margin: '0 auto 10px' }}/>
-            <div>Buscando próxima tarea…</div>
-          </div>
-        )}
-
+      <div style={{ maxWidth: 640, margin: '24px auto 0' }}>
         {/* Estado: error */}
-        {!loading && error && (
+        {error && (
           <div className="card" style={{ padding: 40, textAlign: 'center' }}>
             <div className="empty-icon" style={{ color: 'var(--danger)' }}><Icon name="close"/></div>
             <div style={{ color: 'var(--danger)', fontWeight: 600, marginTop: 8 }}>Error de conexión</div>
             <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 4 }}>{error}</div>
-            <button className="btn btn-secondary btn-sm" style={{ marginTop: 16 }} onClick={cargarSiguiente}>
+            <button className="btn btn-secondary btn-sm" style={{ marginTop: 16 }} onClick={refrescarTodo}>
               <Icon name="refresh" size={13}/> Reintentar
             </button>
           </div>
         )}
 
-        {/* Estado: cola vacía */}
-        {!loading && !error && vacia && !enProceso && (
+        {/* Tarea activa: bloquea todo hasta terminarla */}
+        {!error && enProceso && (
+          <div className="card" style={{ padding: 28, marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span className={`badge badge-${apPrioTone(enProceso.prioridad)}`} style={{ fontSize: 12 }}>
+                <span className="badge-dot"/> {enProceso.prioridad || 'Sin prioridad'}
+              </span>
+              <span className="badge badge-info" style={{ fontSize: 12 }}>
+                <span className="badge-dot"/> En proceso
+              </span>
+            </div>
+
+            <h3 style={{ margin: '0 0 16px', fontSize: 20, fontWeight: 600, lineHeight: 1.3 }}>
+              {enProceso.actividad}
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+              <DetalleFila etiqueta="Usuario" valor={enProceso.usuario}/>
+              <DetalleFila etiqueta="Observaciones" valor={enProceso.observaciones}/>
+              <DetalleFila etiqueta="Fecha promesa" valor={enProceso.fechaPromesa ? window.fmt.date(enProceso.fechaPromesa) : null}/>
+              <DetalleFila etiqueta="Registrado" valor={enProceso.fecha ? window.fmt.date(enProceso.fecha) : null}/>
+            </div>
+
+            <button
+              className="btn btn-primary"
+              onClick={terminar}
+              disabled={acting}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            >
+              <Icon name="ok" size={15}/> {acting ? 'Marcando…' : 'Atendido'}
+            </button>
+          </div>
+        )}
+
+        {/* Estado: cargando */}
+        {!error && loadingLista && misPendientes.length === 0 && !enProceso && (
+          <div className="empty" style={{ padding: 56 }}>
+            <div className="spinner" style={{ width: 24, height: 24, margin: '0 auto 10px' }}/>
+            <div>Cargando pendientes…</div>
+          </div>
+        )}
+
+        {/* Estado: sin tareas */}
+        {sinTareas && (
           <div className="empty" style={{ padding: 56 }}>
             <div className="empty-icon"><Icon name="ok"/></div>
             <div style={{ fontWeight: 600, fontSize: 15 }}>¡Todo al día!</div>
@@ -286,112 +306,42 @@ function PageAccionesPendientes({ user }) {
           </div>
         )}
 
-        {/* Estado: hay tarea (próxima o en proceso) */}
-        {!error && item && (
-          <div className="card" style={{ padding: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span className={`badge badge-${apPrioTone(item.prioridad)}`} style={{ fontSize: 12 }}>
-                <span className="badge-dot"/> {item.prioridad || 'Sin prioridad'}
-              </span>
-              {enProceso ? (
-                <span className="badge badge-info" style={{ fontSize: 12 }}>
-                  <span className="badge-dot"/> En proceso
-                </span>
-              ) : (
-                <span className="td-muted" style={{ fontSize: 12 }}>Próxima en cola</span>
-              )}
-            </div>
-
-            <h3 style={{ margin: '0 0 16px', fontSize: 20, fontWeight: 600, lineHeight: 1.3 }}>
-              {item.actividad}
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-              <DetalleFila etiqueta="Usuario" valor={item.usuario}/>
-              <DetalleFila etiqueta="Observaciones" valor={item.observaciones}/>
-              <DetalleFila etiqueta="Fecha promesa" valor={item.fechaPromesa ? window.fmt.date(item.fechaPromesa) : null}/>
-              <DetalleFila etiqueta="Registrado" valor={item.fecha ? window.fmt.date(item.fecha) : null}/>
-            </div>
-
-            {/* Acción según estado */}
-            {enProceso ? (
-              <button
-                className="btn btn-primary"
-                onClick={terminar}
-                disabled={acting}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-              >
-                <Icon name="ok" size={15}/> {acting ? 'Marcando…' : 'Atendido'}
-              </button>
-            ) : (
-              <>
-                <button
-                  className="btn btn-primary"
-                  onClick={atender}
-                  disabled={acting || !puedeAtender}
-                  title={puedeAtender ? undefined : 'Esta tarea pertenece a otro usuario'}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                >
-                  <Icon name="chevRight" size={15}/> {acting ? 'Tomando…' : 'Atender'}
-                </button>
-                {!puedeAtender && (
-                  <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--danger)', textAlign: 'center' }}>
-                    No puedes atender esta tarea: pertenece a <b>{siguiente?.usuario || 'otro usuario'}</b>.
-                  </p>
+        {/* Grupos por prioridad */}
+        {!error && AP_NIVELES.map(({ num, label }) => {
+          const tareas = grupos[num];
+          if (!tareas || tareas.length === 0) return null;
+          const habilitado = !enProceso && num === nivelActivo;
+          const motivo = enProceso
+            ? 'Termina la tarea actual primero'
+            : num !== nivelActivo ? 'Primero atiende las tareas de prioridad superior' : null;
+          return (
+            <section key={num} style={{ marginTop: 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+                  {label} <span className="td-muted" style={{ fontWeight: 400 }}>({tareas.length})</span>
+                </h3>
+                {motivo && (
+                  <span className="td-muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Icon name="lock" size={11}/> {motivo}
+                  </span>
                 )}
-              </>
-            )}
-          </div>
-        )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {tareas.map((p) => (
+                  <TarjetaPendiente
+                    key={p.id ?? p.actividad}
+                    p={p}
+                    habilitada={habilitado}
+                    motivoBloqueo={motivo}
+                    acting={acting}
+                    onAtender={atender}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
-
-      {/* Contenedor inferior: todos mis pendientes (GET /api/pendientes, filtrado por usuario logeado) */}
-      <section style={{ maxWidth: 560, margin: '40px auto 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
-            Mis pendientes{' '}
-            {misPendientes.length > 0 && <span className="td-muted" style={{ fontWeight: 400 }}>({misPendientes.length})</span>}
-          </h3>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={refrescarTodo}
-            disabled={loadingLista}
-            title="Actualizar lista"
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Icon name="refresh" size={13} style={loadingLista ? { animation: 'spin 1s linear infinite' } : undefined}/>
-            Actualizar
-          </button>
-        </div>
-
-        {loadingLista && (
-          <div className="empty" style={{ padding: 32 }}>
-            <div className="spinner" style={{ width: 20, height: 20, margin: '0 auto 8px' }}/>
-            <div style={{ fontSize: 13 }}>Cargando pendientes…</div>
-          </div>
-        )}
-
-        {!loadingLista && errorLista && (
-          <div className="card" style={{ padding: 24, textAlign: 'center' }}>
-            <div style={{ color: 'var(--danger)', fontSize: 13, fontWeight: 600 }}>{errorLista}</div>
-            <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={cargarLista}>
-              <Icon name="refresh" size={13}/> Reintentar
-            </button>
-          </div>
-        )}
-
-        {!loadingLista && !errorLista && misPendientes.length === 0 && (
-          <div className="empty" style={{ padding: 32 }}>
-            <div style={{ fontSize: 13, color: 'var(--fg-2)' }}>No tienes pendientes asignados.</div>
-          </div>
-        )}
-
-        {!loadingLista && !errorLista && misPendientes.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {misPendientes.map((p) => <PendienteFila key={p.id ?? p.actividad} p={p}/>)}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

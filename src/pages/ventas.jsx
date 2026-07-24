@@ -21,7 +21,7 @@ function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuent
   el.innerHTML = `
     <div style="font-family:'Courier New',Courier,monospace;font-size:10px;width:72mm;color:#000;background:#fff;margin:0 auto;">
       <div style="text-align:center;margin-bottom:5px;">
-        <img src="imagenes/logo.png" style="max-width:58mm;height:auto;display:block;margin:0 auto 3px;" alt="Zeutica"/>
+        <img src="imagenes/logo.webp" style="max-width:58mm;height:auto;display:block;margin:0 auto 3px;" alt="Zeutica"/>
         <div style="font-size:8px;letter-spacing:.06em;color:#555;">SISTEMA DE VENTAS</div>
       </div>
       <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:3px 0;margin:3px 0;text-align:center;">
