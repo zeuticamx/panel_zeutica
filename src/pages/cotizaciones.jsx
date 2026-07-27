@@ -1,7 +1,7 @@
 // ===== Zeutica — Cotizaciones =====
 const { useState: rp_uS, useEffect: rp_uE, useMemo: rp_uM, useRef: rp_uR } = React;
 
-async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, descuentoPct, descuentoMonto, subtotalOriginal, subtotalDesc, costoEnvio, iva, totalFinal, formaPago, comentario }) {
+async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, descuentoPct, descuentoMonto, subtotalOriginal, subtotalDesc, costoEnvio, iva, totalFinal, formaPago, metodoPago, comentario }) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const PW = 210, M = 10;
@@ -142,11 +142,12 @@ async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
   const terms = [
     `1. FORMA DE PAGO: ${formaPago.toUpperCase()}`,
-    '2. COTIZACIÓN EN: PESO MEXICANO (MXN)',
-    '3. PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.',
+    `2. MÉTODO DE PAGO: ${metodoPago.toUpperCase()}`,
+    '3. COTIZACIÓN EN: PESO MEXICANO (MXN)',
+    '4. PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.',
   ];
   terms.forEach(t => { doc.text(t, M, y); y += 5; });
-  const coment4 = doc.splitTextToSize(`4. COMENTARIOS: ${comentario}`, PW - 2 * M);
+  const coment4 = doc.splitTextToSize(`5. COMENTARIOS: ${comentario}`, PW - 2 * M);
   doc.text(coment4, M, y);
 
   // -- Footer (all pages) --
@@ -162,6 +163,32 @@ async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, 
 
   return doc.output('arraybuffer');
 }
+
+const COT_FORMAS_PAGO = [
+  ['01', 'Efectivo'],
+  ['02', 'Cheque nominativo'],
+  ['03', 'Transferencia electrónica de fondos (SPEI)'],
+  ['04', 'Tarjeta de crédito'],
+  ['05', 'Monedero electrónico'],
+  ['06', 'Dinero electrónico'],
+  ['08', 'Vales de despensa'],
+  ['12', 'Dación en pago'],
+  ['13', 'Pago por subrogación'],
+  ['14', 'Pago por consignación'],
+  ['15', 'Condonación'],
+  ['17', 'Compensación'],
+  ['28', 'Tarjeta de débito'],
+  ['29', 'Tarjeta de servicios'],
+  ['30', 'Aplicación de anticipos'],
+  ['31', 'Intermediario pagos'],
+  ['99', 'Por definir'],
+].map(([clave, desc]) => `${clave} - ${desc}`);
+
+const METODO_PAGO = [
+  ['PUE', 'Pago en Una sola Exhibición'],
+  ['PPD', 'Pago en Parcialidades o Diferido'],
+].map(([clave, desc]) => `${clave} - ${desc}`);
+const COT_FORMA_PAGO_POR_DEFINIR = COT_FORMAS_PAGO.find(f => f.startsWith('99'));
 
 const COT_COMENTARIOS = [
   'ENVIO GRATIS EN COMPRAS MAYORES A $7000.00 MAS IVA, TIEMPO DE ENTREGA DE 4-7 DIAS HABILES.',
@@ -280,7 +307,8 @@ function PageCotizaciones({ user }) {
   const [items, setItems] = rp_uS([]);
   const [descuento, setDescuento] = rp_uS(0);
   const [incluirEnvio, setIncluirEnvio] = rp_uS(true);
-  const [formaPago, setFormaPago] = rp_uS('CONTADO');
+  const [formaPago, setFormaPago] = rp_uS(COT_FORMAS_PAGO[0]);
+  const [metodoPago, setMetodoPago] = rp_uS(METODO_PAGO[0]);
   const [comentario, setComentario] = rp_uS(COT_COMENTARIOS[0]);
   const [comentarioCustom, setComentarioCustom] = rp_uS('');
   const [submitting, setSubmitting] = rp_uS(false);
@@ -291,6 +319,12 @@ function PageCotizaciones({ user }) {
   const [firmaModal, setFirmaModal] = rp_uS(null);
   const [verFirmaModal, setVerFirmaModal] = rp_uS(null);
   const [savingFirma, setSavingFirma] = rp_uS(false);
+  const [complementoModal, setComplementoModal] = rp_uS(null);
+  const [complementos, setComplementos] = rp_uS([]);
+  const [loadingComplementos, setLoadingComplementos] = rp_uS(false);
+  const [nuevoComplemento, setNuevoComplemento] = rp_uS('');
+  const [nuevoPago, setNuevoPago] = rp_uS('');
+  const [savingComplemento, setSavingComplemento] = rp_uS(false);
 
   rp_uE(() => { (async () => setCots(await window.api.cotizaciones()))(); }, []);
 
@@ -329,6 +363,12 @@ function PageCotizaciones({ user }) {
     })();
   }, [showForm]);
 
+  const metodoPagoEsPPD = metodoPago.startsWith('PPD');
+
+  rp_uE(() => {
+    if (metodoPagoEsPPD) setFormaPago(COT_FORMA_PAGO_POR_DEFINIR);
+  }, [metodoPagoEsPPD]);
+
   const prodObj = rp_uM(() => productos.find(p => p.sku === selectedSku), [productos, selectedSku]);
 
   rp_uE(() => {
@@ -340,7 +380,7 @@ function PageCotizaciones({ user }) {
   const subtotalOriginal = rp_uM(() => items.reduce((s, i) => s + i.total, 0), [items]);
   const descuentoMonto   = subtotalOriginal * (descuento / 100);
   const subtotalDesc     = subtotalOriginal - descuentoMonto;
-  const envioBase        = (subtotalDesc * 1.16) > (7000 * 1.16) ? 0 : 350;
+  const envioBase        = (subtotalDesc * 1.16) > (7000 * 1.16) ? 0 : 250;
   const costoEnvio       = incluirEnvio ? envioBase : 0;
   const baseIva          = subtotalDesc + costoEnvio;
   const iva              = baseIva * 0.16;
@@ -361,7 +401,7 @@ function PageCotizaciones({ user }) {
 
   const resetForm = () => {
     setShowForm(false); setItems([]); setDescuento(0);
-    setSelectedCliente(''); setFormaPago('CONTADO');
+    setSelectedCliente(''); setFormaPago(COT_FORMAS_PAGO[0]); setMetodoPago(METODO_PAGO[0]);
     setComentario(COT_COMENTARIOS[0]); setComentarioCustom('');
     setIncluirEnvio(true);
   };
@@ -391,6 +431,7 @@ function PageCotizaciones({ user }) {
         iva,
         totalFinal,
         formaPago,
+        metodoPago,
         comentario: comentarioFinal,
       });
       const bytes = new Uint8Array(buf);
@@ -413,6 +454,7 @@ function PageCotizaciones({ user }) {
       total: Math.round(totalFinal * 100) / 100,
       costo_envio: Math.round(costoEnvio * 100) / 100,
       forma_pago: formaPago,
+      metodo_pago: metodoPago,
       comentarios: comentarioFinal,
       usuario: user || '',
       pdf: pdfBase64,
@@ -466,17 +508,72 @@ function PageCotizaciones({ user }) {
     }
   };
 
+  rp_uE(() => {
+    if (!complementoModal) { setComplementos([]); setNuevoComplemento(''); setNuevoPago(''); return; }
+    setLoadingComplementos(true);
+    (async () => {
+      const data = await window.api.complementosPago(complementoModal.codigo_cotizacion);
+      setComplementos(data);
+      setLoadingComplementos(false);
+    })();
+  }, [complementoModal]);
+
+  // El pago capturado no puede exceder el saldo: total menos lo ya registrado.
+  const totalComplemento = Number(complementoModal?.total) || 0;
+  const pagadoComplemento = rp_uM(
+    () => complementos.reduce((s, c) => s + (Number(c.pago) || 0), 0),
+    [complementos]
+  );
+  const saldoComplemento = totalComplemento - pagadoComplemento;
+  const pagoNum = Math.round((Number(nuevoPago) || 0) * 100) / 100;
+  const pagoExcedeTotal = pagoNum > saldoComplemento;
+
+  const guardarComplemento = async () => {
+    if (!complementoModal || !nuevoComplemento || !nuevoPago) return;
+    if (pagoNum <= 0) {
+      toast.error('Pago inválido', 'Ingresa un monto mayor a cero');
+      return;
+    }
+    if (pagoExcedeTotal) {
+      toast.error('Pago inválido', `El pago no puede superar el saldo de ${window.fmt.mxn(saldoComplemento)}`);
+      return;
+    }
+    setSavingComplemento(true);
+    const payload = {
+      codigo_cotizacion: complementoModal.codigo_cotizacion,
+      complemento: nuevoComplemento,
+      pago: pagoNum,
+      usuario: user || '',
+    };
+    const r = await window.api.registrarComplementoPago(payload);
+    setSavingComplemento(false);
+    if (r.ok) {
+      toast.success('Complemento agregado', complementoModal.codigo_cotizacion);
+      window.fireConfetti();
+      setNuevoComplemento('');
+      setNuevoPago('');
+      const data = await window.api.complementosPago(complementoModal.codigo_cotizacion);
+      setComplementos(data);
+    } else {
+      toast.error('Error', 'No se pudo guardar el complemento de pago');
+    }
+  };
+
   const guardarRelaciones = async () => {
     const records = Object.entries(editRelaciones)
       .filter(([, v]) => v.relacion_factura || v.metodo_pago || v.fecha_pago)
-      .map(([codigo, v]) => ({
-        // El nombre del cliente no vive en editRelaciones: se busca en la cotización.
-        nombre: cots.find(c => c.codigo_cotizacion === codigo)?.empresa || null,
-        codigo_cotizacion: codigo,
-        relacion_factura: v.relacion_factura || null,
-        metodo_pago: v.metodo_pago || null,
-        fecha_pago: v.fecha_pago || null,
-      }));
+      .map(([codigo, v]) => {
+        // El id numérico y el nombre del cliente no viven en editRelaciones: se buscan en la cotización.
+        const cot = cots.find(c => c.codigo_cotizacion === codigo);
+        return {
+          id: cot?.id ?? null,
+          nombre: cot?.empresa || null,
+          codigo_cotizacion: codigo,
+          relacion_factura: v.relacion_factura || null,
+          metodo_pago: v.metodo_pago || null,
+          fecha_pago: v.fecha_pago || null,
+        };
+      });
     if (records.length === 0) { toast.warn('Sin cambios', 'Ingresa al menos una relación'); return; }
     setSavingRelacion(true);
     const r = await window.api.relacionFactura(records);
@@ -710,10 +807,18 @@ function PageCotizaciones({ user }) {
             {/* 3. Condiciones */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-2)', marginBottom: 10 }}>3. Condiciones finales</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                 <div className="field">
                   <label className="field-label">Forma de pago</label>
-                  <input className="input" value={formaPago} onChange={e => setFormaPago(e.target.value)}/>
+                  <select className="select" value={formaPago} disabled={metodoPagoEsPPD} onChange={e => setFormaPago(e.target.value)}>
+                    {COT_FORMAS_PAGO.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field-label">Método de pago</label>
+                  <select className="select" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
+                    {METODO_PAGO.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 </div>
                 <div className="field">
                   <label className="field-label">Comentarios / Envío</label>
@@ -754,7 +859,7 @@ function PageCotizaciones({ user }) {
             <table className="table">
               <thead><tr>
                 <th>Código</th><th>Cliente</th><th className="td-right">Total</th>
-                <th>N° Factura</th><th>Método de pago</th><th>Fecha de pago</th><th>Firma</th>
+                <th>N° Factura</th><th>Forma de pago</th><th>Fecha de pago</th><th>Firma</th><th>Complementos</th><th></th>
               </tr></thead>
               <tbody>
                 {cots.map(c => {
@@ -779,8 +884,8 @@ function PageCotizaciones({ user }) {
                           value={ed.metodo_pago || ''}
                           onChange={e => setEd('metodo_pago', e.target.value)}>
                           <option value="">—</option>
-                          {['EFECTIVO','CREDITO','TRANSFERENCIA','TARJETA','DEPOSITO','POR DEFINIR'].map(m => (
-                            <option key={m} value={m}>{m}</option>
+                          {COT_FORMAS_PAGO.map(f => (
+                            <option key={f} value={f}>{f}</option>
                           ))}
                         </select>
                       </td>
@@ -801,6 +906,12 @@ function PageCotizaciones({ user }) {
                             <Icon name="eye" size={12}/> Ver
                           </button>
                         </div>
+                      </td>
+                      <td>
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Complemento de pago"
+                          onClick={() => setComplementoModal({ codigo_cotizacion: c.codigo_cotizacion, total: c.total })}>
+                          <Icon name="plus" size={13}/>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -868,6 +979,68 @@ function PageCotizaciones({ user }) {
               ) : (
                 <p style={{ fontSize: 13, color: 'var(--fg-2)' }}>Esta cotización aún no tiene firma registrada.</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {complementoModal && (
+        <div className="modal-backdrop" onClick={() => setComplementoModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+              <div>
+                <h3 className="card-title">Complemento de pago</h3>
+                <p className="card-subtitle mono" style={{ fontSize: 11 }}>
+                  {complementoModal.codigo_cotizacion} · Total {window.fmt.mxn(totalComplemento)} · Pagado {window.fmt.mxn(pagadoComplemento)} · Saldo {window.fmt.mxn(saldoComplemento)}
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setComplementoModal(null)}><Icon name="x" size={14}/></button>
+            </div>
+            <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-2)', marginBottom: 8 }}>Complementos registrados</div>
+                {loadingComplementos ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--fg-2)' }}><span className="spinner"/> Cargando...</div>
+                ) : complementos.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>Sin complementos registrados.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {complementos.map((c, idx) => (
+                      <div key={c.id || idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 10px', background: 'var(--bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--line)', fontSize: 12 }}>
+                        <span className="mono">{c.complemento ?? JSON.stringify(c)}</span>
+                        <span style={{ display: 'flex', gap: 8 }}>
+                          {c.pago != null && <span className="mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(c.pago)}</span>}
+                          {c.fecha && <span style={{ color: 'var(--fg-2)' }}>{window.fmt.date(c.fecha)}</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10 }}>
+                <div className="field">
+                  <label className="field-label">Nuevo complemento</label>
+                  <input className="input" value={nuevoComplemento} onChange={e => setNuevoComplemento(e.target.value)} placeholder="Ingresa el complemento de pago"/>
+                </div>
+                <div className="field">
+                  <label className="field-label">Pago</label>
+                  <input className="input mono" type="number" min="0" step="0.01" max={saldoComplemento}
+                    value={nuevoPago}
+                    onChange={e => setNuevoPago(e.target.value)}
+                    placeholder="0.00"/>
+                </div>
+              </div>
+              {pagoExcedeTotal && (
+                <div style={{ fontSize: 12, color: 'var(--danger)' }}>
+                  El pago no puede superar el saldo pendiente ({window.fmt.mxn(saldoComplemento)}) — total {window.fmt.mxn(totalComplemento)} menos {window.fmt.mxn(pagadoComplemento)} ya registrados.
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setComplementoModal(null)}>Cerrar</button>
+                <button className="btn btn-primary btn-sm" disabled={!nuevoComplemento || !nuevoPago || pagoExcedeTotal || savingComplemento} onClick={guardarComplemento}>
+                  {savingComplemento ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Agregar</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>

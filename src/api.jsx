@@ -322,6 +322,14 @@ const api = {
   async firmarCotizacion(payload) {
     return tryFetch('/zeutica/firma-ventas', { method: 'POST', body: JSON.stringify(payload) });
   },
+  async complementosPago(id) {
+    const r = await tryFetch(`/zeutica/complemento-pago/${encodeURIComponent(id)}`);
+    if (!r.ok) return [];
+    return Array.isArray(r.data) ? r.data : (r.data.data || r.data.complementos || []);
+  },
+  async registrarComplementoPago(payload) {
+    return tryFetch('/zeutica/complemento-pago', { method: 'POST', body: JSON.stringify(payload) });
+  },
   async registrarVenta(payload) {
     return tryFetch('/zeutica/producto/venta', { method: 'POST', body: JSON.stringify(payload) });
   },
