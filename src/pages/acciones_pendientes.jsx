@@ -112,8 +112,9 @@ function TarjetaPendiente({ p, habilitada, motivoBloqueo, acting, onAtender }) {
 
 function PageAccionesPendientes({ user }) {
   const toast = window.useToast();
-  const [enProceso, setEnProceso] = ap_uS(null);    // tarea activa (estado 'en proceso')
+  const [enProceso, setEnProceso] = ap_uS([]);      // tareas activas (estado 'en proceso')
   const [acting, setActing]       = ap_uS(false);    // POST atender/terminar en curso
+  const [actingId, setActingId]   = ap_uS(null);     // id de la tarea que se está cerrando
   const [error, setError]         = ap_uS(null);
   const [misPendientes, setMisPendientes] = ap_uS([]);   // /api/pendientes del usuario
   const [loadingLista, setLoadingLista]   = ap_uS(false);
@@ -124,14 +125,17 @@ function PageAccionesPendientes({ user }) {
     await apFetch('/api/recargar', { method: 'POST' });
   }, []);
 
-  // ¿Quedó una tarea 'en proceso' sin terminar? Mostrarla como activa.
+  // Tareas 'en proceso' del usuario. Pueden ser varias, todas del mismo nivel.
+  // El backend responde array; se tolera la respuesta antigua (objeto único).
   const cargarEnProceso = ap_uC(async () => {
     const r = await apFetch(`/api/pendientes/en-proceso?usuario=${encodeURIComponent(user)}`);
-    if (r.ok && r.data) {
-      setEnProceso(r.data?.atendido ?? r.data);
+    if (r.ok) {
+      const d = r.data;
+      const lista = Array.isArray(d) ? d : (d ? [d.atendido ?? d] : []);
+      setEnProceso(lista.filter(Boolean));
       return;
     }
-    if (r.ok || r.status === 404) { setEnProceso(null); return; }
+    if (r.status === 404) { setEnProceso([]); return; }
     setError(r.error || 'No se pudo conectar con Servidor');
   }, [user]);
 
@@ -165,17 +169,19 @@ function PageAccionesPendientes({ user }) {
     await Promise.all([cargarEnProceso(), cargarLista()]);
   }, [recargarCola, cargarEnProceso, cargarLista]);
 
-  // Agrupar por nivel de prioridad. El nivel activo es el más urgente con tareas:
-  // sus tarjetas quedan habilitadas; los niveles inferiores se bloquean.
+  // Agrupar por nivel de prioridad. El nivel activo es el más urgente con tareas,
+  // contando también las que ya están 'en proceso' (esas salen de la cola, así que
+  // sin sumarlas se desbloquearía un nivel inferior antes de tiempo).
   const grupos = ap_uM(() => {
     const g = { 1: [], 2: [], 3: [] };
     misPendientes.forEach((p) => { g[apNivelNum(p)].push(p); });
     return g;
   }, [misPendientes]);
-  const nivelActivo = ap_uM(
-    () => AP_NIVELES.map(n => n.num).find(num => grupos[num].length > 0) ?? null,
-    [grupos]
-  );
+  const nivelActivo = ap_uM(() => {
+    const niveles = AP_NIVELES.filter(n => grupos[n.num].length > 0).map(n => n.num);
+    enProceso.forEach((p) => niveles.push(apNivelNum(p)));
+    return niveles.length ? Math.min(...niveles) : null;
+  }, [grupos, enProceso]);
 
   // Atender una tarea elegida. El backend re-valida nivel y pertenencia (409/404).
   const atender = async (p) => {
@@ -192,19 +198,20 @@ function PageAccionesPendientes({ user }) {
     }
     const atendido = r.data?.atendido ?? null;
     apNotificarN8n('pendiente_en_proceso', atendido, user);
-    setEnProceso(atendido);
+    if (atendido) setEnProceso((prev) => [...prev.filter((t) => t.id !== atendido.id), atendido]);
     toast.info('En proceso', atendido?.actividad || 'Tarea tomada');
     cargarLista();
   };
 
-  // Atendido: marca terminado y libera el bloqueo.
-  const terminar = async () => {
-    const id = enProceso?.id;
+  // Atendido: marca terminado una de las tareas abiertas; las demás siguen activas.
+  const terminar = async (tarea) => {
+    const id = tarea?.id;
     if (id == null) return;
-    const tarea = enProceso;
     setActing(true);
+    setActingId(id);
     const r = await apFetch(`/api/pendientes/${id}/terminar?usuario=${encodeURIComponent(user)}`, { method: 'POST' });
     setActing(false);
+    setActingId(null);
     if (!r.ok) {
       toast.error('No se pudo terminar', r.error || 'Sin conexión');
       return;
@@ -212,20 +219,23 @@ function PageAccionesPendientes({ user }) {
     apNotificarN8n('pendiente_cerrado', tarea, user);
     toast.success('Tarea completada', tarea?.actividad || '');
     window.fireConfetti?.();
-    setEnProceso(null);
+    setEnProceso((prev) => prev.filter((t) => t.id !== id));
     cargarLista();
   };
 
-  const sinTareas = !loadingLista && !error && misPendientes.length === 0 && !enProceso;
+  const sinTareas = !loadingLista && !error && misPendientes.length === 0 && enProceso.length === 0;
 
   return (
     <div className="page">
       <div className="section-header">
         <div>
           <h2 className="section-title">Pendientes</h2>
-          <p className="section-subtitle">Elige cualquier tarea del nivel más urgente; los niveles inferiores se desbloquean al vaciarlo.</p>
+          <p className="section-subtitle">Puedes tener varias tareas abiertas del nivel más urgente; los niveles inferiores se desbloquean al terminarlo.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {enProceso.length > 0 && (
+            <span className="td-muted" style={{ fontSize: 12 }}>En proceso: <b>{enProceso.length}</b></span>
+          )}
           {misPendientes.length > 0 && (
             <span className="td-muted" style={{ fontSize: 12 }}>En cola: <b>{misPendientes.length}</b></span>
           )}
@@ -255,12 +265,12 @@ function PageAccionesPendientes({ user }) {
           </div>
         )}
 
-        {/* Tarea activa: bloquea todo hasta terminarla */}
-        {!error && enProceso && (
-          <div className="card" style={{ padding: 28, marginBottom: 8 }}>
+        {/* Tareas activas: se pueden tener varias del mismo nivel a la vez */}
+        {!error && enProceso.map((t) => (
+          <div key={t.id ?? t.actividad} className="card" style={{ padding: 28, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span className={`badge badge-${apPrioTone(enProceso.prioridad)}`} style={{ fontSize: 12 }}>
-                <span className="badge-dot"/> {enProceso.prioridad || 'Sin prioridad'}
+              <span className={`badge badge-${apPrioTone(t.prioridad)}`} style={{ fontSize: 12 }}>
+                <span className="badge-dot"/> {t.prioridad || 'Sin prioridad'}
               </span>
               <span className="badge badge-info" style={{ fontSize: 12 }}>
                 <span className="badge-dot"/> En proceso
@@ -268,29 +278,29 @@ function PageAccionesPendientes({ user }) {
             </div>
 
             <h3 style={{ margin: '0 0 16px', fontSize: 20, fontWeight: 600, lineHeight: 1.3 }}>
-              {enProceso.actividad}
+              {t.actividad}
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-              <DetalleFila etiqueta="Usuario" valor={enProceso.usuario}/>
-              <DetalleFila etiqueta="Observaciones" valor={enProceso.observaciones}/>
-              <DetalleFila etiqueta="Fecha promesa" valor={enProceso.fechaPromesa ? window.fmt.date(enProceso.fechaPromesa) : null}/>
-              <DetalleFila etiqueta="Registrado" valor={enProceso.fecha ? window.fmt.date(enProceso.fecha) : null}/>
+              <DetalleFila etiqueta="Usuario" valor={t.usuario}/>
+              <DetalleFila etiqueta="Observaciones" valor={t.observaciones}/>
+              <DetalleFila etiqueta="Fecha promesa" valor={t.fechaPromesa ? window.fmt.date(t.fechaPromesa) : null}/>
+              <DetalleFila etiqueta="Registrado" valor={t.fecha ? window.fmt.date(t.fecha) : null}/>
             </div>
 
             <button
               className="btn btn-primary"
-              onClick={terminar}
+              onClick={() => terminar(t)}
               disabled={acting}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
-              <Icon name="ok" size={15}/> {acting ? 'Marcando…' : 'Atendido'}
+              <Icon name="ok" size={15}/> {actingId === t.id ? 'Marcando…' : 'Atendido'}
             </button>
           </div>
-        )}
+        ))}
 
         {/* Estado: cargando */}
-        {!error && loadingLista && misPendientes.length === 0 && !enProceso && (
+        {!error && loadingLista && misPendientes.length === 0 && enProceso.length === 0 && (
           <div className="empty" style={{ padding: 56 }}>
             <div className="spinner" style={{ width: 24, height: 24, margin: '0 auto 10px' }}/>
             <div>Cargando pendientes…</div>
@@ -310,10 +320,8 @@ function PageAccionesPendientes({ user }) {
         {!error && AP_NIVELES.map(({ num, label }) => {
           const tareas = grupos[num];
           if (!tareas || tareas.length === 0) return null;
-          const habilitado = !enProceso && num === nivelActivo;
-          const motivo = enProceso
-            ? 'Termina la tarea actual primero'
-            : num !== nivelActivo ? 'Primero atiende las tareas de prioridad superior' : null;
+          const habilitado = num === nivelActivo;
+          const motivo = habilitado ? null : 'Primero atiende las tareas de prioridad superior';
           return (
             <section key={num} style={{ marginTop: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>

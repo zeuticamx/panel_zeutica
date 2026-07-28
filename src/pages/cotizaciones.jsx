@@ -149,6 +149,28 @@ async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, 
   terms.forEach(t => { doc.text(t, M, y); y += 5; });
   const coment4 = doc.splitTextToSize(`5. COMENTARIOS: ${comentario}`, PW - 2 * M);
   doc.text(coment4, M, y);
+  y += coment4.length * 5 + 6;
+
+  // -- Datos bancarios (cuadro) --
+  const datosBanco = [
+    'Clabe Interbancaria: 002320702110604152',
+    'Banco: Banamex',
+    'Nombre: Felipe Osvaldo Ruvalcaba Ayala',
+  ];
+  const boxW = 100;
+  const boxH = 8 + datosBanco.length * 5 + 3;
+  // El pie de página vive en y=272: si no cabe, el cuadro pasa a una hoja nueva.
+  if (y + boxH > 262) { doc.addPage(); y = 20; }
+  doc.setDrawColor(0, 74, 153);
+  doc.setLineWidth(0.4);
+  doc.rect(M, y, boxW, boxH, 'S');
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  doc.text('FORMA DE PAGO:', M + 3, y + 6);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+  datosBanco.forEach((linea, i) => doc.text(linea, M + 3, y + 12 + i * 5));
+  y += boxH;
 
   // -- Footer (all pages) --
   const total_pages = doc.getNumberOfPages();

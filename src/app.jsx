@@ -212,6 +212,7 @@ function App() {
     dashboard:    window.PageDashboard,
     acciones_pendientes: window.PageAccionesPendientes,
     clientes_potenciales: window.PageClientesPotenciales,
+    promociones_meli: window.PagePromocionesMeli,
     usuarios:     window.PageUsuarios,
     contrasena:   window.PageContrasena,
     inventario:   window.PageInventario,
