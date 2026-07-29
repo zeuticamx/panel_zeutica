@@ -73,7 +73,7 @@ function PageCobranza() {
                       return <span className={`badge badge-${dias > 15 ? 'danger' : 'warn'}`}><span className="badge-dot"/>{label}</span>;
                     })()}</td>
                     <td className="td-right mono td-muted">{window.fmt.mxn((byVenta.get(key(c.id_ventas))?.abonado ?? 0))}</td>
-                    <td className="td-right"><button className="btn btn-ghost btn-sm" onClick={() => { setSel(c); setMonto(c.saldo_pendiente *1.16); }}>Abonar</button></td>
+                    <td className="td-right"><button className="btn btn-ghost btn-sm" onClick={() => { setSel(c); setMonto(c.saldo_pendiente); }}>Abonar</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -92,7 +92,7 @@ function PageCobranza() {
                   <div className="mono td-muted" style={{ fontSize: 11, marginTop: 2 }}>Venta #{String(sel.id_ventas).slice(-10)}</div>
                   <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--fg-2)', fontSize: 12 }}>Saldo pendiente</span>
-                    <span className="mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(sel.saldo_pendiente * 1.16)}</span>
+                    <span className="mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(sel.saldo_pendiente)}</span>
                   </div>
                 </div>
                 <div className="field"><label className="field-label">Monto del abono</label>

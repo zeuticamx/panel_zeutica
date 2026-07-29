@@ -21,7 +21,7 @@
       sku: pedido.sku,
       producto: item.nombre || pedido.sku,
       stock_clean: +pedido.cantidad,
-      precio: parseFloat(item.precio_clean || 0),
+      precio: Number((parseFloat(item.precio_clean || 0) * 1.16).toFixed(2)),
       fecha: fechaIso,
       nombreComprador: 'CLEANEST CHOICE',
       otros: 'FARMACEUTICA',

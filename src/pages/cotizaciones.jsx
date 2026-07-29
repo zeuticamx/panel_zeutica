@@ -212,6 +212,32 @@ const METODO_PAGO = [
 ].map(([clave, desc]) => `${clave} - ${desc}`);
 const COT_FORMA_PAGO_POR_DEFINIR = COT_FORMAS_PAGO.find(f => f.startsWith('99'));
 
+// Registros viejos guardan texto libre ("TRANSFERENCIA", "EFECTIVO") en vez de la clave SAT.
+const COT_ALIAS_FORMA_PAGO = {
+  'EFECTIVO': '01',
+  'CHEQUE': '02',
+  'TRANSFERENCIA': '03',
+  'SPEI': '03',
+  'TRANSFERENCIA ELECTRONICA': '03',
+  'TARJETA CREDITO': '04',
+  'TARJETA DE CREDITO': '04',
+  'TARJETA DEBITO': '28',
+  'TARJETA DE DEBITO': '28',
+};
+
+// El API devuelve el pago como texto libre, como clave ("01") o como "01 - Efectivo":
+// se normaliza al texto exacto del catálogo para que el <select> lo reconozca.
+const cotNormalizaFormaPago = (valor) => {
+  if (!valor) return '';
+  const v = String(valor).trim();
+  const low = v.toLowerCase();
+  const clave = COT_ALIAS_FORMA_PAGO[v.toUpperCase()] || v.split('-')[0].trim();
+  return COT_FORMAS_PAGO.find(f => f.toLowerCase() === low)
+      || COT_FORMAS_PAGO.find(f => f.split(' - ')[1].toLowerCase() === low)
+      || COT_FORMAS_PAGO.find(f => f.split(' - ')[0] === clave)
+      || v;
+};
+
 const COT_COMENTARIOS = [
   'ENVIO GRATIS EN COMPRAS MAYORES A $7000.00 MAS IVA, TIEMPO DE ENTREGA DE 4-7 DIAS HABILES.',
   'EL ENVIO SE REALIZARA POR PAQUETERIA PAQUETE EXPRESS EN CASO DE REQUERIR UNA PAQUETERIA EN PARTICULAR ESTA SE COTIZARA DE MANERA ADICIONAL.',
@@ -358,7 +384,7 @@ function PageCotizaciones({ user }) {
         if (!next[c.codigo_cotizacion]) {
           next[c.codigo_cotizacion] = {
             relacion_factura: c.relacion_factura || '',
-            metodo_pago: c.metodo_pago || '',
+            forma_pago: cotNormalizaFormaPago(c.forma_pago),
             fecha_pago: c.fecha_pago ? c.fecha_pago.slice(0, 10) : '',
           };
         }
@@ -583,7 +609,7 @@ function PageCotizaciones({ user }) {
 
   const guardarRelaciones = async () => {
     const records = Object.entries(editRelaciones)
-      .filter(([, v]) => v.relacion_factura || v.metodo_pago || v.fecha_pago)
+      .filter(([, v]) => v.relacion_factura || v.forma_pago || v.fecha_pago)
       .map(([codigo, v]) => {
         // El id numérico y el nombre del cliente no viven en editRelaciones: se buscan en la cotización.
         const cot = cots.find(c => c.codigo_cotizacion === codigo);
@@ -592,7 +618,9 @@ function PageCotizaciones({ user }) {
           nombre: cot?.empresa || null,
           codigo_cotizacion: codigo,
           relacion_factura: v.relacion_factura || null,
-          metodo_pago: v.metodo_pago || null,
+          forma_pago: v.forma_pago || null,
+          // Alias temporal: el endpoint viejo aún espera metodo_pago para esta columna.
+          metodo_pago: v.forma_pago || null,
           fecha_pago: v.fecha_pago || null,
         };
       });
@@ -903,9 +931,13 @@ function PageCotizaciones({ user }) {
                       </td>
                       <td style={{ minWidth: 150 }}>
                         <select className="select" style={{ fontSize: 12, padding: '4px 8px' }}
-                          value={ed.metodo_pago || ''}
-                          onChange={e => setEd('metodo_pago', e.target.value)}>
+                          value={ed.forma_pago || ''}
+                          onChange={e => setEd('forma_pago', e.target.value)}>
                           <option value="">—</option>
+                          {/* Valor fuera del catálogo (clave vieja o texto libre): se muestra tal cual en vez de quedar vacío. */}
+                          {ed.forma_pago && !COT_FORMAS_PAGO.includes(ed.forma_pago) && (
+                            <option value={ed.forma_pago}>{ed.forma_pago}</option>
+                          )}
                           {COT_FORMAS_PAGO.map(f => (
                             <option key={f} value={f}>{f}</option>
                           ))}
