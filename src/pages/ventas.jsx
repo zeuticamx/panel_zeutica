@@ -178,7 +178,7 @@ function PageVentas({ user }) {
         id_venta,
         sku: item.sku,
         stock_bodega: item.cantidad,
-        precio,
+        precio: precio * 1.16,
         producto: item.nombre,
         fecha,
         nombreComprador: cliente,

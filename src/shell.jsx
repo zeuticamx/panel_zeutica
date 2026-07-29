@@ -16,7 +16,7 @@ const NAV = [
   { key: 'full',         label: 'Traspaso FULL',    icon: 'transfer' },  
   { key: 'gastos',       label: 'Gastos Operativos',icon: 'wallet' },
   { key: 'devoluciones',  label: 'Devoluciones',     icon: 'refresh' },
-  { key: 'pendientes',   label: 'Cuentas Pendientes',icon: 'clock', gerencia: true },
+  //{ key: 'pendientes',   label: 'Cuentas Pendientes',icon: 'clock', gerencia: true },
   { key: 'cleanest',     label: 'CleanestChoice',   icon: 'stars' },
   { key: 'compras',      label: 'Compras',          icon: 'cart', gerencia: true },
   { key: 'cobranza',     label: 'Monitor Cobranza', icon: 'eye' },
@@ -55,7 +55,7 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Finanzas</div>
-        {NAV.slice(14, 19).map((n) => (
+        {NAV.slice(14, 18).map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
       </nav>

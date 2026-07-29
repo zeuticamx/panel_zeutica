@@ -8,15 +8,34 @@ function PageCobranza() {
   const [sel, setSel] = rp_uS(null);
   const [monto, setMonto] = rp_uS(0);
   const [submitting, setSubmitting] = rp_uS(false);
+  const [abonos, setAbonos] = rp_uS([]);
   rp_uE(() => { (async () => setCreditos(await window.api.creditos()))(); }, []);
+  rp_uE(() => { (async () => setAbonos(await window.api.abonosRegistro()))(); }, []);
 
   const total = creditos.reduce((s, c) => s + c.saldo_pendiente, 0);
   const clientes = new Set(creditos.map(c => c.nombre)).size;
 
+  const key = v => String(v ?? '').trim();
+  const byVenta = new Map();
+  const vistos = new Set();
+  for (const a of (Array.isArray(abonos) ? abonos : [])) {
+    if (a?.id != null) {
+      if (vistos.has(a.id)) continue;
+      vistos.add(a.id);
+    }
+    const k = key(a?.id_ventas);
+    const prev = byVenta.get(k) || { abonado: 0, precio: null };
+    const m = Number(a?.saldo_abonado);
+    byVenta.set(k, {
+      abonado: prev.abonado + (Number.isFinite(m) ? m : 0),
+      precio: prev.precio ?? (a?.precio ?? null),
+    });
+  }
+
   const abonar = async () => {
     if (!sel || monto <= 0) { toast.error('Abono inválido', 'Selecciona una venta y un monto'); return; }
     setSubmitting(true);
-    const r = await window.api.registrarAbono({ id_ventas: Number(sel.id_ventas), saldo_abonado: Number(monto), usuario: window.api.usuario || '' });
+    const r = await window.api.registrarAbono({ id_ventas: sel.id_ventas, saldo_abonado: Number(monto), usuario: window.api.usuario || '' });
     setSubmitting(false);
     if (!r.ok) { toast.error('Error al registrar abono', r.error || 'No se pudo conectar con el servidor'); return; }
     toast.success('Abono registrado', `${window.fmt.mxn(monto)} para ${sel.nombre}`);
@@ -41,18 +60,19 @@ function PageCobranza() {
           <div className="card-header"><h3 className="card-title">Cartera activa</h3></div>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>ID</th><th>Cliente</th><th className="td-right">Saldo</th><th>Días</th><th></th></tr></thead>
+              <thead><tr><th>ID</th><th>Cliente</th><th className="td-right">Saldo</th><th>Fecha Vencimiento</th><th>Abonos</th><th>Acciones</th></tr></thead>
               <tbody>
                 {creditos.filter(c => c.saldo_pendiente > 0).map(c => (
                   <tr key={c.id_ventas} style={{ background: sel?.id_ventas === c.id_ventas ? 'var(--bg-2)' : undefined }}>
                     <td className="mono" style={{ fontSize: 13, fontWeight: 500 }}>{"# " + c.id_ventas}</td>
                     <td><div style={{ fontWeight: 500 }}>{c.nombreComprador || c.nombre}</div><div className="mono td-muted" style={{ fontSize: 11 }}>#{String(c.id_ventas).slice(-6)}</div></td>
-                    <td className="td-right mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(c.saldo_pendiente * 1.16)}</td>
+                    <td className="td-right mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(c.saldo_pendiente)}</td>
                     <td>{(() => {
                       const dias = c.dias_vencido ?? Math.floor((Date.now() - new Date(c.fecha_vencimiento)) / 1000 / 60 / 60 / 24);
                       const label = c.fecha_vencimiento ? window.fmt.date(c.fecha_vencimiento) : `${dias}d`;
                       return <span className={`badge badge-${dias > 15 ? 'danger' : 'warn'}`}><span className="badge-dot"/>{label}</span>;
                     })()}</td>
+                    <td className="td-right mono td-muted">{window.fmt.mxn((byVenta.get(key(c.id_ventas))?.abonado ?? 0))}</td>
                     <td className="td-right"><button className="btn btn-ghost btn-sm" onClick={() => { setSel(c); setMonto(c.saldo_pendiente *1.16); }}>Abonar</button></td>
                   </tr>
                 ))}
@@ -69,7 +89,7 @@ function PageCobranza() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ padding: 12, background: 'var(--bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--line)' }}>
                   <div style={{ fontWeight: 500 }}>{sel.nombre}</div>
-                  <div className="mono td-muted" style={{ fontSize: 11, marginTop: 2 }}>Venta #{String(sel.id_ventas).slice(-8)}</div>
+                  <div className="mono td-muted" style={{ fontSize: 11, marginTop: 2 }}>Venta #{String(sel.id_ventas).slice(-10)}</div>
                   <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--fg-2)', fontSize: 12 }}>Saldo pendiente</span>
                     <span className="mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(sel.saldo_pendiente * 1.16)}</span>

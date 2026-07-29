@@ -5,11 +5,28 @@ function PagePendientes() {
   const [creditos, setCreditos] = rp_uS([]);
   rp_uE(() => { (async () => {
     const [cred, abonos] = await Promise.all([window.api.creditos(), window.api.abonosRegistro()]);
+    // Normaliza la llave: ventas-credito manda id_ventas como string con espacios y abonos como int.
+    const key = v => String(v ?? '').trim();
+    // Una venta puede tener varios abonos: se acumulan por id_ventas en lugar de quedarse con el último.
+    // El JOIN del backend puede repetir el mismo abono (ventas duplicadas): se descartan ids ya vistos.
     const byVenta = new Map();
-    for (const a of abonos) byVenta.set(String(a.id_ventas), a);
+    const vistos = new Set();
+    for (const a of (Array.isArray(abonos) ? abonos : [])) {
+      if (a?.id != null) {
+        if (vistos.has(a.id)) continue;
+        vistos.add(a.id);
+      }
+      const k = key(a?.id_ventas);
+      const prev = byVenta.get(k) || { abonado: 0, precio: null };
+      const monto = Number(a?.saldo_abonado);
+      byVenta.set(k, {
+        abonado: prev.abonado + (Number.isFinite(monto) ? monto : 0),
+        precio: prev.precio ?? (a?.precio ?? null),
+      });
+    }
     setCreditos(cred.map(c => {
-      const a = byVenta.get(String(c.id_ventas));
-      return { ...c, total: a?.precio ?? c.total, abonado: a?.saldo_abonado ?? c.abonado };
+      const a = byVenta.get(key(c.id_ventas));
+      return { ...c, total: a?.precio ?? c.total, abonado: a ? a.abonado : (Number(c.abonado) || 0) };
     }));
   })(); }, []);
   const total = creditos.reduce((s, c) => s + c.saldo_pendiente, 0);
@@ -37,9 +54,9 @@ function PagePendientes() {
                   <td style={{ fontWeight: 500 }}>{c.nombreComprador || c.nombre}</td>
                   <td className="mono td-muted" style={{ fontSize: 11 }}>#{String(c.id_ventas).slice(-8)}</td>
                   <td className="td-muted">{window.fmt.date(c.fecha)}</td>
-                  <td className="td-right mono">{window.fmt.mxn(c.total)}</td>
+                  <td className="td-right mono">{window.fmt.mxn(c.total - c.abonado)}</td>
                   <td className="td-right mono td-muted">{window.fmt.mxn(c.abonado)}</td>
-                  <td className="td-right mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(c.saldo_pendiente)}</td>
+                  <td className="td-right mono" style={{ fontWeight: 600 }}>{window.fmt.mxn(c.saldo_pendiente * 1.16)}</td>
                   <td>{(() => {
                     const dias = c.dias_vencido ?? Math.floor((Date.now() - new Date(c.fecha_vencimiento)) / 86400000);
                     const label = c.fecha_vencimiento ? window.fmt.date(c.fecha_vencimiento) : `${dias}d`;

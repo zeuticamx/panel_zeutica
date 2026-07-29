@@ -82,7 +82,7 @@ function LoginScreen({ onLogin }) {
         <div className="login-brand-bottom">
           <div className="login-status">
             <span className="login-status-dot"/>
-            <span>v3.3.1 · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+            <span>v3.3.2 · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
           </div>
         </div>
       </aside>

@@ -167,7 +167,7 @@ async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, 
   doc.setLineWidth(0.2);
   doc.setDrawColor(0, 0, 0);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-  doc.text('FORMA DE PAGO:', M + 3, y + 6);
+  doc.text('DATOS BANCARIOS:', M + 3, y + 6);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
   datosBanco.forEach((linea, i) => doc.text(linea, M + 3, y + 12 + i * 5));
   y += boxH;
