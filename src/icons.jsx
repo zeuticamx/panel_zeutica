@@ -55,6 +55,7 @@ const Icon = ({ name, size = 16, stroke = 1.75, className = '', style = {} }) =>
     trend: <><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></>,
     globe: <><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></>,
     send: <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>,
+    chat: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></>,
   };
   return <svg {...props}>{paths[name] || paths.dot}</svg>;
 };

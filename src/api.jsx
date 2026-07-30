@@ -192,6 +192,13 @@ const api = {
     const lista = Array.isArray(r.data) ? r.data : (r.data?.clientes ?? r.data?.items ?? []);
     return { ok: true, data: lista };
   },
+  // Historial del agente Sofi: { conversaciones: [{ session_id, message: "<json string>" }] }
+  async conversacionesSofi() {
+    const r = await tryFetch('/zeutica/sofi-conversaciones');
+    if (!r.ok) return { ok: false, error: r.error, data: [] };
+    const lista = Array.isArray(r.data) ? r.data : (r.data?.conversaciones ?? r.data?.items ?? []);
+    return { ok: true, data: lista };
+  },
   async crearCliente(payload, usuario) {
     const u = encodeURIComponent(usuario || api.usuario || '');
     return tryFetch(`/zeutica/clientenuevo/${u}`, { method: 'POST', body: JSON.stringify(payload) });

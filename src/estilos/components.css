@@ -501,3 +501,24 @@
   border-top: 2px solid #333;
   box-shadow: inset 0 10px 10px -10px rgba(0,0,0,0.5); /* Sombra interna para dar profundidad */
 }
+
+/* ===== Conversaciones Sofi ===== */
+.cs-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  min-height: 420px;
+}
+.cs-sesiones {
+  border-right: 1px solid var(--border);
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.cs-hilo {
+  padding: 16px;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+@media (max-width: 860px) {
+  .cs-layout { grid-template-columns: 1fr; }
+  .cs-sesiones { border-right: none; border-bottom: 1px solid var(--border); max-height: 240px; }
+}
