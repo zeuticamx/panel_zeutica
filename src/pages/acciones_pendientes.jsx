@@ -169,19 +169,13 @@ function PageAccionesPendientes({ user }) {
     await Promise.all([cargarEnProceso(), cargarLista()]);
   }, [recargarCola, cargarEnProceso, cargarLista]);
 
-  // Agrupar por nivel de prioridad. El nivel activo es el más urgente con tareas,
-  // contando también las que ya están 'en proceso' (esas salen de la cola, así que
-  // sin sumarlas se desbloquearía un nivel inferior antes de tiempo).
+  // Agrupar por nivel de prioridad — solo organiza visualmente. El usuario puede
+  // atender cualquier tarea propia sin importar el nivel de otras en cola o abiertas.
   const grupos = ap_uM(() => {
     const g = { 1: [], 2: [], 3: [] };
     misPendientes.forEach((p) => { g[apNivelNum(p)].push(p); });
     return g;
   }, [misPendientes]);
-  const nivelActivo = ap_uM(() => {
-    const niveles = AP_NIVELES.filter(n => grupos[n.num].length > 0).map(n => n.num);
-    enProceso.forEach((p) => niveles.push(apNivelNum(p)));
-    return niveles.length ? Math.min(...niveles) : null;
-  }, [grupos, enProceso]);
 
   // Atender una tarea elegida. El backend re-valida nivel y pertenencia (409/404).
   const atender = async (p) => {
@@ -230,7 +224,7 @@ function PageAccionesPendientes({ user }) {
       <div className="section-header">
         <div>
           <h2 className="section-title">Pendientes</h2>
-          <p className="section-subtitle">Puedes tener varias tareas abiertas del nivel más urgente; los niveles inferiores se desbloquean al terminarlo.</p>
+          <p className="section-subtitle">Elige cualquier tarea propia sin importar su prioridad; puedes tener varias abiertas a la vez.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {enProceso.length > 0 && (
@@ -316,31 +310,25 @@ function PageAccionesPendientes({ user }) {
           </div>
         )}
 
-        {/* Grupos por prioridad */}
+        {/* Grupos por prioridad — solo agrupan visualmente; todas las tarjetas
+            quedan habilitadas, el usuario elige libremente cuál atender. */}
         {!error && AP_NIVELES.map(({ num, label }) => {
           const tareas = grupos[num];
           if (!tareas || tareas.length === 0) return null;
-          const habilitado = num === nivelActivo;
-          const motivo = habilitado ? null : 'Primero atiende las tareas de prioridad superior';
           return (
             <section key={num} style={{ marginTop: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
                   {label} <span className="td-muted" style={{ fontWeight: 400 }}>({tareas.length})</span>
                 </h3>
-                {motivo && (
-                  <span className="td-muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Icon name="lock" size={11}/> {motivo}
-                  </span>
-                )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {tareas.map((p) => (
                   <TarjetaPendiente
                     key={p.id ?? p.actividad}
                     p={p}
-                    habilitada={habilitado}
-                    motivoBloqueo={motivo}
+                    habilitada={true}
+                    motivoBloqueo={null}
                     acting={acting}
                     onAtender={atender}
                   />
