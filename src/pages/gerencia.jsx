@@ -197,10 +197,19 @@ function DrawerJava({ onClose }) {
   );
 }
 
-const EMPTY_FORM = { usuario: 'ventas', actividad: '', prioridad: 'Media', estado: 'Pendiente', observaciones: '', fecha_promesa: '' };
+const EMPTY_FORM = { usuario: 'ventas', actividad: '', prioridad: 'Media', estado: 'Pendiente', observaciones: '', fecha_promesa: '', recurrencia: '' };
 const USUARIOS_PENDIENTE = ['fparra', 'ventas', 'gerencia'];
 const PRIO_OPTS   = ['Alta', 'Media', 'Baja'];
 const ESTADO_OPTS = ['Pendiente', 'En proceso', 'Completado', 'Cancelado'];
+// '' = no repite. Al cerrarla, api_java clona la siguiente instancia con esta
+// frecuencia (oculta hasta su fecha) — ver GestorPendientes.terminar().
+const RECURRENCIA_OPTS = [
+  { v: '', label: 'No repite' },
+  { v: 'diaria', label: 'Diaria' },
+  { v: 'semanal', label: 'Semanal' },
+  { v: 'quincenal', label: 'Quincenal' },
+  { v: 'mensual', label: 'Mensual' },
+];
 
 // Id real del pendiente para PATCH/DELETE (la ruta exige id_pendiente).
 const pendId = (row) => row?.id_pendiente ?? row?.id ?? null;
@@ -219,6 +228,7 @@ function formFromPendiente(p) {
     estado:        matchOpt(p.estado, ESTADO_OPTS, 'Pendiente'),
     observaciones: p.observaciones ?? '',
     fecha_promesa: toDateInput(p.fecha_promesa ?? p.fechaPromesa),
+    recurrencia:   p.recurrencia ?? '',
   };
 }
 
@@ -241,6 +251,30 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
       return;
     }
     setSaving(true);
+
+    // Alta con recurrencia: FastAPI no conoce esa columna, así que se crea
+    // directo en api_java (ya queda visible y sincronizado, sin recargar aparte).
+    if (!isEdit && form.recurrencia) {
+      const qs = new URLSearchParams({
+        usuario: form.usuario.trim(),
+        actividad: form.actividad.trim(),
+        prioridad: form.prioridad,
+        observaciones: form.observaciones.trim() || '',
+        fecha_promesa: form.fecha_promesa || '',
+        recurrencia: form.recurrencia,
+      });
+      const rJava = await javaFetch(`/api/pendientes/nueva?${qs}`, { method: 'POST' });
+      setSaving(false);
+      if (!rJava.ok) {
+        toast.error('Error al guardar', rJava.error || 'No se pudo conectar');
+        return;
+      }
+      toast.success('Pendiente agregado', form.actividad);
+      onSaved();
+      onClose();
+      return;
+    }
+
     const payload = {
       usuario:       form.usuario.trim(),
       actividad:     form.actividad.trim(),
@@ -259,6 +293,15 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
       toast.error(isEdit ? 'Error al actualizar' : 'Error al guardar', r.error || 'No se pudo conectar');
       return;
     }
+
+    // La recurrencia tampoco la conoce el PATCH de FastAPI: si cambió, se
+    // ajusta aparte con el endpoint dedicado de api_java.
+    if (isEdit && form.recurrencia !== (pendiente.recurrencia ?? '')) {
+      const idOriginal = pendId(pendiente);
+      const valor = form.recurrencia || '';
+      await javaFetch(`/api/pendientes/${idOriginal}/recurrencia?usuario=${encodeURIComponent(form.usuario.trim())}&valor=${encodeURIComponent(valor)}`, { method: 'POST' });
+    }
+
     const rRecarga = await javaFetch('/api/recargar', { method: 'POST' });
     setSaving(false);
     if (!rRecarga.ok) {
@@ -333,10 +376,23 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
             />
           </div>
 
-          <div className="field">
-            <label className="field-label">Fecha promesa</label>
-            <input className="input" type="date" value={form.fecha_promesa} onChange={e => set('fecha_promesa', e.target.value)}/>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field">
+              <label className="field-label">Fecha promesa</label>
+              <input className="input" type="date" value={form.fecha_promesa} onChange={e => set('fecha_promesa', e.target.value)}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Repetir</label>
+              <select className="input" value={form.recurrencia} onChange={e => set('recurrencia', e.target.value)}>
+                {RECURRENCIA_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+              </select>
+            </div>
           </div>
+          {form.recurrencia && (
+            <p style={{ margin: '-6px 0 0', fontSize: 12, color: 'var(--fg-2)' }}>
+              Al marcarla como atendida, se creará la siguiente ({RECURRENCIA_OPTS.find(o => o.v === form.recurrencia)?.label.toLowerCase()}), oculta hasta su fecha.
+            </p>
+          )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={saving}>Cancelar</button>

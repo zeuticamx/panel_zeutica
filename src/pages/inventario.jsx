@@ -116,7 +116,7 @@ function PageInventario({ user }) {
             <thead><tr>
               <th>SKU</th><th>Producto</th><th>Categoría</th>
               <th className="td-right">Stock</th><th className="td-right">Stock FBA</th><th className="td-right">Stock Clean</th><th className="td-right">Stock Total</th><th className="td-right">Mínimo</th>
-              <th className="td-right">Costo</th><th className="td-right">Precio</th><th></th>
+              <th className="td-right">Costo</th><th className="td-right">Precio</th><th className="td-right">Precio B</th><th className="td-right">Precio C</th><th></th>
             </tr></thead>
             <tbody>
               {loading ? (
@@ -140,6 +140,8 @@ function PageInventario({ user }) {
                       <td className="td-right td-muted mono">{p.stock_minimo}</td>
                       <td className="td-right mono">{window.fmt.mxn(p.costo_total)}</td>
                       <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(p.precio)}</td>
+                      <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(p.precio_2)}</td>
+                      <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(p.precio_3)}</td>
                       <td className="td-right" style={{ whiteSpace: 'nowrap' }}>
                         <button className="btn btn-ghost btn-sm btn-icon" title="Ver ubicaciones" onClick={() => toggleExpand(p.sku)}>
                           <Icon name={isExpanded ? 'chevUp' : 'chevDown'} size={13}/>
