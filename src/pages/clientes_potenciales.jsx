@@ -1,5 +1,5 @@
 // ===== Zeutica — Clientes Potenciales (solo lectura: consulta, búsqueda y export CSV) =====
-const { useState: cp_uS, useEffect: cp_uE, useMemo: cp_uM } = React;
+const { useState: cp_uS, useEffect: cp_uE, useMemo: cp_uM, useRef: cp_uR } = React;
 
 // Columnas dinámicas: el shape del backend puede variar, así que las derivamos
 // de la unión de llaves de todos los registros (orden de primera aparición).
@@ -71,30 +71,75 @@ function PageClientesPotenciales() {
   const [error, setError]     = cp_uS(null);
   const [busqueda, setBusqueda] = cp_uS('');
   const [filtroRevisado, setFiltroRevisado] = cp_uS('todos'); // 'todos' | 'true' | 'false'
-  const [guardando, setGuardando] = cp_uS({}); // { [id+col]: true }
   const [sincronizando, setSincronizando] = cp_uS(false);
+  const [version, setVersion] = cp_uS(0); // sube en cada recarga: remonta los inputs
 
-  const sincronizarNotas = async () => {
-    setSincronizando(true);
-    const r = await window.api.sincronizarNotasClientesPotenciales();
-    setSincronizando(false);
-    if (!r.ok) { toast.error('No se pudo sincronizar', r.error || ''); return; }
-    toast.success('Notas sincronizadas', '');
-    cargar();
+  // Los textos (NOTAS / CORREO ENCONTRADO) se guardan en un ref, NO en estado:
+  // un setState por tecleo re-renderiza la tabla completa y eso es lo que movía
+  // las columnas y el scroll. El ref no dispara render; los inputs quedan
+  // no controlados y conservan lo escrito. { [id]: { [columna]: texto } }
+  const borrador = cp_uR({});
+  // Snapshot de lo último cargado, para detectar qué filas cambiaron al sincronizar.
+  const originales = cp_uR({});
+
+  const editarTexto = (row, campo, valor) => {
+    const id = row?.id;
+    if (id == null) return;
+    borrador.current[id] = { ...(borrador.current[id] || {}), [campo]: valor };
   };
 
-  const guardarCampo = async (row, campo, valor) => {
+  // Valor a mostrar: lo tecleado (si existe) tiene prioridad sobre lo del servidor.
+  const valorEditable = (row, campo) => {
+    const pendiente = borrador.current[row?.id]?.[campo];
+    return pendiente !== undefined ? pendiente : cpValor(row?.[campo]);
+  };
+
+  // REVISADO sí va por estado porque el checkbox necesita reflejar el cambio.
+  const editarRevisado = (row, campo, valor) => {
     const id = row?.id;
-    if (id == null) { toast.error('Error', 'Registro sin id, no se puede guardar'); return; }
-    const clave = `${id}:${campo}`;
-    setGuardando((g) => ({ ...g, [clave]: true }));
-    const r = await window.api.actualizarClientePotencial(id, { [campo]: valor });
-    setGuardando((g) => { const n = { ...g }; delete n[clave]; return n; });
-    if (!r.ok) {
-      toast.error('No se pudo guardar', r.error || '');
+    if (id == null) return;
+    setLista((l) => l.map((it) => (it.id === id ? { ...it, [campo]: valor } : it)));
+  };
+
+  // Único disparo al backend. Dos llamadas por diseño del API: PATCH /{id} para
+  // revisado + correo_encontrado, y /notas-lote para las notas. Solo se envían
+  // las filas que cambiaron respecto a lo cargado — con 1000 registros mandarlas
+  // todas serían 1000 peticiones por cada clic.
+  const sincronizar = async () => {
+    const original = (id) => originales.current[id] || {};
+    const cambioGeneral = lista.filter((r) => {
+      if (r.id == null) return false;
+      const orig = original(r.id);
+      const revCambio = colRevisado && !!r[colRevisado] !== !!orig[colRevisado];
+      const correoCambio = colCorreo && valorEditable(r, colCorreo) !== cpValor(orig[colCorreo]);
+      return revCambio || correoCambio;
+    });
+    const cambioNotas = !colNotas ? [] : lista.filter(
+      (r) => r.id != null && valorEditable(r, colNotas) !== cpValor(original(r.id)[colNotas])
+    );
+
+    if (cambioGeneral.length === 0 && cambioNotas.length === 0) {
+      toast.success('Sin cambios por sincronizar', '');
       return;
     }
-    setLista((l) => l.map((it) => (it.id === id ? { ...it, [campo]: valor } : it)));
+
+    setSincronizando(true);
+    const [resGeneral, resNotas] = await Promise.all([
+      Promise.all(cambioGeneral.map((r) => window.api.actualizarClientePotencial(r.id, {
+        revisado: colRevisado ? !!r[colRevisado] : false,
+        correo_encontrado: colCorreo ? valorEditable(r, colCorreo) : '',
+      }))),
+      cambioNotas.length > 0
+        ? window.api.actualizarNotasClientesPotenciales(cambioNotas.map((r) => ({ id: r.id, notas: valorEditable(r, colNotas) })))
+        : Promise.resolve({ ok: true }),
+    ]);
+    setSincronizando(false);
+    if (resGeneral.some((r) => !r.ok) || !resNotas.ok) {
+      toast.error('No se pudo sincronizar', 'Revisa la conexión e intenta de nuevo');
+      return;
+    }
+    toast.success('Sincronizado', `${cambioGeneral.length + cambioNotas.length} cambio(s)`);
+    cargar();
   };
 
   const cargar = async () => {
@@ -107,20 +152,32 @@ function PageClientesPotenciales() {
       setLista([]);
       return;
     }
+    // Recargar descarta lo tecleado sin sincronizar. Los inputs son no controlados,
+    // así que hay que forzar su remontaje para que tomen los valores del servidor.
+    borrador.current = {};
+    originales.current = Object.fromEntries(r.data.filter((it) => it?.id != null).map((it) => [it.id, it]));
+    setVersion((v) => v + 1);
     setLista(r.data);
   };
 
   cp_uE(() => { cargar(); }, []);
 
+  // Firma = llaves presentes, no los valores: marcar un checkbox no debe recalcular
+  // las columnas. NOTAS se reubica siempre justo antes de CORREO ENCONTRADO,
+  // exista o no en los datos, para que su posición nunca dependa del orden que
+  // devuelva el backend ni de qué filas se hayan editado.
+  const firmaColumnas = lista.map((r) => Object.keys(r || {}).join('|')).join(';');
   const columnas = cp_uM(() => {
     const cols = cpColumnas(lista);
-    if (!cols.some(cpEsNotas)) {
-      const idx = cols.findIndex(cpEsCorreo);
-      idx === -1 ? cols.push(CP_COL_NOTAS) : cols.splice(idx, 0, CP_COL_NOTAS);
-    }
-    return cols;
-  }, [lista]);
+    const llaveNotas = cols.find(cpEsNotas) ?? CP_COL_NOTAS;
+    const resto = cols.filter((c) => !cpEsNotas(c));
+    const idx = resto.findIndex(cpEsCorreo);
+    idx === -1 ? resto.push(llaveNotas) : resto.splice(idx, 0, llaveNotas);
+    return resto;
+  }, [firmaColumnas]);
   const colRevisado = cp_uM(() => columnas.find(cpEsRevisado), [columnas]);
+  const colCorreo = cp_uM(() => columnas.find(cpEsCorreo), [columnas]);
+  const colNotas = cp_uM(() => columnas.find(cpEsNotas), [columnas]);
 
   // Búsqueda libre sobre todos los campos (case-insensitive) + filtro por REVISADO.
   const filtrados = cp_uM(() => {
@@ -145,7 +202,7 @@ function PageClientesPotenciales() {
           <button className="btn btn-ghost btn-sm" onClick={cargar} disabled={loading}>
             <Icon name="refresh" size={13} style={loading ? { animation: 'spin 1s linear infinite' } : undefined}/> Actualizar
           </button>
-          <button className="btn btn-secondary btn-sm" onClick={sincronizarNotas} disabled={sincronizando}>
+          <button className="btn btn-secondary btn-sm" onClick={sincronizar} disabled={sincronizando || lista.length === 0}>
             <Icon name="refresh-cw" size={13} style={sincronizando ? { animation: 'spin 1s linear infinite' } : undefined}/> SINCRONIZAR
           </button>
           <button
@@ -207,17 +264,16 @@ function PageClientesPotenciales() {
               ) : filtrados.length === 0 ? (
                 <tr><td colSpan={columnas.length || 1} className="empty">{busqueda ? `Sin resultados para "${busqueda}"` : 'Sin clientes potenciales registrados'}</td></tr>
               ) : filtrados.map((row, i) => (
-                <tr key={row.id ?? i}>
+                <tr key={`${version}:${row.id ?? i}`}>
                   {columnas.map((c) => {
-                    const clave = `${row.id}:${c}`;
                     if (cpEsRevisado(c)) {
                       return (
                         <td key={c} style={{ ...cpStickyDerTd, fontSize: 13, textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={!!row?.[c]}
-                            disabled={row.id == null || !!guardando[clave]}
-                            onChange={(e) => guardarCampo(row, c, e.target.checked)}
+                            disabled={row.id == null}
+                            onChange={(e) => editarRevisado(row, c, e.target.checked)}
                           />
                         </td>
                       );
@@ -228,12 +284,9 @@ function PageClientesPotenciales() {
                           <input
                             className="input"
                             style={{ fontSize: 13, padding: '4px 8px', minWidth: 200 }}
-                            defaultValue={cpValor(row?.[c])}
-                            disabled={row.id == null || !!guardando[clave]}
-                            onBlur={(e) => {
-                              const val = e.target.value;
-                              if (val !== cpValor(row?.[c])) guardarCampo(row, c, val);
-                            }}
+                            defaultValue={valorEditable(row, c)}
+                            disabled={row.id == null}
+                            onChange={(e) => editarTexto(row, c, e.target.value)}
                           />
                         </td>
                       );

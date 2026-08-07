@@ -193,10 +193,11 @@ const api = {
     return { ok: true, data: lista };
   },
   async actualizarClientePotencial(id, payload) {
-    return tryFetch(`/zeutica/clientes-potenciales/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    return tryFetch(`/zeutica/clientes-potenciales/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ id, ...payload }) });
   },
-  async sincronizarNotasClientesPotenciales() {
-    return tryFetch('/zeutica/clientes-potenciales/notas', { method: 'PATCH' });
+  // Lote: [{ id, notas }, ...]
+  async actualizarNotasClientesPotenciales(lote) {
+    return tryFetch('/zeutica/clientes-potenciales/notas-lote', { method: 'PATCH', body: JSON.stringify(lote) });
   },
   // Historial del agente Sofi: { conversaciones: [{ session_id, message: "<json string>" }] }
   async conversacionesSofi() {
