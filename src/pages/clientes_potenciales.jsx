@@ -56,7 +56,12 @@ const CP_COL_REVISADO = 'REVISADO';
 const cpEsNotas = (c) => cpNorm(c) === CP_COL_NOTAS;
 const cpEsCorreo = (c) => cpNorm(c) === CP_COL_CORREO;
 const cpEsRevisado = (c) => cpNorm(c) === CP_COL_REVISADO;
+const CP_COL_DESCARTADO = 'DESCARTADO';
+const cpEsDescartado = (c) => cpNorm(c) === CP_COL_DESCARTADO;
+const cpEsCheckbox = (c) => cpEsRevisado(c) || cpEsDescartado(c);
 const cpEsTextoLibre = (c) => cpEsNotas(c) || cpEsCorreo(c);
+const CP_COL_PRODUCTO = 'PRODUCTO';
+const cpEsProducto = (c) => cpNorm(c) === CP_COL_PRODUCTO;
 
 // REVISADO se ancla al borde derecho de la tabla (checkbox de uso frecuente,
 // no debe quedar oculto por el scroll horizontal de las columnas de texto).
@@ -111,8 +116,9 @@ function PageClientesPotenciales() {
       if (r.id == null) return false;
       const orig = original(r.id);
       const revCambio = colRevisado && !!r[colRevisado] !== !!orig[colRevisado];
+      const descartadoCambio = colDescartado && !!r[colDescartado] !== !!orig[colDescartado];
       const correoCambio = colCorreo && valorEditable(r, colCorreo) !== cpValor(orig[colCorreo]);
-      return revCambio || correoCambio;
+      return revCambio || descartadoCambio || correoCambio;
     });
     const cambioNotas = !colNotas ? [] : lista.filter(
       (r) => r.id != null && valorEditable(r, colNotas) !== cpValor(original(r.id)[colNotas])
@@ -127,6 +133,7 @@ function PageClientesPotenciales() {
     const [resGeneral, resNotas] = await Promise.all([
       Promise.all(cambioGeneral.map((r) => window.api.actualizarClientePotencial(r.id, {
         revisado: colRevisado ? !!r[colRevisado] : false,
+        descartado: colDescartado ? !!r[colDescartado] : false,
         correo_encontrado: colCorreo ? valorEditable(r, colCorreo) : '',
       }))),
       cambioNotas.length > 0
@@ -175,7 +182,11 @@ function PageClientesPotenciales() {
     idx === -1 ? resto.push(llaveNotas) : resto.splice(idx, 0, llaveNotas);
     return resto;
   }, [firmaColumnas]);
+  // 'producto' se excluye solo de la vista en pantalla (thead/tbody);
+  // sigue en `columnas` para el CSV y la lógica de sincronización.
+  const columnasVisibles = cp_uM(() => columnas.filter((c) => !cpEsProducto(c)), [columnas]);
   const colRevisado = cp_uM(() => columnas.find(cpEsRevisado), [columnas]);
+  const colDescartado = cp_uM(() => columnas.find(cpEsDescartado), [columnas]);
   const colCorreo = cp_uM(() => columnas.find(cpEsCorreo), [columnas]);
   const colNotas = cp_uM(() => columnas.find(cpEsNotas), [columnas]);
 
@@ -252,23 +263,23 @@ function PageClientesPotenciales() {
         <div className="table-wrap" style={{ overflowX: 'auto' }}>
           <table className="table">
             <thead>
-              <tr>{columnas.map((c) => (
+              <tr>{columnasVisibles.map((c) => (
                 <th key={c} style={cpEsRevisado(c) ? cpStickyDer : undefined}>{cpEtiqueta(c)}</th>
               ))}</tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={columnas.length || 1} className="empty">Cargando clientes potenciales…</td></tr>
+                <tr><td colSpan={columnasVisibles.length || 1} className="empty">Cargando clientes potenciales…</td></tr>
               ) : error ? (
-                <tr><td colSpan={columnas.length || 1} className="empty" style={{ color: 'var(--danger)' }}>{error}</td></tr>
+                <tr><td colSpan={columnasVisibles.length || 1} className="empty" style={{ color: 'var(--danger)' }}>{error}</td></tr>
               ) : filtrados.length === 0 ? (
-                <tr><td colSpan={columnas.length || 1} className="empty">{busqueda ? `Sin resultados para "${busqueda}"` : 'Sin clientes potenciales registrados'}</td></tr>
+                <tr><td colSpan={columnasVisibles.length || 1} className="empty">{busqueda ? `Sin resultados para "${busqueda}"` : 'Sin clientes potenciales registrados'}</td></tr>
               ) : filtrados.map((row, i) => (
                 <tr key={`${version}:${row.id ?? i}`}>
-                  {columnas.map((c) => {
-                    if (cpEsRevisado(c)) {
+                  {columnasVisibles.map((c) => {
+                    if (cpEsCheckbox(c)) {
                       return (
-                        <td key={c} style={{ ...cpStickyDerTd, fontSize: 13, textAlign: 'center' }}>
+                        <td key={c} style={{ ...(cpEsRevisado(c) ? cpStickyDerTd : {}), fontSize: 13, textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={!!row?.[c]}

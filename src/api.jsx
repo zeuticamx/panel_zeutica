@@ -464,6 +464,53 @@ const api = {
   async cambiarPassword(usuario, password_nueva) {
     return tryFetch('/zeutica/cambio-passw', { method: 'PUT', body: JSON.stringify({ usuario, password_nueva }) });
   },
+
+  // ---- Rastreo de Importaciones (embarques) ----
+  async embarques({ proveedor, numeroContenedor, conForwarder, salioDeChina } = {}) {
+    const params = new URLSearchParams();
+    if (proveedor) params.set('proveedor', proveedor);
+    if (numeroContenedor) params.set('numero_contenedor', numeroContenedor);
+    if (conForwarder !== undefined && conForwarder !== null) params.set('con_forwarder', conForwarder);
+    if (salioDeChina !== undefined && salioDeChina !== null) params.set('salio_de_china', salioDeChina);
+    const qs = params.toString();
+    const r = await tryFetch(`/zeutica/embarques${qs ? '?' + qs : ''}`);
+    return r.ok ? r.data : [];
+  },
+  async embarqueDetalle(id) {
+    const r = await tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`);
+    return r.ok ? r.data : null;
+  },
+  async crearEmbarque(payload) {
+    return tryFetch('/zeutica/embarques', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // payload es la cabecera completa (numero_contenedor, invoice_orders, proveedor,
+  // llegada_manzanillo_tentativa, fecha_llegada_real, fecha_de_recibido, usuario).
+  async editarEmbarqueCabecera(id, payload) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async eliminarEmbarque(id) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  // tipo: 'ANTICIPO_CHINA' | 'LIQUIDADO_CHINA' | 'HL_LIQUIDADA'
+  async marcarEtapaEmbarque(id, tipo, payload) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}/etapas/${tipo}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  // tipo: 'CON_FORWARDER' | 'SALIO_DE_CHINA'
+  async marcarEstatusEmbarque(id, tipo, payload) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}/estatus/${tipo}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  // { valor, fecha } — tipo de cambio USD/MXN del dia (Banxico, con cache diaria en backend)
+  async tipoCambioHoy() {
+    const r = await tryFetch('/zeutica/tipo-cambio/hoy');
+    return r.ok ? r.data : null;
+  },
+  // { valor, fecha } — tipo de cambio USD/MXN de referencia para una fecha especifica
+  // (o el dato disponible mas reciente antes de esa fecha). Solo para previsualizar
+  // en el formulario; el backend nunca lo usa para calcular montos.
+  async tipoCambioFecha(fecha) {
+    const r = await tryFetch(`/zeutica/tipo-cambio/${encodeURIComponent(fecha)}`);
+    return r.ok ? r.data : null;
+  },
 };
 
 window.api = api;

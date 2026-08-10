@@ -225,6 +225,7 @@ function App() {
     reportes:     window.PageReportes,
     full:         window.PageFull,    
     gastos:       window.PageGastos,
+    embarques:    window.PageEmbarques,
     //pendientes:   window.PagePendientes,
     cleanest:     window.PageCleanest,
     compras:      window.PageCompras,
