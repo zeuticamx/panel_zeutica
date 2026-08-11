@@ -1,7 +1,7 @@
 // ===== Zeutica — Rastreo de Importaciones: Lista de Embarques =====
 const { useState: el_uS, useEffect: el_uE, useMemo: el_uM } = React;
 
-function EmbarquesList({ onSelect, onNew, reloadToken }) {
+function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
   const [embarques, setEmbarques] = el_uS([]);
@@ -25,9 +25,9 @@ function EmbarquesList({ onSelect, onNew, reloadToken }) {
   el_uE(() => { cargar(); }, [proveedor, conForwarder, salioDeChina, reloadToken]);
 
   const eliminar = async (e) => {
-    const r = await window.api.eliminarEmbarque(e.id);
+    const r = await window.api.eliminarEmbarque(e.id, window.api.usuario);
     if (!r.ok) { toast.error('No se pudo eliminar', r.error || 'Verifica conexión con el servidor'); return; }
-    toast.success('Embarque eliminado', e.numero_contenedor || e.invoice_orders);
+    toast.success('Embarque eliminado', (e.contenedores || []).join(', ') || e.invoice_orders);
     cargar();
   };
 
@@ -43,9 +43,11 @@ function EmbarquesList({ onSelect, onNew, reloadToken }) {
           <h2 className="section-title">Rastreo de Importaciones</h2>
           <p className="section-subtitle">Embarques en tránsito desde China y su avance de liquidación.</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={onNew}>
-          <Icon name="plus" size={13}/> Nuevo embarque
-        </button>
+        {esGerencia && (
+          <button className="btn btn-primary btn-sm" onClick={onNew}>
+            <Icon name="plus" size={13}/> Nuevo embarque
+          </button>
+        )}
       </div>
 
       <div className="dash-kpis">
@@ -79,7 +81,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken }) {
           <table className="table">
             <thead>
               <tr>
-                <th>Contenedor</th><th>Invoice</th><th>Proveedor</th>
+                <th>Contenedores</th><th>Invoice</th><th>Proveedores</th>
                 <th className="td-right">SKUs</th><th>Con forwarder</th><th>Salió de China</th>
                 <th>Llegada tent.</th><th></th>
               </tr>
@@ -104,21 +106,23 @@ function EmbarquesList({ onSelect, onNew, reloadToken }) {
                 </td></tr>
               ) : embarques.map(e => (
                 <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => onSelect(e.id)}>
-                  <td className="mono" style={{ fontWeight: 500 }}>{e.numero_contenedor || '—'}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{(e.contenedores || []).length > 0 ? e.contenedores.join(', ') : '—'}</td>
                   <td className="mono td-muted" style={{ fontSize: 12 }}>{e.invoice_orders}</td>
-                  <td>{e.proveedor || '—'}</td>
+                  <td style={{ fontSize: 12 }}>{(e.proveedores || []).length > 0 ? e.proveedores.join(', ') : '—'}</td>
                   <td className="td-right mono">{e.items_count ?? 0}</td>
-                  <td><span className={`badge badge-${e.con_forwarder ? 'success' : 'info'}`}><span className="badge-dot"/>{e.con_forwarder ? 'Activo' : 'Inactivo'}</span></td>
-                  <td><span className={`badge badge-${e.salio_de_china ? 'success' : 'info'}`}><span className="badge-dot"/>{e.salio_de_china ? 'Activo' : 'Inactivo'}</span></td>
+                  <td><span className={`badge badge-${e.con_forwarder ? 'success' : 'info'}`}><span className="badge-dot"/>{e.con_forwarder ? 'Concluido' : 'Pendiente'}</span></td>
+                  <td><span className={`badge badge-${e.salio_de_china ? 'success' : 'info'}`}><span className="badge-dot"/>{e.salio_de_china ? 'Concluido' : 'Pendiente'}</span></td>
                   <td>{e.llegada_manzanillo_tentativa ? window.fmt.date(e.llegada_manzanillo_tentativa) : '—'}</td>
                   <td className="td-right" onClick={ev => ev.stopPropagation()}>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      title="Eliminar embarque"
-                      onClick={() => askConfirm(`¿Eliminar el embarque ${e.numero_contenedor || e.invoice_orders}? Esta acción no se puede deshacer.`, () => eliminar(e))}
-                    >
-                      <Icon name="trash" size={13}/>
-                    </button>
+                    {esGerencia && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Eliminar embarque"
+                        onClick={() => askConfirm(`¿Eliminar el embarque ${(e.contenedores || []).join(', ') || e.invoice_orders}? Esta acción no se puede deshacer.`, () => eliminar(e))}
+                      >
+                        <Icon name="trash" size={13}/>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

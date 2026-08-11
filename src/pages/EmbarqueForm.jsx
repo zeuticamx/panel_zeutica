@@ -17,13 +17,13 @@ const embarqueItemVacio = () => ({ sku: '', qty: 1, cbm: '', pct_contenedor: '' 
 
 function EmbarqueForm({ onSaved, onCancel }) {
   const toast = window.useToast();
-  const [numeroContenedor, setNumeroContenedor] = ef_uS('');
+  const [contenedores, setContenedores] = ef_uS(['']);
   const [invoiceOrders, setInvoiceOrders] = ef_uS('');
-  const [proveedor, setProveedor] = ef_uS('');
+  const [proveedores, setProveedores] = ef_uS(['']);
   const [llegadaTentativa, setLlegadaTentativa] = ef_uS('');
   const [items, setItems] = ef_uS([embarqueItemVacio()]);
   const [etapas, setEtapas] = ef_uS(() => Object.fromEntries(
-    EMBARQUE_ETAPAS.map(e => [e.tipo, { activo: false, fechaPago: '', montoMxn: '', nota: '', tipoCambioReferencia: null, cargando: false }])
+    EMBARQUE_ETAPAS.map(e => [e.tipo, { activo: false, nota: '' }])
   ));
   const [estatus, setEstatus] = ef_uS(() => Object.fromEntries(
     EMBARQUE_ESTATUS.map(e => [e.tipo, { activo: false, fecha: embarqueHoyISO() }])
@@ -33,44 +33,33 @@ function EmbarqueForm({ onSaved, onCancel }) {
 
   ef_uE(() => { (async () => setProductos(await window.api.productos()))(); }, []);
 
+  const actualizarContenedor = (idx, valor) => setContenedores(prev => prev.map((c, i) => i === idx ? valor : c));
+  const agregarContenedor = () => setContenedores(prev => [...prev, '']);
+  const quitarContenedor = (idx) => setContenedores(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
+
+  const actualizarProveedor = (idx, valor) => setProveedores(prev => prev.map((p, i) => i === idx ? valor : p));
+  const agregarProveedor = () => setProveedores(prev => [...prev, '']);
+  const quitarProveedor = (idx) => setProveedores(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
+
   const actualizarItem = (idx, campo, valor) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, [campo]: valor } : it));
   const agregarItem = () => setItems(prev => [...prev, embarqueItemVacio()]);
   const quitarItem = (idx) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
 
-  // El tipo de cambio es solo de referencia/auditoria de la fecha de pago:
-  // se previsualiza al elegir la fecha, pero nunca se usa para calcular el monto.
-  const actualizarFechaPagoEtapa = async (tipo, fecha) => {
-    setEtapas(prev => ({ ...prev, [tipo]: { ...prev[tipo], fechaPago: fecha, cargando: !!fecha } }));
-    if (!fecha) { setEtapas(prev => ({ ...prev, [tipo]: { ...prev[tipo], tipoCambioReferencia: null } })); return; }
-    const tc = await window.api.tipoCambioFecha(fecha);
-    setEtapas(prev => ({ ...prev, [tipo]: { ...prev[tipo], cargando: false, tipoCambioReferencia: tc ? tc.valor : null } }));
-    if (!tc) toast.warn('Tipo de cambio de referencia no disponible', 'Verifica BANXICO_API_TOKEN en el backend; puedes guardar y ajustarlo después');
-  };
-
   const toggleEtapa = (tipo, activo) => {
     setEtapas(prev => ({ ...prev, [tipo]: { ...prev[tipo], activo } }));
-    if (activo && !etapas[tipo].fechaPago) actualizarFechaPagoEtapa(tipo, embarqueHoyISO());
   };
 
   const toggleEstatus = (tipo, activo) => setEstatus(prev => ({ ...prev, [tipo]: { ...prev[tipo], activo } }));
 
   const guardar = async () => {
     if (!invoiceOrders.trim()) { toast.error('Falta invoice', 'El número de invoice es obligatorio'); return; }
-    const etapaIncompleta = EMBARQUE_ETAPAS.find(e => {
-      const st = etapas[e.tipo];
-      return st.activo && (!st.fechaPago || !st.montoMxn || Number(st.montoMxn) <= 0);
-    });
-    if (etapaIncompleta) {
-      toast.error('Etapa incompleta', `"${etapaIncompleta.label}" necesita fecha de pago y monto en MXN mayor a 0`);
-      return;
-    }
     const itemsValidos = items.filter(it => it.sku.trim());
     setSubmitting(true);
 
     const payload = {
-      numero_contenedor: numeroContenedor.trim() || null,
+      contenedores: contenedores.filter(c => c.trim()),
       invoice_orders: invoiceOrders.trim(),
-      proveedor: proveedor.trim() || null,
+      proveedores: proveedores.filter(p => p.trim()),
       llegada_manzanillo_tentativa: llegadaTentativa || null,
       usuario: window.api.usuario || 'sistema',
       items: itemsValidos.map(it => ({
@@ -88,9 +77,6 @@ function EmbarqueForm({ onSaved, onCancel }) {
       return;
     }
 
-    // El embarque ya quedo creado (cabecera + items). Las etapas/estatus activados
-    // en el formulario se persisten con un PATCH individual por cada una, ya que
-    // POST /embarques solo acepta cabecera + items.
     const embarqueId = r.data.id;
     const usuario = window.api.usuario || 'sistema';
     const fallos = [];
@@ -99,8 +85,6 @@ function EmbarqueForm({ onSaved, onCancel }) {
       if (!etapas[e.tipo].activo) continue;
       const pr = await window.api.marcarEtapaEmbarque(embarqueId, e.tipo, {
         completado: true,
-        fecha_pago: etapas[e.tipo].fechaPago,
-        monto_mxn: Number(etapas[e.tipo].montoMxn),
         nota: etapas[e.tipo].nota.trim() || null,
         usuario,
       });
@@ -135,16 +119,56 @@ function EmbarqueForm({ onSaved, onCancel }) {
       <div className="card">
         <div className="card-header"><h3 className="card-title">Datos del embarque</h3></div>
         <div className="card-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 1fr', gap: 12 }}>
-            <div className="field"><label className="field-label">Contenedor</label>
-              <input className="input" value={numeroContenedor} onChange={e => setNumeroContenedor(e.target.value)} placeholder="MSCU1234567"/></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div className="field"><label className="field-label">Invoice *</label>
               <input className="input" value={invoiceOrders} onChange={e => setInvoiceOrders(e.target.value)} placeholder="INV-2026-001"/></div>
-            <div className="field"><label className="field-label">Proveedor</label>
-              <input className="input" value={proveedor} onChange={e => setProveedor(e.target.value)} placeholder="Nombre del proveedor"/></div>
             <div className="field"><label className="field-label">Llegada tentativa (Manzanillo)</label>
               <input className="input" type="date" value={llegadaTentativa} onChange={e => setLlegadaTentativa(e.target.value)}/></div>
           </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header" style={{ gap: 12 }}>
+          <h3 className="card-title">Contenedores</h3>
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={agregarContenedor}>
+            <Icon name="plus" size={13}/> Agregar fila
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Número de contenedor</th><th></th></tr></thead>
+            <tbody>
+              {contenedores.map((c, idx) => (
+                <tr key={idx}>
+                  <td><input className="input" value={c} onChange={e => actualizarContenedor(idx, e.target.value)} placeholder="MSCU1234567"/></td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => quitarContenedor(idx)} disabled={contenedores.length === 1}><Icon name="trash" size={13}/></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header" style={{ gap: 12 }}>
+          <h3 className="card-title">Proveedores</h3>
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={agregarProveedor}>
+            <Icon name="plus" size={13}/> Agregar fila
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Nombre del proveedor</th><th></th></tr></thead>
+            <tbody>
+              {proveedores.map((p, idx) => (
+                <tr key={idx}>
+                  <td><input className="input" value={p} onChange={e => actualizarProveedor(idx, e.target.value)} placeholder="Nombre del proveedor"/></td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => quitarProveedor(idx)} disabled={proveedores.length === 1}><Icon name="trash" size={13}/></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -190,29 +214,14 @@ function EmbarqueForm({ onSaved, onCancel }) {
                   {e.label}
                 </label>
                 {st.activo && (
-                  <>
-                    <div className="field" style={{ margin: 0 }}>
-                      <label className="field-label">Fecha de pago</label>
-                      <input className="input mono" type="date" max={embarqueHoyISO()} value={st.fechaPago} onChange={ev => actualizarFechaPagoEtapa(e.tipo, ev.target.value)}/>
-                    </div>
-                    <div className="field" style={{ margin: 0 }}>
-                      <label className="field-label">Monto (MXN)</label>
-                      <input className="input mono" type="number" min="0.01" step="0.01" value={st.montoMxn} onChange={ev => setEtapas(prev => ({ ...prev, [e.tipo]: { ...prev[e.tipo], montoMxn: ev.target.value } }))} placeholder="0.00"/>
-                    </div>
-                    <div className="field" style={{ margin: 0 }}>
-                      <label className="field-label">Tipo de cambio (ref. {st.fechaPago || '—'})</label>
-                      <input className="input mono" value={st.cargando ? 'Cargando...' : (st.tipoCambioReferencia != null ? `$${Number(st.tipoCambioReferencia).toFixed(4)} MXN/USD` : '—')} readOnly disabled/>
-                    </div>
-                    <div className="field" style={{ margin: 0 }}>
-                      <label className="field-label">Nota (opcional)</label>
-                      <input className="input" value={st.nota} onChange={ev => setEtapas(prev => ({ ...prev, [e.tipo]: { ...prev[e.tipo], nota: ev.target.value } }))} placeholder="70% pago inicial"/>
-                    </div>
-                  </>
+                  <div className="field" style={{ margin: 0 }}>
+                    <label className="field-label">Porcentaje Liquidado</label>
+                    <input className="input" value={st.nota} onChange={ev => setEtapas(prev => ({ ...prev, [e.tipo]: { ...prev[e.tipo], nota: ev.target.value } }))} placeholder="%"/>
+                  </div>
                 )}
               </div>
             );
           })}
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-3)' }}>El monto se captura tal cual en pesos, sin conversión. El tipo de cambio de la fecha de pago se guarda solo como referencia/auditoría.</p>
         </div>
       </div>
 
@@ -234,7 +243,7 @@ function EmbarqueForm({ onSaved, onCancel }) {
                   </div>
                 )}
                 <span className={`badge badge-${st.activo ? 'success' : 'info'}`} style={{ marginLeft: 'auto' }}>
-                  <span className="badge-dot"/>{st.activo ? 'Activo' : 'Inactivo'}
+                  <span className="badge-dot"/>{st.activo ? 'Concluido' : 'Pendiente'}
                 </span>
               </div>
             );
@@ -243,7 +252,7 @@ function EmbarqueForm({ onSaved, onCancel }) {
         <div className="card-footer">
           <button className="btn btn-secondary btn-sm" onClick={onCancel} disabled={submitting}>Cancelar</button>
           <button className="btn btn-primary btn-sm" onClick={guardar} disabled={submitting}>
-            {submitting ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar embarque</>}
+            {submitting ? <span><span className="spinner"/> Guardando...</span> : <span><Icon name="check" size={13}/> Guardar embarque</span>}
           </button>
         </div>
       </div>
@@ -251,9 +260,6 @@ function EmbarqueForm({ onSaved, onCancel }) {
   );
 }
 
-// Se comparten via window (no como "const" de nivel superior) porque todos los
-// archivos de src/pages/ corren en el mismo scope global de scripts <script>;
-// redeclarar el mismo identificador "const" en otro archivo rompe con SyntaxError.
 window.EMBARQUE_ETAPAS = EMBARQUE_ETAPAS;
 window.EMBARQUE_ESTATUS = EMBARQUE_ESTATUS;
 window.EmbarqueForm = EmbarqueForm;

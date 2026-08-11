@@ -488,8 +488,9 @@ const api = {
   async editarEmbarqueCabecera(id, payload) {
     return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
   },
-  async eliminarEmbarque(id) {
-    return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  async eliminarEmbarque(id, usuario) {
+    const u = encodeURIComponent(usuario || api.usuario || 'sistema');
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}?usuario=${u}`, { method: 'DELETE' });
   },
   // tipo: 'ANTICIPO_CHINA' | 'LIQUIDADO_CHINA' | 'HL_LIQUIDADA'
   async marcarEtapaEmbarque(id, tipo, payload) {
