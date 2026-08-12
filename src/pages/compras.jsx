@@ -360,7 +360,7 @@ function PageCompras() {
         <div className="card-header"><h3 className="card-title">Historial de compras</h3></div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>SKU</th><th>Nombre</th><th className="td-right">Cant</th><th className="td-right">Costo unit.</th><th>Factura</th><th>Proveedor</th><th className="td-right">Total c/IVA</th></tr></thead>
+            <thead><tr><th>SKU</th><th>Nombre</th><th className="td-right">Cant</th><th className="td-right">Costo unit.</th><th>Factura</th><th>Fecha</th><th>Proveedor</th><th className="td-right">Total c/IVA</th></tr></thead>
             <tbody>
               {compras.map(c => (
                 <tr key={c.id}>
@@ -369,6 +369,7 @@ function PageCompras() {
                   <td className="td-right mono">{c.stock_bodega}</td>
                   <td className="td-right mono">{window.fmt.mxn(c.costo_total)}</td>
                   <td className="mono td-muted">{c.num_factura}</td>
+                  <td>{c.fecha_registro ? window.fmt.date(c.fecha_registro) : '-'}</td>
                   <td>{c.proveedor}</td>
                   <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(c.total)}</td>
                 </tr>

@@ -354,7 +354,7 @@ function PageCotizaciones({ user }) {
   const [precioManual, setPrecioManual] = rp_uS(0);
   const [items, setItems] = rp_uS([]);
   const [descuento, setDescuento] = rp_uS(0);
-  const [incluirEnvio, setIncluirEnvio] = rp_uS(true);
+  const [tipoEnvio, setTipoEnvio] = rp_uS('base'); // 'ninguno' | 'base' | 'base2'
   const [formaPago, setFormaPago] = rp_uS(COT_FORMAS_PAGO[0]);
   const [metodoPago, setMetodoPago] = rp_uS(METODO_PAGO[0]);
   const [comentario, setComentario] = rp_uS(COT_COMENTARIOS[0]);
@@ -429,7 +429,8 @@ function PageCotizaciones({ user }) {
   const descuentoMonto   = subtotalOriginal * (descuento / 100);
   const subtotalDesc     = subtotalOriginal - descuentoMonto;
   const envioBase        = (subtotalDesc * 1.16) > (7000 * 1.16) ? 0 : 250;
-  const costoEnvio       = incluirEnvio ? envioBase : 0;
+  const envioBase2        = (subtotalDesc * 1.16) > (7000 * 1.16) ? 0 : 150;
+  const costoEnvio       = tipoEnvio === 'base' ? envioBase : tipoEnvio === 'base2' ? envioBase2 : 0;
   const baseIva          = subtotalDesc + costoEnvio;
   const iva              = baseIva * 0.16;
   const totalFinal       = baseIva + iva;
@@ -451,7 +452,7 @@ function PageCotizaciones({ user }) {
     setShowForm(false); setItems([]); setDescuento(0);
     setSelectedCliente(''); setFormaPago(COT_FORMAS_PAGO[0]); setMetodoPago(METODO_PAGO[0]);
     setComentario(COT_COMENTARIOS[0]); setComentarioCustom('');
-    setIncluirEnvio(true);
+    setTipoEnvio('base');
   };
 
   const guardar = async () => {
@@ -835,12 +836,23 @@ function PageCotizaciones({ user }) {
                       <span className="mono">-{window.fmt.mxn(descuentoMonto)}</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: 'var(--fg-2)', userSelect: 'none' }}>
-                      <input type="checkbox" checked={incluirEnvio} onChange={e => setIncluirEnvio(e.target.checked)}/>
-                      Envío{envioBase === 0 ? ' (gratis)' : ''}
-                    </label>
-                    <span className="mono">{window.fmt.mxn(costoEnvio)}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--fg-2)' }}>Envío{envioBase === 0 ? ' (gratis)' : ''}</span>
+                      <span className="mono">{window.fmt.mxn(costoEnvio)}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {[
+                        ['ninguno', 'Sin envío'],
+                        ['base', `Envío estándar${envioBase === 0 ? ' (gratis)' : ` (${window.fmt.mxn(250)})`}`],
+                        ['base2', `Envío económico${envioBase2 === 0 ? ' (gratis)' : ` (${window.fmt.mxn(150)})`}`],
+                      ].map(([k, label]) => (
+                        <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: 'var(--fg-2)', userSelect: 'none', fontSize: 12 }}>
+                          <input type="radio" name="tipoEnvio" checked={tipoEnvio === k} onChange={() => setTipoEnvio(k)}/>
+                          {label}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--fg-2)' }}>IVA (16%)</span>

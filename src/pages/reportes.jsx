@@ -37,19 +37,19 @@ function PageReportes() {
 
   const byUser = rp_uM(() => {
     const m = {};
-    filtered.forEach(v => { m[v.usuario] = (m[v.usuario] || 0) + (v.cantidad * v.precio); });
+    filtered.forEach(v => { m[v.usuario] = (m[v.usuario] || 0) + (Number(v.total) || 0); });
     return Object.entries(m).map(([label, value]) => ({ label, value, color: 'var(--c1)' }));
   }, [filtered]);
 
-  const totalMonto   = rp_uM(() => filtered.reduce((s, v) => s + v.cantidad * v.precio, 0), [filtered]);
+  const totalMonto = rp_uM(() => filtered.reduce((s, v) => s + (Number(v.total) || 0), 0), [filtered]);
   const plataformas  = rp_uM(() => new Set(filtered.map(v => v.plataforma)).size, [filtered]);
 
   const descargarCSV = () => {
-    const header = ['ID','Fecha','Producto','Cliente','Plataforma','Pago','Vendedor','Cantidad','Precio','Total'];
+    const header = ['ID','SKU','Fecha','Producto','Cliente','Plataforma','Pago','Vendedor','Cantidad','Precio','Total'];
     const rows = filtered.map(v => [
-      v.id_venta, v.fecha, v.producto, v.nombreComprador,
+      v.id_venta, v.sku, v.fecha, v.producto, v.nombreComprador,
       v.plataforma, v.condicion_pago, v.usuario,
-      v.cantidad, v.precio, v.cantidad * v.precio,
+      v.cantidad, v.precio, v.total
     ]);
     const csv = [header, ...rows].map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
@@ -138,7 +138,7 @@ function PageReportes() {
           <table className="table">
             <thead>
               <tr>
-                <th>ID</th><th>Fecha</th><th>Producto</th><th>Cliente</th>
+                <th>ID</th><th>SKU</th><th>Fecha</th><th>Producto</th><th>Cliente</th>
                 <th>Plataforma</th><th>Pago</th><th>Vendedor</th>
                 <th className="td-right">Cant.</th><th className="td-right">Total</th>
               </tr>
@@ -152,16 +152,17 @@ function PageReportes() {
                   </div>
                 </td></tr>
               ) : filtered.map(v => (
-                <tr key={v.id_venta}>
-                  <td className="mono td-muted" style={{ fontSize: 11 }}>#{String(v.id_venta).slice(-6)}</td>
+                <tr key={v.id_ventas}>
+                  <td className="mono td-muted" style={{ fontSize: 11 }}>#{String(v.id_ventas)}</td>
+                  <td className="mono td-muted" style={{ fontSize: 11 }}>{v.sku}</td>
                   <td className="td-muted">{window.fmt.datetime(v.fecha)}</td>
                   <td>{v.producto}</td>
                   <td className="td-muted">{v.nombreComprador}</td>
                   <td><span className="badge">{v.plataforma}</span></td>
                   <td><span className={`badge badge-${v.condicion_pago === 'CREDITO' ? 'warn' : 'success'}`}>{v.condicion_pago}</span></td>
-                  <td className="td-muted">{v.usuario}</td>
+                  <td className="td-muted">{v.usuario || 'SISTEMA ZEUTICA'}</td>
                   <td className="td-right mono">{v.cantidad}</td>
-                  <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(v.cantidad * v.precio)}</td>
+                  <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(v.total)}</td>
                 </tr>
               ))}
             </tbody>

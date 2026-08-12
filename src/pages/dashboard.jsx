@@ -62,8 +62,8 @@ function PageDashboard({ user }) {
 
   const metrics = ds_uM(() => {
     const totalUnidades = ventas.reduce((s, v) => s + (v.cantidad || 0), 0);
-    const totalMonto = ventas.reduce((s, v) => s + ((v.cantidad || 0) * (v.precio || 0)), 0);
-    const utilidad = ventas.reduce((s, v) => s + (v.utilidad_total || ((v.cantidad || 0) * (v.precio || 0) * 0.28)), 0);
+    const totalMonto = ventas.reduce((s, v) => s + (Number(v.total) || 0), 0);
+    const utilidad = ventas.reduce((s, v) => s + (Number(v.utilidad_total) || ((v.cantidad || 0) * (v.precio || 0) * 0.28)), 0);
     const plataforma = {};
     ventas.forEach(v => { plataforma[v.plataforma] = (plataforma[v.plataforma] || 0) + 1; });
     const platArr = Object.entries(plataforma).sort((a,b) => b[1] - a[1]);
