@@ -483,7 +483,7 @@ const api = {
   async crearEmbarque(payload) {
     return tryFetch('/zeutica/embarques', { method: 'POST', body: JSON.stringify(payload) });
   },
-  // payload es la cabecera completa (numero_contenedor, invoice_orders, proveedor,
+  // payload es la cabecera completa (numero_contenedor, invoices, proveedores,
   // llegada_manzanillo_tentativa, fecha_llegada_real, fecha_de_recibido, usuario).
   async editarEmbarqueCabecera(id, payload) {
     return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });

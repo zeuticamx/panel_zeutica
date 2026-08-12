@@ -27,7 +27,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
   const eliminar = async (e) => {
     const r = await window.api.eliminarEmbarque(e.id, window.api.usuario);
     if (!r.ok) { toast.error('No se pudo eliminar', r.error || 'Verifica conexión con el servidor'); return; }
-    toast.success('Embarque eliminado', (e.contenedores || []).join(', ') || e.invoice_orders);
+    toast.success('Embarque eliminado', e.numero_contenedor || (e.invoices || []).join(', '));
     cargar();
   };
 
@@ -81,7 +81,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
           <table className="table">
             <thead>
               <tr>
-                <th>Contenedores</th><th>Invoice</th><th>Proveedores</th>
+                <th>Contenedor</th><th>Invoices</th><th>Proveedores</th>
                 <th className="td-right">SKUs</th><th>Con forwarder</th><th>Salió de China</th>
                 <th>Llegada tent.</th><th></th>
               </tr>
@@ -106,8 +106,8 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
                 </td></tr>
               ) : embarques.map(e => (
                 <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => onSelect(e.id)}>
-                  <td className="mono" style={{ fontSize: 12 }}>{(e.contenedores || []).length > 0 ? e.contenedores.join(', ') : '—'}</td>
-                  <td className="mono td-muted" style={{ fontSize: 12 }}>{e.invoice_orders}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{e.numero_contenedor || '—'}</td>
+                  <td className="mono td-muted" style={{ fontSize: 12 }}>{(e.invoices || []).length > 0 ? e.invoices.join(', ') : '—'}</td>
                   <td style={{ fontSize: 12 }}>{(e.proveedores || []).length > 0 ? e.proveedores.join(', ') : '—'}</td>
                   <td className="td-right mono">{e.items_count ?? 0}</td>
                   <td><span className={`badge badge-${e.con_forwarder ? 'success' : 'info'}`}><span className="badge-dot"/>{e.con_forwarder ? 'Concluido' : 'Pendiente'}</span></td>
@@ -118,7 +118,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
                       <button
                         className="btn btn-ghost btn-sm"
                         title="Eliminar embarque"
-                        onClick={() => askConfirm(`¿Eliminar el embarque ${(e.contenedores || []).join(', ') || e.invoice_orders}? Esta acción no se puede deshacer.`, () => eliminar(e))}
+                        onClick={() => askConfirm(`¿Eliminar el embarque ${e.numero_contenedor || (e.invoices || []).join(', ')}? Esta acción no se puede deshacer.`, () => eliminar(e))}
                       >
                         <Icon name="trash" size={13}/>
                       </button>

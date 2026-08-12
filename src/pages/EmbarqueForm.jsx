@@ -17,8 +17,8 @@ const embarqueItemVacio = () => ({ sku: '', qty: 1, cbm: '', pct_contenedor: '' 
 
 function EmbarqueForm({ onSaved, onCancel }) {
   const toast = window.useToast();
-  const [contenedores, setContenedores] = ef_uS(['']);
-  const [invoiceOrders, setInvoiceOrders] = ef_uS('');
+  const [contenedor, setContenedor] = ef_uS('');
+  const [invoices, setInvoices] = ef_uS(['']);
   const [proveedores, setProveedores] = ef_uS(['']);
   const [llegadaTentativa, setLlegadaTentativa] = ef_uS('');
   const [items, setItems] = ef_uS([embarqueItemVacio()]);
@@ -33,9 +33,9 @@ function EmbarqueForm({ onSaved, onCancel }) {
 
   ef_uE(() => { (async () => setProductos(await window.api.productos()))(); }, []);
 
-  const actualizarContenedor = (idx, valor) => setContenedores(prev => prev.map((c, i) => i === idx ? valor : c));
-  const agregarContenedor = () => setContenedores(prev => [...prev, '']);
-  const quitarContenedor = (idx) => setContenedores(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
+  const actualizarInvoice = (idx, valor) => setInvoices(prev => prev.map((v, i) => i === idx ? valor : v));
+  const agregarInvoice = () => setInvoices(prev => [...prev, '']);
+  const quitarInvoice = (idx) => setInvoices(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
 
   const actualizarProveedor = (idx, valor) => setProveedores(prev => prev.map((p, i) => i === idx ? valor : p));
   const agregarProveedor = () => setProveedores(prev => [...prev, '']);
@@ -52,13 +52,14 @@ function EmbarqueForm({ onSaved, onCancel }) {
   const toggleEstatus = (tipo, activo) => setEstatus(prev => ({ ...prev, [tipo]: { ...prev[tipo], activo } }));
 
   const guardar = async () => {
-    if (!invoiceOrders.trim()) { toast.error('Falta invoice', 'El número de invoice es obligatorio'); return; }
+    const invoicesValidos = invoices.filter(i => i.trim());
+    if (invoicesValidos.length === 0) { toast.error('Falta invoice', 'Al menos un número de invoice es obligatorio'); return; }
     const itemsValidos = items.filter(it => it.sku.trim());
     setSubmitting(true);
 
     const payload = {
-      contenedores: contenedores.filter(c => c.trim()),
-      invoice_orders: invoiceOrders.trim(),
+      numero_contenedor: contenedor.trim() || null,
+      invoices: invoicesValidos.map(i => i.trim()),
       proveedores: proveedores.filter(p => p.trim()),
       llegada_manzanillo_tentativa: llegadaTentativa || null,
       usuario: window.api.usuario || 'sistema',
@@ -102,7 +103,7 @@ function EmbarqueForm({ onSaved, onCancel }) {
     if (fallos.length > 0) {
       toast.warn('Embarque creado con avisos', `No se pudo marcar: ${fallos.join(', ')}. Ajústalo desde el detalle.`);
     } else {
-      toast.success('Embarque creado', payload.invoice_orders);
+      toast.success('Embarque creado', payload.invoices.join(', '));
     }
     onSaved(embarqueId);
   };
@@ -120,8 +121,8 @@ function EmbarqueForm({ onSaved, onCancel }) {
         <div className="card-header"><h3 className="card-title">Datos del embarque</h3></div>
         <div className="card-body">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div className="field"><label className="field-label">Invoice *</label>
-              <input className="input" value={invoiceOrders} onChange={e => setInvoiceOrders(e.target.value)} placeholder="INV-2026-001"/></div>
+            <div className="field"><label className="field-label">Número de contenedor</label>
+              <input className="input" value={contenedor} onChange={e => setContenedor(e.target.value)} placeholder="MSCU1234567"/></div>
             <div className="field"><label className="field-label">Llegada tentativa (Manzanillo)</label>
               <input className="input" type="date" value={llegadaTentativa} onChange={e => setLlegadaTentativa(e.target.value)}/></div>
           </div>
@@ -130,19 +131,19 @@ function EmbarqueForm({ onSaved, onCancel }) {
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header" style={{ gap: 12 }}>
-          <h3 className="card-title">Contenedores</h3>
-          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={agregarContenedor}>
+          <h3 className="card-title">Invoices</h3>
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={agregarInvoice}>
             <Icon name="plus" size={13}/> Agregar fila
           </button>
         </div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Número de contenedor</th><th></th></tr></thead>
+            <thead><tr><th>Invoice *</th><th></th></tr></thead>
             <tbody>
-              {contenedores.map((c, idx) => (
+              {invoices.map((v, idx) => (
                 <tr key={idx}>
-                  <td><input className="input" value={c} onChange={e => actualizarContenedor(idx, e.target.value)} placeholder="MSCU1234567"/></td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={() => quitarContenedor(idx)} disabled={contenedores.length === 1}><Icon name="trash" size={13}/></button></td>
+                  <td><input className="input" value={v} onChange={e => actualizarInvoice(idx, e.target.value)} placeholder="INV-2026-001"/></td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => quitarInvoice(idx)} disabled={invoices.length === 1}><Icon name="trash" size={13}/></button></td>
                 </tr>
               ))}
             </tbody>

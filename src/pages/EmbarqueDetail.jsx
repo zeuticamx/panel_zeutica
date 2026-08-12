@@ -7,7 +7,11 @@ function embarqueEtapaDraftInicial(etapa) {
   return {
     activo: !!etapa.completado,
     nota: etapa.nota || '',
+    tcFecha: etapa.tipo_cambio_fecha || '',
+    tcValor: etapa.tipo_cambio_valor ?? null,
+    tcFechaDato: etapa.tipo_cambio_fecha_dato ?? null,
     guardando: false,
+    buscandoTc: false,
   };
 }
 function embarqueEstatusDraftInicial(est) {
@@ -24,13 +28,13 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
   const [embarque, setEmbarque] = ed_uS(null);
   const [loading, setLoading] = ed_uS(true);
   const [error, setError] = ed_uS(false);
-  const [contenedores, setContenedores] = ed_uS([]);
+  const [invoices, setInvoices] = ed_uS([]);
   const [proveedores, setProveedores] = ed_uS([]);
   const [etapasDraft, setEtapasDraft] = ed_uS({});
   const [estatusDraft, setEstatusDraft] = ed_uS({});
   const [fechaLlegadaReal, setFechaLlegadaReal] = ed_uS('');
   const [guardandoLlegada, setGuardandoLlegada] = ed_uS(false);
-  const [editandoContenedores, setEditandoContenedores] = ed_uS(false);
+  const [editandoInvoices, setEditandoInvoices] = ed_uS(false);
   const [editandoProveedores, setEditandoProveedores] = ed_uS(false);
 
   const cargar = async () => {
@@ -38,23 +42,23 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
     const data = await window.api.embarqueDetalle(id);
     if (!data) { setError(true); setEmbarque(null); setLoading(false); return; }
     setEmbarque(data);
-    setContenedores(data.contenedores || []);
+    setInvoices(data.invoices || []);
     setProveedores(data.proveedores || []);
     setEtapasDraft(Object.fromEntries((data.etapas || []).map(e => [e.tipo, embarqueEtapaDraftInicial(e)])));
     setEstatusDraft(Object.fromEntries((data.estatus || []).map(e => [e.tipo, embarqueEstatusDraftInicial(e)])));
     setFechaLlegadaReal(data.fecha_llegada_real || '');
-    setEditandoContenedores(false);
+    setEditandoInvoices(false);
     setEditandoProveedores(false);
     setLoading(false);
   };
 
   ed_uE(() => { cargar(); }, [id]);
 
-  const guardarContenedoresProveedores = async () => {
-    setEditandoContenedores(false); setEditandoProveedores(false);
+  const guardarInvoicesProveedores = async () => {
+    setEditandoInvoices(false); setEditandoProveedores(false);
     const r = await window.api.editarEmbarqueCabecera(id, {
-      contenedores: contenedores.filter(c => c.trim()),
-      invoice_orders: embarque.invoice_orders,
+      numero_contenedor: embarque.numero_contenedor,
+      invoices: invoices.filter(i => i.trim()),
       proveedores: proveedores.filter(p => p.trim()),
       llegada_manzanillo_tentativa: embarque.llegada_manzanillo_tentativa,
       fecha_llegada_real: embarque.fecha_llegada_real,
@@ -62,15 +66,15 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       usuario: window.api.usuario || 'sistema',
     });
     if (!r.ok) { toast.error('No se pudo guardar', r.error || 'Verifica conexión con el servidor'); return; }
-    toast.success('Contenedores y proveedores actualizados');
+    toast.success('Invoices y proveedores actualizados');
     await cargar();
   };
 
   const guardarFechaLlegada = async () => {
     setGuardandoLlegada(true);
     const r = await window.api.editarEmbarqueCabecera(id, {
-      contenedores: embarque.contenedores || [],
-      invoice_orders: embarque.invoice_orders,
+      numero_contenedor: embarque.numero_contenedor,
+      invoices: embarque.invoices || [],
       proveedores: embarque.proveedores || [],
       llegada_manzanillo_tentativa: embarque.llegada_manzanillo_tentativa,
       fecha_llegada_real: fechaLlegadaReal || null,
@@ -123,10 +127,42 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
     await cargar();
   };
 
+  const setTipoCambioFechaDraft = (tipo, tcFecha) => {
+    setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], tcFecha } }));
+  };
+
+  const buscarTipoCambio = async (tipo) => {
+    const draft = etapasDraft[tipo];
+    const fecha = draft?.tcFecha;
+    if (!fecha) return;
+    setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], buscandoTc: true } }));
+    const data = await window.api.tipoCambioFecha(fecha);
+    if (!data) {
+      toast.error('No se pudo obtener el tipo de cambio', 'Verifica conexión con el servidor');
+      setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], buscandoTc: false } }));
+      return;
+    }
+    const r = await window.api.marcarEtapaEmbarque(id, tipo, {
+      completado: draft.activo,
+      nota: draft.nota.trim() || null,
+      tipo_cambio_fecha: fecha,
+      tipo_cambio_valor: data.valor,
+      tipo_cambio_fecha_dato: data.fecha,
+      usuario: window.api.usuario || 'sistema',
+    });
+    if (!r.ok) {
+      toast.error('No se pudo guardar el tipo de cambio', r.error || 'Verifica conexión con el servidor');
+      setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], buscandoTc: false } }));
+      return;
+    }
+    toast.success('Tipo de cambio guardado', tipo.replaceAll('_', ' '));
+    await cargar();
+  };
+
   const eliminar = async () => {
     const r = await window.api.eliminarEmbarque(id);
     if (!r.ok) { toast.error('No se pudo eliminar', r.error || 'Verifica conexión con el servidor'); return; }
-    const desc = (embarque?.contenedores || []).join(', ') || embarque?.invoice_orders || '';
+    const desc = embarque?.numero_contenedor || (embarque?.invoices || []).join(', ') || '';
     toast.success('Embarque eliminado', desc);
     onDeleted();
   };
@@ -158,12 +194,12 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       <div className="section-header">
         <div>
           <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ marginBottom: 6 }}><Icon name="chevLeft" size={13}/> Volver a embarques</button>
-          <h2 className="section-title">{(embarque.contenedores || []).join(', ') || embarque.invoice_orders}</h2>
-          <p className="section-subtitle">Invoice {embarque.invoice_orders} · {(embarque.proveedores || []).join(', ') || 'Sin proveedores'}</p>
+          <h2 className="section-title">{embarque.numero_contenedor || (embarque.invoices || []).join(', ')}</h2>
+          <p className="section-subtitle">Invoices {(embarque.invoices || []).join(', ')} · {(embarque.proveedores || []).join(', ') || 'Sin proveedores'}</p>
         </div>
         <button
           className="btn btn-secondary btn-sm"
-          onClick={() => askConfirm(`¿Eliminar el embarque ${(embarque.contenedores || []).join(', ') || embarque.invoice_orders}? Esta acción no se puede deshacer.`, eliminar)}
+          onClick={() => askConfirm(`¿Eliminar el embarque ${embarque.numero_contenedor || (embarque.invoices || []).join(', ')}? Esta acción no se puede deshacer.`, eliminar)}
         >
           <Icon name="trash" size={13}/> Eliminar
         </button>
@@ -173,8 +209,8 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
         <div className="card-header"><h3 className="card-title">Datos del embarque</h3></div>
         <div className="card-body">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="field" style={{ margin: 0 }}><label className="field-label">Invoice</label>
-              <input className="input" value={embarque.invoice_orders} disabled/></div>
+            <div className="field" style={{ margin: 0 }}><label className="field-label">Número de contenedor</label>
+              <input className="input" value={embarque.numero_contenedor || ''} disabled/></div>
             <div className="field" style={{ margin: 0 }}><label className="field-label">Llegada tentativa (Manzanillo)</label>
               <input className="input mono" value={embarque.llegada_manzanillo_tentativa ? window.fmt.date(embarque.llegada_manzanillo_tentativa) : '—'} disabled/></div>
           </div>
@@ -183,34 +219,34 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header" style={{ gap: 12 }}>
-          <h3 className="card-title">Contenedores</h3>
-          {!editandoContenedores && <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setEditandoContenedores(true)}>
+          <h3 className="card-title">Invoices</h3>
+          {!editandoInvoices && <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setEditandoInvoices(true)}>
             <Icon name="edit" size={13}/> Editar
           </button>}
         </div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Número de contenedor</th>{editandoContenedores && <th></th>}</tr></thead>
+            <thead><tr><th>Invoice</th>{editandoInvoices && <th></th>}</tr></thead>
             <tbody>
-              {editandoContenedores ? contenedores.map((c, idx) => (
+              {editandoInvoices ? invoices.map((v, idx) => (
                 <tr key={idx}>
-                  <td><input className="input" value={c} onChange={ev => setContenedores(prev => prev.map((x, i) => i === idx ? ev.target.value : x))}/></td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={() => setContenedores(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx))} disabled={contenedores.length === 1}><Icon name="trash" size={13}/></button></td>
+                  <td><input className="input" value={v} onChange={ev => setInvoices(prev => prev.map((x, i) => i === idx ? ev.target.value : x))}/></td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => setInvoices(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx))} disabled={invoices.length === 1}><Icon name="trash" size={13}/></button></td>
                 </tr>
               )) : (
-                contenedores.length === 0 ? <tr><td colSpan={1} className="empty">Sin contenedores</td></tr> :
-                contenedores.map((c, idx) => <tr key={idx}><td>{c}</td></tr>)
+                invoices.length === 0 ? <tr><td colSpan={1} className="empty">Sin invoices</td></tr> :
+                invoices.map((v, idx) => <tr key={idx}><td>{v}</td></tr>)
               )}
             </tbody>
           </table>
         </div>
-        {editandoContenedores && (
+        {editandoInvoices && (
           <div className="card-footer">
-            <button className="btn btn-secondary btn-sm" onClick={() => { setEditandoContenedores(false); cargar(); }}>Cancelar</button>
-            <button className="btn btn-primary btn-sm" onClick={() => { setContenedores(prev => [...prev, '']); }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => { setEditandoInvoices(false); cargar(); }}>Cancelar</button>
+            <button className="btn btn-primary btn-sm" onClick={() => { setInvoices(prev => [...prev, '']); }}>
               <Icon name="plus" size={13}/> Agregar fila
             </button>
-            <button className="btn btn-primary btn-sm" onClick={guardarContenedoresProveedores} style={{ marginLeft: 'auto' }}>
+            <button className="btn btn-primary btn-sm" onClick={guardarInvoicesProveedores} style={{ marginLeft: 'auto' }}>
               <Icon name="check" size={13}/> Guardar
             </button>
           </div>
@@ -246,7 +282,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
             <button className="btn btn-primary btn-sm" onClick={() => { setProveedores(prev => [...prev, '']); }}>
               <Icon name="plus" size={13}/> Agregar fila
             </button>
-            <button className="btn btn-primary btn-sm" onClick={guardarContenedoresProveedores} style={{ marginLeft: 'auto' }}>
+            <button className="btn btn-primary btn-sm" onClick={guardarInvoicesProveedores} style={{ marginLeft: 'auto' }}>
               <Icon name="check" size={13}/> Guardar
             </button>
           </div>
@@ -293,6 +329,19 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
                     <label className="field-label">Porcentaje Liquidado</label>
                     <input className="input" value={draft.nota} onChange={ev => setEtapasDraft(prev => ({ ...prev, [e.tipo]: { ...prev[e.tipo], nota: ev.target.value } }))} placeholder="%"/>
                   </div>
+                )}
+                <div className="field" style={{ margin: 0, minWidth: 150 }}>
+                  <label className="field-label">Fecha tipo de cambio</label>
+                  <input className="input mono" type="date" value={draft.tcFecha || ''} onChange={ev => setTipoCambioFechaDraft(e.tipo, ev.target.value)}/>
+                </div>
+                <button className="btn btn-secondary btn-sm" disabled={!draft.tcFecha || draft.buscandoTc} onClick={() => buscarTipoCambio(e.tipo)}>
+                  {draft.buscandoTc ? <span className="spinner"/> : <><Icon name="search" size={13}/> Buscar</>}
+                </button>
+                {draft.tcValor != null && (
+                  <span className="badge badge-info">
+                    <span className="badge-dot"/>
+                    {`$${Number(draft.tcValor).toFixed(4)} MXN (${window.fmt.date(draft.tcFechaDato)})`}
+                  </span>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
                   <span className={`badge badge-${guardado?.completado ? 'success' : 'info'}`}>

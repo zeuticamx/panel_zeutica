@@ -1,5 +1,5 @@
 // ===== Zeutica — Rastreo de Importaciones: Visualizador (solo lectura) =====
-// Acceso general. Sin edición de contenedores/proveedores/etapas/estatus ni eliminación.
+// Acceso general. Sin edición de invoices/proveedores/etapas/estatus ni eliminación.
 // Requiere que src/pages/EmbarqueForm.jsx haya cargado antes (define
 // window.EMBARQUE_ETAPAS / window.EMBARQUE_ESTATUS).
 const { useState: ev_uS, useEffect: ev_uE } = React;
@@ -39,7 +39,7 @@ function EmbarqueViewer({ id, onBack }) {
 
   const etapasDef = window.EMBARQUE_ETAPAS;
   const estatusDef = window.EMBARQUE_ESTATUS;
-  const contenedores = embarque.contenedores || [];
+  const invoices = embarque.invoices || [];
   const proveedores = embarque.proveedores || [];
 
   return (
@@ -47,8 +47,8 @@ function EmbarqueViewer({ id, onBack }) {
       <div className="section-header">
         <div>
           <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ marginBottom: 6 }}><Icon name="chevLeft" size={13}/> Volver a embarques</button>
-          <h2 className="section-title">{contenedores.join(', ') || embarque.invoice_orders}</h2>
-          <p className="section-subtitle">Invoice {embarque.invoice_orders} · {proveedores.join(', ') || 'Sin proveedores'}</p>
+          <h2 className="section-title">{embarque.numero_contenedor || invoices.join(', ')}</h2>
+          <p className="section-subtitle">Invoices {invoices.join(', ')} · {proveedores.join(', ') || 'Sin proveedores'}</p>
         </div>
       </div>
 
@@ -56,8 +56,8 @@ function EmbarqueViewer({ id, onBack }) {
         <div className="card-header"><h3 className="card-title">Datos del embarque</h3></div>
         <div className="card-body">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="field" style={{ margin: 0 }}><label className="field-label">Invoice</label>
-              <input className="input" value={embarque.invoice_orders} disabled/></div>
+            <div className="field" style={{ margin: 0 }}><label className="field-label">Número de contenedor</label>
+              <input className="input" value={embarque.numero_contenedor || ''} disabled/></div>
             <div className="field" style={{ margin: 0 }}><label className="field-label">Llegada tentativa (Manzanillo)</label>
               <input className="input mono" value={embarque.llegada_manzanillo_tentativa ? window.fmt.date(embarque.llegada_manzanillo_tentativa) : '—'} disabled/></div>
           </div>
@@ -65,13 +65,13 @@ function EmbarqueViewer({ id, onBack }) {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-header"><h3 className="card-title">Contenedores</h3></div>
+        <div className="card-header"><h3 className="card-title">Invoices</h3></div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Número de contenedor</th></tr></thead>
+            <thead><tr><th>Invoice</th></tr></thead>
             <tbody>
-              {contenedores.length === 0 ? <tr><td colSpan={1} className="empty">Sin contenedores</td></tr> :
-                contenedores.map((c, idx) => <tr key={idx}><td>{c}</td></tr>)}
+              {invoices.length === 0 ? <tr><td colSpan={1} className="empty">Sin invoices</td></tr> :
+                invoices.map((v, idx) => <tr key={idx}><td>{v}</td></tr>)}
             </tbody>
           </table>
         </div>
