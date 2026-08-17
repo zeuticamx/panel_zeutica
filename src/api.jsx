@@ -4,7 +4,7 @@
 
 //const API_BASE = 'http://3.151.25.133:8090'; // servidor en AWS
 //const API_BASE = 'http://127.0.0.1:8000'; // para desarrollo local
-const PI_EASYPANEL = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host/'
+const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host'
 
 const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
 const REQUEST_TIMEOUT = 4000;
