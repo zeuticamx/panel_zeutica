@@ -1,7 +1,7 @@
 // ===== Zeutica — Acciones Pendientes: cola de atención por usuario =====
 const { useState: ap_uS, useEffect: ap_uE, useCallback: ap_uC, useMemo: ap_uM } = React;
 
-const AP_API_JAVA = 'http://3.151.25.133:19999';   // backend Java (FDK) de Zeutica
+const AP_API_JAVA = 'https://postgresqldb-api-java.i4mjht.easypanel.host';   // backend Java (FDK) de Zeutica
 const AP_WEBHOOK_N8N = 'https://n8n-n8n.i4mjht.easypanel.host/webhook/zeutica-pendientes';
 
 async function apFetch(path, opts = {}) {

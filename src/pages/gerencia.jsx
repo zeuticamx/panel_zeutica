@@ -1,7 +1,7 @@
 // ===== Zeutica — Monitor Gerencia: Pendientes de Registro =====
 const { useState: gm_uS, useEffect: gm_uE, useCallback: gm_uC, useRef: gm_uR } = React;
 
-const API_JAVA = 'http://3.151.25.133:19999'; // Zeutica Java Server
+const API_JAVA = 'https://postgresqldb-api-java.i4mjht.easypanel.host'; // Zeutica Java Server
 
 async function javaFetch(path, opts = {}) {
   try {
