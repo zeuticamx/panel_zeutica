@@ -127,6 +127,10 @@ function PageConversacionesSofi() {
   );
 
   const totalMensajes = cs_uM(() => filtradas.reduce((a, s) => a + s.mensajes.length, 0), [filtradas]);
+  // En una nueva pestaña
+  const redirigirNuevaPestana = () => {
+    window.open('https://n8n-panel-chats-agenteia.i4mjht.easypanel.host/login', '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="page">
@@ -135,9 +139,16 @@ function PageConversacionesSofi() {
           <h2 className="section-title">Conversaciones Sofi</h2>
           <p className="section-subtitle">Historial de chats del agente comercial. Filtra por session_id y revisa el hilo completo.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>          
           <button className="btn btn-ghost btn-sm" onClick={cargar} disabled={loading}>
             <Icon name="refresh" size={13} style={loading ? { animation: 'spin 1s linear infinite' } : undefined}/> Actualizar
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={redirigirNuevaPestana}
+            title="PANEL DE AUDITORIA"
+          >
+            <Icon name="external-link" size={13}/> PANEL DE AUDITORIA
           </button>
           <button
             className="btn btn-primary btn-sm"

@@ -2,9 +2,12 @@
 .login-wrap {
   position: fixed;
   inset: 0;
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  background: var(--bg-0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, oklch(0.10 0.01 240 / 0.55), oklch(0.08 0.01 240 / 0.65)),
+    url('/imagenes/login.png') center / cover no-repeat;
   overflow: hidden;
 }
 
@@ -43,17 +46,14 @@
   50% { transform: translate(40px, -30px); }
 }
 
-/* Brand side */
+/* Brand side (oculto: el fondo ahora cubre toda la pantalla en .login-wrap) */
 .login-brand {
+  display: none;
   position: relative;
   z-index: 1;
   padding: 48px 56px;
-  display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, oklch(0.12 0.012 240 / 0.20), oklch(0.10 0.01 240 / 0.20)),
-    url('/imagenes/portada.webp') center / cover no-repeat;
 }
 .login-brand-top { flex: 0 0 auto; }
 .login-brand-middle {
@@ -133,8 +133,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px;
-  background: linear-gradient(135deg, oklch(0.10 0.01 240) 0%, oklch(0.22 0.08 215) 60%, oklch(0.38 0.14 205) 100%);
+  padding: 24px;
+  width: 100%;
 }
 .login-form {
   width: 100%;
@@ -142,6 +142,13 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  padding: 40px 36px;
+  background: oklch(0.12 0.012 240 / 0.72);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 .login-form-head { margin-bottom: 4px; }
 .login-form-title {
@@ -259,7 +266,6 @@
   margin-top: 4px;
 }
 
-@media (max-width: 900px) {
-  .login-wrap { grid-template-columns: 1fr; }
-  .login-brand { display: none; }
+@media (max-width: 480px) {
+  .login-form { padding: 32px 24px; }
 }

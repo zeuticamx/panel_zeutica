@@ -117,7 +117,7 @@ function LoginScreen({ onLogin }) {
           <div className="field">
             <div className="login-pw-label">
               <label className="field-label">Contraseña</label>
-              <a className="login-link" onClick={(e) => { e.preventDefault(); toast.info('Contacta a TI', 'fernandoparrav@outlook.com'); }}>¿Olvidaste tu contraseña?</a>
+              <a className="login-link" onClick={(e) => { e.preventDefault(); toast.info('Contacta a TI', 'zeutica_ti@gmail.com'); }}>¿Olvidaste tu contraseña?</a>
             </div>
             <div className="input-group">
               <span className="input-group-icon"><Icon name="lock" size={14}/></span>
