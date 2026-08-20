@@ -1,8 +1,5 @@
 // ===== Zeutica — Shared Constants =====
 
-const N8N_COTI_HOOK  = "https://n8n-n8n.i4mjht.easypanel.host/webhook/0c67219b-97b4-4cb3-9e7d-6fe4ece90a6d";
-const N8N_FIRMA_HOOK = "https://n8n-n8n.i4mjht.easypanel.host/webhook/5a5caa1a-3ad5-44ff-9f47-d791f937f2d0";
-const N8N_OPS_HOOK   = "https://n8n-n8n.i4mjht.easypanel.host/webhook/678bae31-bb49-478e-93a2-cad2888a298a";
 const N8N_PROMOS_MELI_HOOK = "https://n8n-n8n.i4mjht.easypanel.host/webhook/8876b38f-4a35-40c6-aff8-4baba75bb452";
 
 const REGIMENES_FISCALES = [
@@ -54,9 +51,6 @@ const USOS_CFDI = [
   { "code": "CN01", "name": "CN01 - Nómina" }
 ];
 
-window.N8N_COTI_HOOK      = N8N_COTI_HOOK;
-window.N8N_FIRMA_HOOK     = N8N_FIRMA_HOOK;
-window.N8N_OPS_HOOK       = N8N_OPS_HOOK;
 window.N8N_PROMOS_MELI_HOOK = N8N_PROMOS_MELI_HOOK;
 window.REGIMENES_FISCALES = REGIMENES_FISCALES;
 window.USOS_CFDI          = USOS_CFDI;

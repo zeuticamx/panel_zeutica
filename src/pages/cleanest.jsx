@@ -2,7 +2,6 @@
 const { useState: rp_uS, useEffect: rp_uE, useRef: rp_uR } = React;
 
 const CLEANEST_SKUS = ["ESPFARBLA","CUBBCADLD","TAPCUABLA24","UNIAZLCH","UNIAZLXL","UNIAZLMED","UNIAZLGDE","UNIAZL2XL","UNIAZLXXL"];
-const N8N_CLEANEST_HOOK = "https://n8n-n8n.i4mjht.easypanel.host/webhook/5a5caa1a-3ad5-44ff-9f47-d791f937f2d0";
 
 function calcularStatus(p) {
   const t = (+p.envio1||0) + (+p.envio2||0) + (+p.envio3||0);
@@ -67,7 +66,7 @@ function FirmaCanvas({ ordenNum, onSend }) {
     const b64 = canvasRef.current.toDataURL('image/png').replace('data:image/png;base64,','');
     const payload = { numero_orden: ordenNum, firma_base64: b64, usuario: window.api.usuario||'sistema', fecha_firma: new Date().toISOString().slice(0,19).replace('T',' '), firma_cleanest: 'Se firmo una orden de cleanest' };
     const r = await window.api.enviarFirma(payload);
-    if (r.ok) { toast.success('Firma enviada', ordenNum); window.fireConfetti(); fetch(N8N_CLEANEST_HOOK,{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}}).catch(()=>{}); clear(); onSend?.(); }
+    if (r.ok) { toast.success('Firma enviada', ordenNum); window.fireConfetti(); clear(); onSend?.(); }
     else toast.error('Error', r.error||'No se pudo enviar');
   };
   return (
@@ -230,7 +229,6 @@ function PageCleanest() {
     if (r.ok) {
       toast.success('Órdenes registradas', `${carritoOrdenes.length} orden(es)`);
       window.fireConfetti();
-      fetch(N8N_CLEANEST_HOOK, { method: 'POST', body: JSON.stringify(payloads), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
       setPending(null); setCarritoOrdenes([]); loadData();
     } else {
       toast.error('Error', r.error || 'No se pudo registrar');

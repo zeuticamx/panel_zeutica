@@ -50,7 +50,6 @@ function PageFull() {
     if (r.ok) {
       toast.success('Traspaso registrado', `${selectedSku} → ${destino}`);
       window.fireConfetti();
-      fetch(N8N_OPS_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
       setCantidad(50);
       await cargarDatos();
     } else {

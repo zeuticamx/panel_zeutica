@@ -53,7 +53,6 @@ function PageGastos({ user }) {
     if (r.ok) {
       toast.success('Gasto registrado', p.descripcion);
       window.fireConfetti();
-      fetch(N8N_OPS_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: 'gasto_operativo', usuario_registro: user || 'usuario', descripcion: p.descripcion, costo: parseFloat(p.costo), cantidad: parseInt(p.cantidad, 10) }) }).catch(() => {});
       setGastoFormS({ descripcion: '', costo: '', cantidad: '' });
       setGastos(await window.api.gastos());
     } else {
@@ -88,7 +87,6 @@ function PageGastos({ user }) {
     if (r.ok) {
       toast.success('SKU descontado', `${p.cantidad} × ${p.nombre}`);
       window.fireConfetti();
-      fetch(N8N_OPS_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: 'gasto_sku', sku: p.sku, nombre: p.nombre, cantidad: p.cantidad, usuario: user || 'usuario' }) }).catch(() => {});
       setCantidadSku(1);
     } else {
       toast.error('Error al registrar', 'Verifica conexión con el servidor');

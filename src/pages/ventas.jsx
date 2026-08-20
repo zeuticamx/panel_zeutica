@@ -213,11 +213,6 @@ function PageVentas({ user }) {
     if (allOk && intentosDeVenta > 0) {
       toast.success(`Venta ${id_venta} registrada`, `${cart.length} artículos · ${window.fmt.mxn(total)}`);
       window.fireConfetti();
-      fetch('https://n8n-n8n.i4mjht.easypanel.host/webhook/5a5caa1a-3ad5-44ff-9f47-d791f937f2d0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ticketData),
-      }).catch(() => {});
       setLastTicket(ticketData);
       printTicket(ticketData);
       clearCart();

@@ -529,7 +529,6 @@ function PageCotizaciones({ user }) {
       }
       setCots(await window.api.cotizaciones());
       resetForm();
-      fetch(N8N_COTI_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
     } else {
       toast.error('Error al guardar', 'Verifica conexión con el servidor');
     }
@@ -549,7 +548,6 @@ function PageCotizaciones({ user }) {
     if (r.ok) {
       toast.success('Firma guardada', firmaModal.codigo);
       window.fireConfetti();
-      fetch(N8N_FIRMA_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
       setCots(prev => prev.map(c => c.codigo_cotizacion === firmaModal.codigo ? { ...c, firma_envio: firma_base64 } : c));
       setFirmaModal(null);
     } else {
@@ -632,7 +630,6 @@ function PageCotizaciones({ user }) {
     if (r.ok) {
       toast.success('Relaciones guardadas', `${records.length} cotización(es) actualizadas`);
       window.fireConfetti();
-      fetch(N8N_COTI_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(records) }).catch(() => {});
       setCots(await window.api.cotizaciones());
     } else {
       toast.error('Error', 'No se pudo guardar las relaciones');
