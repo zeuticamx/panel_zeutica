@@ -37,7 +37,7 @@ function PageCobranza() {
     setSubmitting(true);
     const r = await window.api.registrarAbono({ id_ventas: sel.id_ventas, saldo_abonado: Number(monto), usuario: window.api.usuario || '' });
     setSubmitting(false);
-    if (!r.ok) { toast.error('Error al registrar abono', r.error || 'No se pudo conectar con el servidor'); return; }
+    if (!r.ok) { toast.error('Error al registrar abono', r.error); return; }
     toast.success('Abono registrado', `${window.fmt.mxn(monto)} para ${sel.nombre}`);
     setCreditos(creditos.map(c => c.id_ventas === sel.id_ventas ? { ...c, saldo_pendiente: Math.max(0, c.saldo_pendiente - monto), abonado: c.abonado + monto } : c));
     setSel(null); setMonto(0);

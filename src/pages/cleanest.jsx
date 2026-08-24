@@ -67,7 +67,7 @@ function FirmaCanvas({ ordenNum, onSend }) {
     const payload = { numero_orden: ordenNum, firma_base64: b64, usuario: window.api.usuario||'sistema', fecha_firma: new Date().toISOString().slice(0,19).replace('T',' '), firma_cleanest: 'Se firmo una orden de cleanest' };
     const r = await window.api.enviarFirma(payload);
     if (r.ok) { toast.success('Firma enviada', ordenNum); window.fireConfetti(); clear(); onSend?.(); }
-    else toast.error('Error', r.error||'No se pudo enviar');
+    else toast.error('Error', r.error);
   };
   return (
     <div style={{ marginTop: 14, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
@@ -104,7 +104,7 @@ function OrdenCard({ pedido, onRefresh }) {
     const r = await window.api.actualizarOrden(pid, { envio1:e1, envio2:e2, envio3:e3, status:finalStatus });
     setSaving(false); setConfirm(false);
     if (r.ok) { toast.success('Orden actualizada', `${pedido.numero_orden} — ${finalStatus}`); window.fireConfetti(); onRefresh(); }
-    else toast.error('Error', r.error||'No se pudo actualizar');
+    else toast.error('Error', r.error);
   };
   return (
     <div className="card" style={{ marginBottom:10 }}>
@@ -155,7 +155,7 @@ function HistorialCard({ pedido, inv }) {
         pedido, inv, api: window.api, usuario: window.api.usuario,
       });
       if (r.accion === 'registrada') { toast.success('Venta registrada', `Orden ${r.norden}`); window.fireConfetti(); }
-      else if (r.accion === 'error') toast.error('Error al registrar venta', r.error || 'Intenta de nuevo');
+      else if (r.accion === 'error') toast.error('Error al registrar venta', r.error);
     })();
   }, []);
   return (
@@ -231,7 +231,7 @@ function PageCleanest() {
       window.fireConfetti();
       setPending(null); setCarritoOrdenes([]); loadData();
     } else {
-      toast.error('Error', r.error || 'No se pudo registrar');
+      toast.error('No se pudieron registrar las órdenes', r.error);
       setPending(null);
     }
   };

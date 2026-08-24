@@ -48,7 +48,7 @@ function PageDevoluciones({ user }) {
     };
     const r = await window.api.registrarDevolucion(selectedSku, payload);
     setSubmitting(false);
-    if (!r.ok) { toast.error('Error al registrar', r.error || 'No se pudo conectar con el servidor'); return; }
+    if (!r.ok) { toast.error('Error al registrar', r.error); return; }
     toast.success('Devolución registrada', `${payload.cantidad} × ${payload.producto}`);
     window.fireConfetti();
     setRegistradas(prev => [{ ...payload, usuario: user, fecha: new Date().toISOString() }, ...prev]);

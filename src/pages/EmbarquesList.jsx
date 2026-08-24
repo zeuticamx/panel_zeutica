@@ -6,19 +6,20 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
   const [askConfirm, ConfirmModal] = window.useConfirm();
   const [embarques, setEmbarques] = el_uS([]);
   const [loading, setLoading] = el_uS(true);
-  const [error, setError] = el_uS(false);
+  const [error, setError] = el_uS(null);
   const [proveedor, setProveedor] = el_uS('');
   const [conForwarder, setConForwarder] = el_uS('');
   const [salioDeChina, setSalioDeChina] = el_uS('');
 
   const cargar = async () => {
-    setLoading(true); setError(false);
+    setLoading(true); setError(null);
     const r = await window.api.embarques({
       proveedor: proveedor.trim() || undefined,
       conForwarder: conForwarder === '' ? undefined : conForwarder === 'true',
       salioDeChina: salioDeChina === '' ? undefined : salioDeChina === 'true',
     });
-    if (!Array.isArray(r)) { setError(true); setEmbarques([]); } else { setEmbarques(r); }
+    // r es un array con ok/error pegados (ver listaConError en api.jsx).
+    if (r.ok === false) { setError(r.error); setEmbarques([]); } else { setEmbarques(r); }
     setLoading(false);
   };
 
@@ -26,7 +27,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
 
   const eliminar = async (e) => {
     const r = await window.api.eliminarEmbarque(e.id, window.api.usuario);
-    if (!r.ok) { toast.error('No se pudo eliminar', r.error || 'Verifica conexión con el servidor'); return; }
+    if (!r.ok) { toast.error('No se pudo eliminar', r.error); return; }
     toast.success('Embarque eliminado', e.numero_contenedor || (e.invoices || []).join(', '));
     cargar();
   };
@@ -94,6 +95,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
                   <div className="empty">
                     <div className="empty-icon"><Icon name="alert"/></div>
                     <div>No se pudo cargar embarques.</div>
+                    <div className="empty-detail">{error}</div>
                     <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={cargar}>Reintentar</button>
                   </div>
                 </td></tr>

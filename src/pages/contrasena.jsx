@@ -78,7 +78,7 @@ function PageContrasena({ user }) {
       window.fireConfetti();
       setPaso(1); setActual(''); setNueva(''); setConfirmar('');
     } else {
-      toast.error('Error al actualizar', r.error || 'Verifica conexión con el servidor');
+      toast.error('Error al actualizar', r.error);
     }
   };
 

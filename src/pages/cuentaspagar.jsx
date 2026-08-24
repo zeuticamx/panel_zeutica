@@ -46,7 +46,7 @@ function PageCuentasPagar() {
       usuario: window.api.usuario || '',
     });
     setSubmitting(false);
-    if (!r.ok) { toast.error('Error al registrar pago', r.error || 'No se pudo conectar con el servidor'); return; }
+    if (!r.ok) { toast.error('Error al registrar pago', r.error); return; }
     toast.success('Pago registrado', `${window.fmt.mxn(monto)} a ${sel.proveedor}`);
     setCuentas(cuentas.map(c => idDe(c) === idDe(sel)
       ? { ...c, saldo_pendiente: Math.max(0, saldo(c) - monto), abonado: Number(c.abonado || 0) + Number(monto) }

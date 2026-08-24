@@ -169,8 +169,10 @@ function PageVentas({ user }) {
     
     const id_venta = Math.floor(Math.random() * 9e9 + 1e9);
     const fecha = new Date().toISOString().slice(0, 10);
-    let allOk = true;
     let intentosDeVenta = 0;
+    // Cada SKU es un POST aparte: se guarda el motivo que da el servidor por SKU
+    // para poder decir cuál falló y por qué, en vez de un "no se pudo" global.
+    const fallos = [];
 
     for (const item of cart) {
       const precio = Math.round(item.precio * (1 - descuento / 100) * 100) / 100;
@@ -189,12 +191,11 @@ function PageVentas({ user }) {
       };
       
       const r = await window.api.registrarVenta(payload);
-      if (!r.ok) {
-        allOk = false;
-      }
+      if (!r.ok) fallos.push(`${item.sku}: ${r.error}`);
       intentosDeVenta++;
     }
 
+    const allOk = fallos.length === 0;
     if (cotCargada && intentosDeVenta > 0 && allOk) {
       await window.api.marcarCotizacionVendida(cotCargada);
     }
@@ -219,7 +220,14 @@ function PageVentas({ user }) {
       setCliente(null);
       setCotCargada(null);
     } else {
-      toast.error(`Error al registrar venta ${id_venta}`, 'No se pudo registrar en el servidor. Revisa la conexión e intenta de nuevo.');
+      // Puede ser fallo total o parcial: se dice cuántas líneas entraron y el
+      // motivo exacto de las que no, para saber qué quedó en el servidor.
+      const registradas = intentosDeVenta - fallos.length;
+      toast.error(
+        `Venta ${id_venta}: ${fallos.length} de ${intentosDeVenta} líneas fallaron` +
+          (registradas > 0 ? ` (${registradas} sí se registraron)` : ''),
+        fallos.join(' · ') || 'El carrito no generó ninguna petición'
+      );
     }
   };
   return (

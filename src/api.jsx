@@ -8,6 +8,9 @@ const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host'
 const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
 const REQUEST_TIMEOUT = 4000;
 
+// Mismo host que la API, cambiando el esquema: http -> ws, https -> wss.
+const WS_BASE = API_BASE.replace(/^http/, 'ws');
+
 // ---- Datos para modo prueba ----
 const MOCK = {
   productos: [
@@ -105,10 +108,75 @@ function MOCK_getCli(i) {
   return names[i % names.length];
 }
 
+// ---- Manejo de errores ----
+// Regla: nunca inventar un mensaje. Lo que responde el servidor es lo que ve el
+// usuario. Solo cuando el servidor no alcanzó a responder (red caída, timeout)
+// se explica esa condición, dejando claro que el estado real se desconoce.
+
+const MAX_TEXTO_ERROR = 400;   // corta cuerpos enormes (stacktrace, HTML del proxy)
+const MAX_ERRORES_LOG = 20;    // bitácora en memoria para depurar desde consola
+
+// FastAPI: {"detail": "texto"} o, en validación (422),
+// {"detail": [{loc: ["body","sku"], msg: "field required"}, ...]}.
+// Otros endpoints del proyecto usan message / error / msg / mensaje.
+function mensajeDelCuerpo(cuerpo) {
+  if (cuerpo == null) return '';
+  if (typeof cuerpo === 'string') return cuerpo.trim();
+
+  const detalle = cuerpo.detail ?? cuerpo.detalle;
+  if (typeof detalle === 'string' && detalle.trim()) return detalle.trim();
+  if (Array.isArray(detalle)) {
+    // Cada error de validación se muestra como "campo: motivo" para poder
+    // corregir el payload sin abrir la consola.
+    const lineas = detalle.map(d => {
+      const campo = Array.isArray(d?.loc) ? d.loc.filter(x => x !== 'body').join('.') : '';
+      const motivo = d?.msg || d?.type || JSON.stringify(d);
+      return campo ? `${campo}: ${motivo}` : motivo;
+    });
+    if (lineas.length) return lineas.join(' · ');
+  }
+
+  for (const campo of ['message', 'mensaje', 'error', 'msg']) {
+    if (typeof cuerpo[campo] === 'string' && cuerpo[campo].trim()) return cuerpo[campo].trim();
+  }
+  // Cuerpo JSON con forma desconocida: mejor mostrarlo crudo que tragárselo.
+  try { return JSON.stringify(cuerpo); } catch { return ''; }
+}
+
+function recortar(texto) {
+  if (!texto) return '';
+  return texto.length > MAX_TEXTO_ERROR ? `${texto.slice(0, MAX_TEXTO_ERROR)}…` : texto;
+}
+
+// Deja rastro de toda petición fallida: consola con el contexto completo y
+// bitácora en api.errores (últimas 20) para inspeccionar desde el navegador.
+function registrarError(info) {
+  console.error(`[api] ${info.metodo} ${info.ruta} → ${info.status || 'sin respuesta'}: ${info.error}`, info);
+  api.errores.unshift(info);
+  if (api.errores.length > MAX_ERRORES_LOG) api.errores.length = MAX_ERRORES_LOG;
+  api.ultimoError = info;
+  return info;
+}
+
+// Avisa al usuario de un fallo que la vista no va a mostrar por su cuenta
+// (los wrappers que devuelven listas). app.jsx conecta api.onError a los toasts.
+function avisarError(info) {
+  if (info && typeof api.onError === 'function') {
+    try { api.onError(info); } catch (e) { console.error('[api] onError falló', e); }
+  }
+  return info;
+}
+
 // ---- Fetch helper ----
+// Devuelve siempre el mismo shape:
+//   éxito  -> { ok: true, status, data, live: true }
+//   fallo  -> { ok: false, status, error, detalle, cuerpo, texto, metodo, ruta, live }
+// `error` es el mensaje del servidor tal cual (detail de FastAPI); `cuerpo` es el
+// JSON completo por si la vista necesita más; `status` distingue 401/404/409/500.
 async function tryFetch(path, options = {}) {
+  const metodo = (options.method || 'GET').toUpperCase();
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT);
+  const t = setTimeout(() => ctrl.abort(), options.timeout || REQUEST_TIMEOUT);
   try {
     const authHeader = api.token ? { Authorization: `Bearer ${api.token}` } : {};
     const res = await fetch(`${API_BASE}${path}`, {
@@ -117,22 +185,122 @@ async function tryFetch(path, options = {}) {
       headers: { 'Content-Type': 'application/json', ...authHeader, ...(options.headers || {}) },
     });
     clearTimeout(t);
+
+    let texto = '';
+    try { texto = await res.text(); } catch {}
+    let cuerpo = null;
+    if (texto) { try { cuerpo = JSON.parse(texto); } catch { cuerpo = null; } }
+
     if (!res.ok) {
-      let body = '';
-      try { body = await res.text(); } catch {}
-      return { ok: false, status: res.status, error: `HTTP ${res.status}${body ? ' — ' + body : ''}`, live: false };
+      const delServidor = recortar(mensajeDelCuerpo(cuerpo) || texto.trim());
+      return registrarError({
+        ok: false,
+        status: res.status,
+        // El status va al frente porque cambia la lectura: 401 es sesión, 404 es
+        // ruta o registro inexistente, 500 es que el backend reventó.
+        error: delServidor ? `HTTP ${res.status}: ${delServidor}` : `HTTP ${res.status} ${res.statusText || ''}`.trim(),
+        detalle: delServidor,
+        cuerpo,
+        texto: recortar(texto),
+        metodo,
+        ruta: path,
+        live: true, // el servidor sí respondió, aunque con error
+      });
     }
-    return { ok: true, status: res.status, data: await res.json(), live: true };
+
+    // 204 y respuestas vacías no traen JSON; no es motivo para fallar.
+    let data = null;
+    if (texto) {
+      if (cuerpo !== null) data = cuerpo;
+      else return registrarError({
+        ok: false,
+        status: res.status,
+        error: `HTTP ${res.status}: respuesta no es JSON — ${recortar(texto.trim())}`,
+        detalle: recortar(texto.trim()),
+        cuerpo: null,
+        texto: recortar(texto),
+        metodo,
+        ruta: path,
+        live: true,
+      });
+    }
+    return { ok: true, status: res.status, data, live: true };
   } catch (err) {
     clearTimeout(t);
-    return { ok: false, error: err.message, live: false };
+    const abortado = err.name === 'AbortError';
+    const segundos = Math.round((options.timeout || REQUEST_TIMEOUT) / 1000);
+    return registrarError({
+      ok: false,
+      status: 0, // 0 = el servidor nunca contestó: su estado real se desconoce
+      error: abortado
+        ? `Sin respuesta en ${segundos}s (timeout). El servidor puede seguir procesando la petición.`
+        : `No se pudo contactar a ${API_BASE} — ${err.message}`,
+      detalle: err.message,
+      cuerpo: null,
+      texto: '',
+      metodo,
+      ruta: path,
+      live: false,
+    });
   }
+}
+
+// Wrappers de lectura que devuelven listas: la vista sigue recibiendo un array
+// (los .map existentes no truenan), pero el array lleva pegado ok/error/status
+// para poder mostrar el motivo real. Además avisa por api.onError, porque estas
+// llamadas no devuelven la respuesta cruda y si no, el fallo quedaría invisible.
+function listaConError(r, extraer) {
+  const lista = r.ok ? (extraer ? extraer(r.data) : r.data) : [];
+  const salida = Array.isArray(lista) ? lista : [];
+  Object.defineProperties(salida, {
+    ok:     { value: r.ok, enumerable: false },
+    status: { value: r.status, enumerable: false },
+    error:  { value: r.ok ? null : r.error, enumerable: false },
+    cuerpo: { value: r.ok ? null : r.cuerpo, enumerable: false },
+  });
+  if (!r.ok) avisarError(r);
+  return salida;
+}
+
+// Misma lectura de errores para respuestas fetch que no pasan por tryFetch
+// (api_java se llama directo desde algunas vistas). Devuelve el mismo shape.
+async function interpretarRespuesta(res, { metodo = 'GET', ruta = '' } = {}) {
+  let texto = '';
+  try { texto = await res.text(); } catch {}
+  let cuerpo = null;
+  if (texto) { try { cuerpo = JSON.parse(texto); } catch { cuerpo = null; } }
+
+  if (!res.ok) {
+    const delServidor = recortar(mensajeDelCuerpo(cuerpo) || texto.trim());
+    return registrarError({
+      ok: false,
+      status: res.status,
+      error: delServidor ? `HTTP ${res.status}: ${delServidor}` : `HTTP ${res.status} ${res.statusText || ''}`.trim(),
+      detalle: delServidor,
+      cuerpo,
+      texto: recortar(texto),
+      data: cuerpo,
+      metodo,
+      ruta: ruta || res.url,
+      live: true,
+    });
+  }
+  return { ok: true, status: res.status, data: cuerpo, live: true };
+}
+
+// Igual que listaConError pero para respuestas que no son lista (objeto o null).
+function valorConError(r, extraer, porDefecto = null) {
+  if (!r.ok) { avisarError(r); return porDefecto; }
+  return extraer ? extraer(r.data) : r.data;
 }
 
 // ---- Public API ----
 const api = {
   live: false, // flipped true on first successful call
   token: null, // JWT set after login; sent in every request via Authorization: Bearer
+  errores: [],      // bitácora de las últimas peticiones fallidas (ver registrarError)
+  ultimoError: null,
+  onError: null,    // app.jsx lo conecta a los toasts para fallos no visibles en la vista
 
   async login(usuario, password) {
     const r = await tryFetch('/login', { method: 'POST', body: JSON.stringify({ usuario, password }) });
@@ -143,9 +311,14 @@ const api = {
       api.id_usuario = r.data.id_usuario;
       return { ok: true, token: r.data.access_token, user: usuario, id_usuario: r.data.id_usuario, live: true };
     }
+    // El servidor contestó y rechazó: ese motivo manda, no el login demo.
+    // El fallback mock solo aplica cuando no hubo respuesta (status 0).
+    if (r.status) {
+      return { ok: false, error: r.error, status: r.status, detalle: r.detalle };
+    }
     if (USE_MOCK_LOGIN_FALLBACK) {
       const valid = [
-        { u: 'gerencia', p: 'gerencia' },        
+        { u: 'gerencia', p: 'gerencia' },
         { u: 'ventas', p: 'ventas' },
         { u: 'demo', p: 'demo' },
       ];
@@ -154,41 +327,26 @@ const api = {
         api.usuario = usuario.toLowerCase();
         return { ok: true, token: 'mock-token-' + Date.now(), user: usuario.toLowerCase(), live: false };
       }
-      return { ok: false, error: 'Credenciales inválidas' };
+      // Sin backend: se dice explícitamente, para no confundirlo con un rechazo real.
+      return { ok: false, error: `${r.error} (modo demo: usa gerencia / ventas / demo)`, status: 0 };
     }
-    let errorMsg = 'Error de autenticación';
-    if (r.error) {
-      const bodyMatch = r.error.match(/HTTP \d+ — ([\s\S]*)/);
-      if (bodyMatch) {
-        try {
-          const parsed = JSON.parse(bodyMatch[1]);
-          errorMsg = parsed.detail || parsed.message || parsed.error || parsed.msg || bodyMatch[1];
-        } catch {
-          errorMsg = bodyMatch[1];
-        }
-      } else {
-        errorMsg = r.error;
-      }
-    }
-    return { ok: false, error: errorMsg };
+    return { ok: false, error: r.error, status: r.status ?? 0 };
   },
 
   async serverStatus() {
     const r = await tryFetch('/');
-    return { online: r.ok, live: r.ok };
+    return { online: r.ok, live: r.ok, error: r.ok ? null : r.error, status: r.status };
   },
 
   async productos() {
-    const r = await tryFetch('/zeutica/productos');
-    return r.ok ? r.data : [];
+    return listaConError(await tryFetch('/zeutica/productos'));
   },
   async clientes() {
-    const r = await tryFetch('/zeutica/clientes');
-    return r.ok ? r.data : [];
+    return listaConError(await tryFetch('/zeutica/clientes'));
   },
   async clientesPotenciales() {
     const r = await tryFetch('/zeutica/clientes-potenciales');
-    if (!r.ok) return { ok: false, error: r.error, data: [] };
+    if (!r.ok) return { ok: false, error: r.error, status: r.status, data: [] };
     const lista = Array.isArray(r.data) ? r.data : (r.data?.clientes ?? r.data?.items ?? []);
     return { ok: true, data: lista };
   },
@@ -202,7 +360,7 @@ const api = {
   // Historial del agente Sofi: { conversaciones: [{ session_id, message: "<json string>" }] }
   async conversacionesSofi() {
     const r = await tryFetch('/zeutica/sofi-conversaciones');
-    if (!r.ok) return { ok: false, error: r.error, data: [] };
+    if (!r.ok) return { ok: false, error: r.error, status: r.status, data: [] };
     const lista = Array.isArray(r.data) ? r.data : (r.data?.conversaciones ?? r.data?.items ?? []);
     return { ok: true, data: lista };
   },
@@ -215,58 +373,46 @@ const api = {
     return tryFetch(`/zeutica/editcliente/${u}`, { method: 'POST', body: JSON.stringify(payload) });
   },
   async ventasMes(f1, f2) {
-    const r = await tryFetch(`/zeutica/ventas/${f1}/${f2}`);
-    return r.ok ? r.data : [];
+    return listaConError(await tryFetch(`/zeutica/ventas/${f1}/${f2}`));
   },
   async cotizaciones() {
-    const r = await tryFetch('/zeutica/consulta/cotizacion');
-    if (!r.ok) return [];
-    return r.data.cotizaciones || r.data || [];
+    return listaConError(await tryFetch('/zeutica/consulta/cotizacion'), d => d?.cotizaciones || d);
   },
   // Exclusivo para sección Ventas: cotizaciones abiertas con items completos (sku, cantidad, precio).
   async cotizacionesVentas() {
-    const r = await tryFetch('/zeutica/cotizaciones/ventas');
-    if (!r.ok) return [];
-    return r.data.cotizaciones || r.data || [];
+    return listaConError(await tryFetch('/zeutica/cotizaciones/ventas'), d => d?.cotizaciones || d);
   },
   async creditos() {
-    const r = await tryFetch('/zeutica/ventas-credito');
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data.data || []);
+    return listaConError(await tryFetch('/zeutica/ventas-credito'), d => Array.isArray(d) ? d : d?.data);
   },
   async abonosRegistro() {
-    const r = await tryFetch('/zeutica/abonos-registro');
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data.data || []);
+    return listaConError(await tryFetch('/zeutica/abonos-registro'), d => Array.isArray(d) ? d : d?.data);
   },
   // Schema backend: { id_ventas: int, saldo_abonado: float }
   async registrarAbono(payload) {
     return tryFetch('/zeutica/abonos', { method: 'POST', body: JSON.stringify(payload) });
   },
   async gastos() {
-    const r = await tryFetch('/zeutica/gastos');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/gastos'), d => Array.isArray(d) ? d : d?.data);
   },
   async compras() {
-    const r = await tryFetch('/zeutica/registro-compras');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/registro-compras'), d => Array.isArray(d) ? d : d?.data);
   },
   async registrarCompra(payload) {
     return tryFetch('/zeutica/compras', { method: 'POST', body: JSON.stringify(payload) });
   },
   async proveedores() {
-    const r = await tryFetch('/zeutica/proveedores');
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data?.proveedores ?? r.data?.data ?? []);
+    return listaConError(
+      await tryFetch('/zeutica/proveedores'),
+      d => Array.isArray(d) ? d : (d?.proveedores ?? d?.data)
+    );
   },
   async crearProveedor(payload) {
     return tryFetch('/zeutica/proveedor-nuevo', { method: 'POST', body: JSON.stringify(payload) });
   },
   // Cuentas por pagar (deuda a proveedores). Espejo de creditos/abonos.
   async cuentasPorPagar() {
-    const r = await tryFetch('/zeutica/cuentas-por-pagar');
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data.data || []);
+    return listaConError(await tryFetch('/zeutica/cuentas-por-pagar'), d => Array.isArray(d) ? d : d?.data);
   },
   // Backend calcula fecha_vencimiento (fecha_factura + plazo_dias), saldo_pendiente y estado.
   async crearCuentaPagar(payload) {
@@ -277,16 +423,18 @@ const api = {
     return tryFetch('/zeutica/pagos-proveedor', { method: 'POST', body: JSON.stringify(payload) });
   },
   async ultimosCostos(sku) {
-    const r = await tryFetch(`/zeutica/ultimos-costos/${sku}`);
-    return r.ok ? (r.data.costos || []) : [];
+    return listaConError(await tryFetch(`/zeutica/ultimos-costos/${sku}`), d => d?.costos);
   },
   async actualizarCostoPromedio(sku, costo_prom) {
     return tryFetch('/zeutica/costoPromedio', { method: 'POST', body: JSON.stringify({ sku, costo_prom }) });
   },
   async traspasos() {
     const r = await tryFetch('/zeutica/traspasos/reporte');
-    if (r.ok) return Array.isArray(r.data) ? r.data : (r.data.data || []);
-    return MOCK.traspasos;
+    // Los datos de prueba solo salen en modo demo (sin sesión real contra el
+    // backend). Con backend real un fallo se muestra como fallo, no se disfraza
+    // de datos válidos.
+    if (!r.ok && !api.live && r.status === 0) return MOCK.traspasos;
+    return listaConError(r, d => Array.isArray(d) ? d : d?.data);
   },
   async registrarTraspaso(payload) {
     return tryFetch('/zeutica/traspaso', { method: 'POST', body: JSON.stringify(payload) });
@@ -300,22 +448,21 @@ const api = {
   // Recibe el id numérico de la cotización (no el código ZTC-###);
   // devuelve un array de items {sku, nombre_producto, cantidad, precio_unitario, total_linea}.
   async cotizacionDetalle(id) {
-    const r = await tryFetch(`/zeutica/cotizacion/${encodeURIComponent(id)}`, {
-      method: 'GET',
-    });
-    return r.ok ? r.data : null;
+    return valorConError(await tryFetch(`/zeutica/cotizacion/${encodeURIComponent(id)}`, { method: 'GET' }));
   },
   // PDF base64 de una cotización; /consulta/cotizacion ya no lo entrega.
   async cotizacionBase64(codigo) {
     const r = await tryFetch(`/zeutica/cotizaciones/base64/${encodeURIComponent(codigo)}`);
-    if (!r.ok) return '';
-    const d = r.data;
-    if (typeof d === 'string') return d;
-    return d.pdf || d.base64 || d.pdf_base64 || '';
+    return valorConError(
+      r,
+      d => (typeof d === 'string' ? d : (d?.pdf || d?.base64 || d?.pdf_base64 || '')),
+      ''
+    );
   },
   async nuevoCodigo() {
-    const r = await tryFetch('/zeutica/cotizaciones/nuevo-codigo');
-    return r.ok ? r.data.nuevo_codigo : 'ZTC-ERR';
+    // Devuelve null si falla: 'ZTC-ERR' se veía como un código válido y se
+    // alcanzaba a guardar. La vista debe frenar y mostrar el motivo.
+    return valorConError(await tryFetch('/zeutica/cotizaciones/nuevo-codigo'), d => d?.nuevo_codigo ?? null);
   },
   async guardarCotizacion(payload) {
     return tryFetch('/zeutica/cotizaciones/guardar', { method: 'POST', body: JSON.stringify(payload) });
@@ -337,9 +484,10 @@ const api = {
     return tryFetch('/zeutica/firma-ventas', { method: 'POST', body: JSON.stringify(payload) });
   },
   async complementosPago(id) {
-    const r = await tryFetch(`/zeutica/complemento-pago/${encodeURIComponent(id)}`);
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data.data || r.data.complementos || []);
+    return listaConError(
+      await tryFetch(`/zeutica/complemento-pago/${encodeURIComponent(id)}`),
+      d => Array.isArray(d) ? d : (d?.data || d?.complementos)
+    );
   },
   async registrarComplementoPago(payload) {
     return tryFetch('/zeutica/complemento-pago', { method: 'POST', body: JSON.stringify(payload) });
@@ -353,18 +501,15 @@ const api = {
   },
   // Traer las devoluciones totales.
   async devoluciones() {
-    const r = await tryFetch('/zeutica/productos/devoluciones');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/productos/devoluciones'), d => Array.isArray(d) ? d : d?.data);
   },
   // Traer los registro de login.
   async registroIngresos() {
-    const r = await tryFetch('/zeutica/registro-login');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/registro-login'), d => Array.isArray(d) ? d : d?.data);
   },
   // Traer registro de movimientos del sistema (usuario, movimiento, seccion, fecha).
   async consultaRegistros() {
-    const r = await tryFetch('/zeutica/consulta-registros');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/consulta-registros'), d => Array.isArray(d) ? d : d?.data);
   },
   async registrarVentaCleanest(cleanestPayload) {
     return tryFetch('/zeutica/cleanest/venta', { method: 'POST', body: JSON.stringify(cleanestPayload) }); 
@@ -379,8 +524,7 @@ const api = {
     return tryFetch(`/zeutica/consultagastos?usuario=${encodeURIComponent(usuario || '')}`, { method: 'GET' });
   },
   async cleanest() {
-    const r = await tryFetch('/zeutica/cleanest');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/cleanest'), d => Array.isArray(d) ? d : d?.data);
   },
   async ubicacionesSku(sku) {
     return tryFetch(`/zeutica/productos/ubicaciones/${encodeURIComponent(sku)}`);
@@ -424,18 +568,24 @@ const api = {
   async verificarVenta(norden) {
     return tryFetch(`/zeutica/verifica-venta/${encodeURIComponent(norden)}`);
   },
-  // Notificaciones del empleado logueado. id_usuario = int devuelto por /login (auth.id_usuario).
-  async notificaciones(id_usuario) {
-    const r = await tryFetch(`/zeutica/empleados/${encodeURIComponent(id_usuario)}/notificaciones`);
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data.notificaciones || r.data.data || []);
+  // URL del canal WebSocket de notificaciones. El token va por query param
+  // porque el navegador no permite mandar header Authorization en un WebSocket.
+  urlNotificacionesWS() {
+    if (!api.token) return null;
+    return `${WS_BASE}/zeutica/ws/notificaciones?token=${encodeURIComponent(api.token)}`;
   },
-  // Marca una notificación como leída. notificacion_id = int.
+  // Notificaciones del empleado logueado. id_usuario = int devuelto por /login (auth.id_usuario).
+  // Respaldo: el camino normal es el WebSocket (urlNotificacionesWS), esto solo
+  // se usa si la conexión WS no logra abrirse.
+  async notificaciones(id_usuario) {
+    return listaConError(
+      await tryFetch(`/zeutica/empleados/${encodeURIComponent(id_usuario)}/notificaciones`),
+      d => Array.isArray(d) ? d : (d?.notificaciones || d?.data)
+    );
+  },
   async pendientesRegistro(estado = 'Pendiente') {
     const q = estado ? `?estado=${encodeURIComponent(estado)}` : '';
-    const r = await tryFetch(`/zeutica/pendientes-registro${q}`);
-    if (!r.ok) return [];
-    return Array.isArray(r.data) ? r.data : (r.data.data ?? []);
+    return listaConError(await tryFetch(`/zeutica/pendientes-registro${q}`), d => Array.isArray(d) ? d : d?.data);
   },
   async agregarPendiente(payload) {
     return tryFetch('/zeutica/pendientes-agregar', { method: 'POST', body: JSON.stringify(payload) });
@@ -451,8 +601,7 @@ const api = {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });
   },
   async empleadosUsuarios() {
-    const r = await tryFetch('/zeutica/empleados-usuarios');
-    return r.ok ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+    return listaConError(await tryFetch('/zeutica/empleados-usuarios'), d => Array.isArray(d) ? d : d?.data);
   },
   async editarEmpleadoUsuario(payload) {
     return tryFetch('/zeutica/empleados-editados', { method: 'PUT', body: JSON.stringify(payload) });
@@ -473,12 +622,10 @@ const api = {
     if (conForwarder !== undefined && conForwarder !== null) params.set('con_forwarder', conForwarder);
     if (salioDeChina !== undefined && salioDeChina !== null) params.set('salio_de_china', salioDeChina);
     const qs = params.toString();
-    const r = await tryFetch(`/zeutica/embarques${qs ? '?' + qs : ''}`);
-    return r.ok ? r.data : [];
+    return listaConError(await tryFetch(`/zeutica/embarques${qs ? '?' + qs : ''}`));
   },
   async embarqueDetalle(id) {
-    const r = await tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`);
-    return r.ok ? r.data : null;
+    return valorConError(await tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}`));
   },
   async crearEmbarque(payload) {
     return tryFetch('/zeutica/embarques', { method: 'POST', body: JSON.stringify(payload) });
@@ -502,20 +649,22 @@ const api = {
   },
   // { valor, fecha } — tipo de cambio USD/MXN del dia (Banxico, con cache diaria en backend)
   async tipoCambioHoy() {
-    const r = await tryFetch('/zeutica/tipo-cambio/hoy');
-    return r.ok ? r.data : null;
+    return valorConError(await tryFetch('/zeutica/tipo-cambio/hoy'));
   },
   // { valor, fecha } — tipo de cambio USD/MXN de referencia para una fecha especifica
   // (o el dato disponible mas reciente antes de esa fecha). Solo para previsualizar
   // en el formulario; el backend nunca lo usa para calcular montos.
   async tipoCambioFecha(fecha) {
-    const r = await tryFetch(`/zeutica/tipo-cambio/${encodeURIComponent(fecha)}`);
-    return r.ok ? r.data : null;
+    return valorConError(await tryFetch(`/zeutica/tipo-cambio/${encodeURIComponent(fecha)}`));
   },
 };
 
 window.api = api;
 window.api.mock = MOCK;
+// Para las vistas que llaman a api_java directo y necesitan el mismo criterio
+// de error (mensaje del servidor + status + bitácora en api.errores).
+window.api.interpretarRespuesta = interpretarRespuesta;
+window.api.registrarError = registrarError;
 window.fmt = {
   mxn: (n) => '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   int: (n) => Number(n || 0).toLocaleString('es-MX'),

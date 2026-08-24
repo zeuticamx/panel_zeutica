@@ -83,12 +83,17 @@ async function pmFetchPromociones() {
     let cuerpo = null;
     try { cuerpo = texto ? JSON.parse(texto) : null; } catch { cuerpo = texto; }
     if (!res.ok) {
-      const msg = (cuerpo && typeof cuerpo === 'object' && cuerpo.message) ? cuerpo.message : `HTTP ${res.status}`;
-      return { ok: false, error: msg, raw: cuerpo };
+      // Mismo criterio que el resto del panel: el cuerpo del webhook se muestra
+      // tal cual, no un "HTTP 500" pelón que no dice qué pasó en n8n.
+      const r = await window.api.interpretarRespuesta(
+        { ok: false, status: res.status, statusText: res.statusText, url: res.url, text: async () => texto },
+        { metodo: 'GET', ruta: 'webhook promociones MELI' }
+      );
+      return { ok: false, error: r.error, raw: cuerpo };
     }
     return { ok: true, raw: cuerpo };
   } catch (e) {
-    return { ok: false, error: e.message || 'Error de red al consultar el webhook' };
+    return { ok: false, error: `No se pudo consultar el webhook de promociones — ${e.message}` };
   }
 }
 
@@ -118,7 +123,7 @@ function PagePromocionesMeli() {
     setLoading(false);
     setActualizado(new Date());
     setRaw(r.raw ?? null);
-    if (!r.ok) setError(r.error || 'No se pudieron cargar las promociones');
+    if (!r.ok) setError(r.error);
   };
 
   pm_uE(() => { cargar(); }, []);

@@ -238,7 +238,7 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
       toast.success('Conteo guardado', `${payload.productos.length} productos registrados`);
       window.fireConfetti();
     } else {
-      toast.error('Error al enviar', r.error || 'Intenta de nuevo');
+      toast.error('Error al enviar', r.error);
     }
     setSending(false);
   };

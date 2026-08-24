@@ -103,7 +103,7 @@ function PageConversacionesSofi() {
     const r = await window.api.conversacionesSofi();
     setLoading(false);
     if (!r.ok) {
-      setError(r.error || 'No se pudieron cargar las conversaciones');
+      setError(r.error);
       setLista([]);
       return;
     }

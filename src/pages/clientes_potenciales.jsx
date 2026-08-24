@@ -141,8 +141,13 @@ function PageClientesPotenciales() {
         : Promise.resolve({ ok: true }),
     ]);
     setSincronizando(false);
-    if (resGeneral.some((r) => !r.ok) || !resNotas.ok) {
-      toast.error('No se pudo sincronizar', 'Revisa la conexión e intenta de nuevo');
+    const fallos = [
+      // El índice se toma antes de filtrar para no perder la correspondencia con cambioGeneral.
+      ...resGeneral.map((r, i) => (r.ok ? null : `id ${cambioGeneral[i]?.id}: ${r.error}`)).filter(Boolean),
+      ...(resNotas.ok ? [] : [`notas: ${resNotas.error}`]),
+    ];
+    if (fallos.length > 0) {
+      toast.error(`No se sincronizaron ${fallos.length} cambio(s)`, fallos.join(' · '));
       return;
     }
     toast.success('Sincronizado', `${cambioGeneral.length + cambioNotas.length} cambio(s)`);
@@ -155,7 +160,7 @@ function PageClientesPotenciales() {
     const r = await window.api.clientesPotenciales();
     setLoading(false);
     if (!r.ok) {
-      setError(r.error || 'No se pudo cargar clientes potenciales');
+      setError(r.error);
       setLista([]);
       return;
     }

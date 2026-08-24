@@ -62,7 +62,7 @@ function PageUsuarios() {
       setUsuarios(await window.api.empleadosUsuarios());
       cancelarEditar();
     } else {
-      toast.error('Error al guardar', r.error || 'Verifica conexión con el servidor');
+      toast.error('Error al guardar', r.error);
     }
   };
 
@@ -79,7 +79,7 @@ function PageUsuarios() {
       setShowNuevo(false);
       setUsuarios(await window.api.empleadosUsuarios());
     } else {
-      toast.error('Error al crear', r.error || 'Verifica conexión con el servidor');
+      toast.error('Error al crear', r.error);
     }
   };
 

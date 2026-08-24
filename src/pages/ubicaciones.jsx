@@ -35,7 +35,7 @@ function PageUbicaciones() {
       toast.success('Ubicación eliminada', `ID #${id}`);
       await cargarUbicaciones(selSku);
     } else {
-      toast.error('Error al eliminar', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo eliminar la ubicación #${id}`, r.error);
     }
   };
 
@@ -57,7 +57,7 @@ function PageUbicaciones() {
       setShowNueva(false);
       await cargarUbicaciones(selSku);
     } else {
-      toast.error('Error al crear', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo crear la ubicación de ${selSku}`, r.error);
     }
   };
 
@@ -73,7 +73,7 @@ function PageUbicaciones() {
       setUbicaciones(data);
     } else {
       setUbicaciones([]);
-      toast.error('Error al cargar', `No se pudo obtener ubicaciones de ${sku}`);
+      toast.error(`No se pudieron cargar las ubicaciones de ${sku}`, r.error);
     }
     cargarRegistro(sku);
   };
@@ -86,6 +86,7 @@ function PageUbicaciones() {
       setRegistro(Array.isArray(r.data) ? r.data : (r.data ? [r.data] : []));
     } else {
       setRegistro([]);
+      toast.error(`No se pudo cargar el historial de ${sku}`, r.error);
     }
   };
 
@@ -113,7 +114,7 @@ function PageUbicaciones() {
       await cargarUbicaciones(selSku);
       setEditIdx(null);
     } else {
-      toast.error('Error al guardar', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo guardar la ubicación de ${selSku}`, r.error);
     }
   };
 

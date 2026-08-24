@@ -39,11 +39,17 @@ function getDateRange(periodo) {
   return { f1, f2 };
 }
 
+function esMismoMes(fecha, year, month) {
+  const d = new Date(fecha);
+  return d.getFullYear() === year && d.getMonth() === month;
+}
+
 function PageDashboard({ user }) {
   const { Sparkline, BarChart, HBarChart, Donut, LineChart } = window.Charts;
   const [loading, setLoading] = ds_uS(true);
   const [ventas, setVentas] = ds_uS([]);
   const [productos, setProductos] = ds_uS([]);
+  const [gastos, setGastos] = ds_uS([]);
   const [periodo, setPeriodo] = ds_uS('mes');
 
   ds_uE(() => {
@@ -59,6 +65,37 @@ function PageDashboard({ user }) {
       setLoading(false);
     })();
   }, [periodo]);
+
+  ds_uE(() => {
+    (async () => {
+      const g = await window.api.gastos();
+      setGastos(Array.isArray(g) ? g : []);
+    })();
+  }, []);
+
+  const gastosMetrics = ds_uM(() => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    const pm = m === 0 ? 11 : m - 1;
+    const py = m === 0 ? y - 1 : y;
+    const montoGasto = g => Number(g.total ?? ((g.costo || 0) * (g.cantidad || 0))) || 0;
+    const delMes = gastos.filter(g => esMismoMes(g.fecha_registro, y, m));
+    const delMesAnterior = gastos.filter(g => esMismoMes(g.fecha_registro, py, pm));
+    const total = delMes.reduce((s, g) => s + montoGasto(g), 0);
+    const totalAnterior = delMesAnterior.reduce((s, g) => s + montoGasto(g), 0);
+    const delta = totalAnterior > 0 ? ((total - totalAnterior) / totalAnterior) * 100 : 0;
+
+    const byDay = {};
+    delMes.forEach(g => {
+      const d = new Date(g.fecha_registro).toISOString().slice(0, 10);
+      byDay[d] = (byDay[d] || 0) + montoGasto(g);
+    });
+    const spark = Object.entries(byDay)
+      .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+      .map(([, v]) => Math.round(v));
+
+    return { delMes, total, delta, spark };
+  }, [gastos]);
 
   const metrics = ds_uM(() => {
     const totalUnidades = ventas.reduce((s, v) => s + (v.cantidad || 0), 0);
@@ -92,7 +129,7 @@ function PageDashboard({ user }) {
     return (
       <div className="page">
         <div className="dash-kpis">
-          {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 112 }}/>)}
+          {[0,1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: 112 }}/>)}
         </div>
         <div className="skeleton" style={{ height: 280 }}/>
       </div>
@@ -106,12 +143,15 @@ function PageDashboard({ user }) {
 
   return (
     <div className="page">
-      <div className="section-header">
-        <div>
-          <h2 className="section-title">Panorama{periodo === 'hoy' ? ' de hoy' : periodo === '7d' ? ' — últimos 7 días' : periodo === 'año' ? ` — ${new Date().getFullYear()}` : ' del mes'}</h2>
-          <p className="section-subtitle">
-            Resumen de ventas, cobranza e inventario — {new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}
-          </p>
+      <div className="section-header dash-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span className="dash-header-icon"><Icon name="trend" size={20}/></span>
+          <div>
+            <h2 className="section-title">Panorama{periodo === 'hoy' ? ' de hoy' : periodo === '7d' ? ' — últimos 7 días' : periodo === 'año' ? ` — ${new Date().getFullYear()}` : ' del mes'}</h2>
+            <p className="section-subtitle">
+              Resumen de ventas, cobranza e inventario — {new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}
+            </p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="tabs">
@@ -129,6 +169,7 @@ function PageDashboard({ user }) {
         <Kpi icon="trend" label="Utilidad estimada" value={window.fmt.mxn(metrics.utilidad)} delta={8.1} deltaLabel="margen 28%" spark={sparkData} color="var(--c3)"/>
         <Kpi icon="pkg" label="Unidades vendidas" value={window.fmt.int(metrics.totalUnidades)} delta={-3.2} deltaLabel="vs mes anterior" spark={sparkData} color="var(--c2)"/>
         <Kpi icon="tag" label="Ticket promedio" value={window.fmt.mxn(metrics.ticketProm)} delta={5.7} deltaLabel={`${metrics.numVentas} transacciones`} spark={sparkData} color="var(--c4)"/>
+        <Kpi icon="wallet" label="Gastos del mes" value={window.fmt.mxn(gastosMetrics.total)} delta={gastosMetrics.delta} deltaLabel={`${gastosMetrics.delMes.length} registros`} spark={gastosMetrics.spark.length ? gastosMetrics.spark : [0,0]} color="var(--danger)" invert/>
       </div>
 
       <div className="dash-grid">
@@ -231,20 +272,24 @@ function PageDashboard({ user }) {
   );
 }
 
-function Kpi({ icon, label, value, delta, deltaLabel, spark, color = 'var(--brand)' }) {
-  const up = delta >= 0;
+function Kpi({ icon, label, value, delta, deltaLabel, spark, color = 'var(--brand)', invert = false }) {
+  const rose = delta >= 0;
+  const good = invert ? !rose : rose;
   return (
-    <div className="kpi">
+    <div className="kpi" style={{ borderTop: `2px solid ${color}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <span className="kpi-label"><Icon name={icon} size={12}/> {label}</span>
-        <div style={{ width: 70, opacity: 0.8 }}>
-          <window.Charts.Sparkline data={spark} color={color} w={70} h={24}/>
+        <span className="kpi-icon" style={{ background: `color-mix(in oklch, ${color} 16%, transparent)`, color }}>
+          <Icon name={icon} size={14}/>
+        </span>
+        <div style={{ width: 64, opacity: 0.85 }}>
+          <window.Charts.Sparkline data={spark} color={color} w={64} h={22}/>
         </div>
       </div>
       <div className="kpi-value">{value}</div>
-      <div className={`kpi-delta ${up ? 'up' : 'down'}`}>
-        <Icon name={up ? 'arrowUp' : 'arrowDown'} size={12}/>
-        <span>{up ? '+' : ''}{delta}%</span>
+      <div className="kpi-label" style={{ marginBottom: 2 }}>{label}</div>
+      <div className={`kpi-delta ${good ? 'up' : 'down'}`}>
+        <Icon name={rose ? 'arrowUp' : 'arrowDown'} size={12}/>
+        <span>{rose ? '+' : ''}{delta.toFixed ? delta.toFixed(1) : delta}%</span>
         <span style={{ color: 'var(--fg-2)', marginLeft: 4 }}>{deltaLabel}</span>
       </div>
     </div>

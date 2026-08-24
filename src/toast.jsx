@@ -19,10 +19,12 @@ function ToastProvider({ children }) {
   const remove = useCallback((id) => setToasts((prev) => prev.filter((x) => x.id !== id)), []);
 
   const ctx = useMemo(() => ({
-    success: (title, msg) => push({ type: 'success', title, msg }),
-    error:   (title, msg) => push({ type: 'error',   title, msg }),
-    warn:    (title, msg) => push({ type: 'warn',    title, msg }),
-    info:    (title, msg) => push({ type: 'info',    title, msg }),
+    success: (title, msg, duration) => push({ type: 'success', title, msg, duration }),
+    // Los errores traen el mensaje del servidor: se dejan más tiempo en pantalla
+    // porque hay que leerlos, no solo verlos pasar.
+    error:   (title, msg, duration) => push({ type: 'error',   title, msg, duration: duration || 10000 }),
+    warn:    (title, msg, duration) => push({ type: 'warn',    title, msg, duration }),
+    info:    (title, msg, duration) => push({ type: 'info',    title, msg, duration }),
   }), [push]);
 
   const iconFor = { success: 'ok', error: 'alert', warn: 'alert', info: 'info' };

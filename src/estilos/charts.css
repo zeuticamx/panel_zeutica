@@ -87,9 +87,28 @@
 /* Dashboard layout */
 .dash-kpis {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
+}
+.dash-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--r-lg);
+  background: var(--brand-bg);
+  color: var(--brand-hi);
+}
+.kpi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-md);
 }
 .dash-grid {
   display: grid;
@@ -151,6 +170,8 @@
   font-size: 12px;
 }
 .activity-item:last-child { border-bottom: none; }
+.activity-item { transition: background var(--dur-fast) var(--ease); border-radius: var(--r-sm); }
+.activity-item:hover { background: var(--bg-2); }
 .activity-dot {
   width: 8px; height: 8px;
   border-radius: 50%;

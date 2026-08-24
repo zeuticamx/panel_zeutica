@@ -67,7 +67,7 @@ function PageCompras() {
     };
     const r = await window.api.crearProveedor(payload);
     setSavingProv(false);
-    if (!r.ok) { toast.error('No se pudo guardar proveedor', r.error || 'Verifica conexión con el servidor'); return; }
+    if (!r.ok) { toast.error('No se pudo guardar proveedor', r.error); return; }
     toast.success('Proveedor agregado', nombre);
     setShowNuevoProv(false);
     setNuevoProv({ proveedor: '', contacto: '', telefono: '', email: '', direccion: '', credito: false });
@@ -145,7 +145,7 @@ function PageCompras() {
       setConfirm(null); resetForm();
       setCompras(await window.api.compras());
     } else {
-      toast.error('Error al registrar', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo registrar la factura ${confirm.numFactura}`, r.error);
       setConfirm(null);
     }
     setSubmitting(false);

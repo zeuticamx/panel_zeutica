@@ -4,14 +4,18 @@ const { useState: gm_uS, useEffect: gm_uE, useCallback: gm_uC, useRef: gm_uR } =
 const API_JAVA = 'https://postgresqldb-api-java.i4mjht.easypanel.host'; // Zeutica Java Server
 
 async function javaFetch(path, opts = {}) {
+  const metodo = (opts.method || 'GET').toUpperCase();
   try {
     const r = await fetch(`${API_JAVA}${path}`, { signal: AbortSignal.timeout(5000), ...opts });
-    if (!r.ok) return { ok: false, data: null, error: `HTTP ${r.status}` };
-    return { ok: true, data: await r.json() };
+    // Misma lectura que el resto del panel: el cuerpo del error se muestra tal cual.
+    return await window.api.interpretarRespuesta(r, { metodo, ruta: path });
   } catch (err) {
-    // Falla de red/CORS/timeout — el navegador no expone detalle, pero registramos.
-    console.error(`javaFetch ${path} falló:`, err);
-    return { ok: false, data: null, error: err.message || 'Sin conexión' };
+    // Red/CORS/timeout: el servidor no contestó, su estado real se desconoce.
+    return window.api.registrarError({
+      ok: false, status: 0, data: null,
+      error: `No se pudo contactar a ${API_JAVA} — ${err.message}`,
+      detalle: err.message, cuerpo: null, texto: '', metodo, ruta: path, live: false,
+    });
   }
 }
 
@@ -37,7 +41,7 @@ function DrawerJava({ onClose }) {
       javaFetch('/api/estadisticas'),
     ]);
     if (rItems.ok) setItems(Array.isArray(rItems.data) ? rItems.data : (rItems.data?.data ?? []));
-    else setLoadError(rItems.error || 'No se pudo conectar con localhost:8080');
+    else setLoadError(rItems.error);
     if (rStats.ok) setStats(rStats.data);
     setLoading(false);
   }, []);
@@ -266,7 +270,7 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
       const rJava = await javaFetch(`/api/pendientes/nueva?${qs}`, { method: 'POST' });
       setSaving(false);
       if (!rJava.ok) {
-        toast.error('Error al guardar', rJava.error || 'No se pudo conectar');
+        toast.error('Error al guardar', rJava.error);
         return;
       }
       toast.success('Pendiente agregado', form.actividad);
@@ -290,7 +294,7 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
       : await window.api.agregarPendiente(payload);
     if (!r.ok) {
       setSaving(false);
-      toast.error(isEdit ? 'Error al actualizar' : 'Error al guardar', r.error || 'No se pudo conectar');
+      toast.error(isEdit ? 'Error al actualizar' : 'Error al guardar', r.error);
       return;
     }
 
@@ -538,7 +542,7 @@ function PageGerencia() {
     const r = await window.api.eliminarPendiente(id);
     if (!r.ok) {
       setDeletingId(null);
-      toast.error('Error al eliminar', r.error || 'No se pudo conectar');
+      toast.error('Error al eliminar', r.error);
       return;
     }
     const rRecarga = await javaFetch('/api/recargar', { method: 'POST' });

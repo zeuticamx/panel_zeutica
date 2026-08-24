@@ -403,7 +403,10 @@ function PageCotizaciones({ user }) {
       ]);
       setClientes(cls);
       setProductos(prods);
-      setNuevoCodigo(codigo);
+      // Sin código no se puede guardar: antes llegaba 'ZTC-ERR' y se alcanzaba
+      // a registrar una cotización con ese código.
+      if (codigo) setNuevoCodigo(codigo);
+      else toast.error('No se pudo obtener el folio', window.api.ultimoError?.error || 'El servidor no devolvió nuevo_codigo');
       if (prods.length > 0) {
         setSelectedSku(prods[0].sku);
         setPrecioManual(Number(prods[0].precio) || 0);
@@ -530,7 +533,7 @@ function PageCotizaciones({ user }) {
       setCots(await window.api.cotizaciones());
       resetForm();
     } else {
-      toast.error('Error al guardar', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo guardar la cotización ${nuevoCodigo}`, r.error);
     }
   };
 
@@ -551,7 +554,7 @@ function PageCotizaciones({ user }) {
       setCots(prev => prev.map(c => c.codigo_cotizacion === firmaModal.codigo ? { ...c, firma_envio: firma_base64 } : c));
       setFirmaModal(null);
     } else {
-      toast.error('Error al guardar firma', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo guardar la firma de ${firmaModal.codigo}`, r.error);
     }
   };
 
@@ -602,7 +605,7 @@ function PageCotizaciones({ user }) {
       const data = await window.api.complementosPago(complementoModal.codigo_cotizacion);
       setComplementos(data);
     } else {
-      toast.error('Error', 'No se pudo guardar el complemento de pago');
+      toast.error(`No se pudo guardar el complemento de ${complementoModal.codigo_cotizacion}`, r.error);
     }
   };
 
@@ -632,7 +635,7 @@ function PageCotizaciones({ user }) {
       window.fireConfetti();
       setCots(await window.api.cotizaciones());
     } else {
-      toast.error('Error', 'No se pudo guardar las relaciones');
+      toast.error('No se pudieron guardar las relaciones', r.error);
     }
   };
 
@@ -649,8 +652,9 @@ function PageCotizaciones({ user }) {
       } else {
         toast.warn('Sin PDF', 'Esta cotización no tiene PDF adjunto');
       }
-    } catch(_) {
-      toast.error('Error', 'No se pudo abrir el PDF');
+    } catch(err) {
+      // El fallo del fetch ya se reportó; aquí solo puede reventar el decodificado.
+      toast.error(`No se pudo abrir el PDF de ${codigo}`, err.message);
     } finally {
       setVerLoading(null);
     }
@@ -897,7 +901,7 @@ function PageCotizaciones({ user }) {
 
           <div className="card-footer">
             <button className="btn btn-secondary btn-sm" onClick={resetForm}>Cancelar</button>
-            <button className="btn btn-primary btn-sm" disabled={!selectedCliente || items.length === 0 || submitting} onClick={() => askConfirm(`¿Guardar cotización ${nuevoCodigo} para ${selectedCliente} por ${window.fmt.mxn(totalFinal)}?`, guardar)}>
+            <button className="btn btn-primary btn-sm" disabled={!selectedCliente || items.length === 0 || submitting || !nuevoCodigo} onClick={() => askConfirm(`¿Guardar cotización ${nuevoCodigo} para ${selectedCliente} por ${window.fmt.mxn(totalFinal)}?`, guardar)}>
               {submitting
                 ? <><span className="spinner"/> Guardando...</>
                 : <><Icon name="check" size={13}/> Guardar cotización{nuevoCodigo ? ` · ${nuevoCodigo}` : ''}</>}

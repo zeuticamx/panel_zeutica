@@ -1,35 +1,127 @@
 // ===== Zeutica — Main App =====
 const { useState: a_uS, useEffect: a_uE, useCallback: a_uC, useMemo: a_uM, useRef: a_uR } = React;
 
+// Normaliza lo que manda el backend (snake_case, campos variables) al shape
+// que usa el panel. Sirve igual para el snapshot inicial y para cada push.
+function mapNotif(n, i) {
+  return {
+    id: n.id ?? n.notificacion_id ?? i,
+    type: n.type || n.tipo || 'info',
+    icon: n.icon || n.icono || 'bell',
+    title: n.title || n.titulo || n.asunto || 'Notificación',
+    msg: n.msg || n.mensaje || n.descripcion || '',
+    time: n.time || n.fecha || n.fecha_creacion || n.created_at || new Date().toISOString(),
+    unread: n.unread ?? (n.leido != null ? !n.leido : true),
+  };
+}
+
+// Notificaciones en tiempo real por WebSocket (/zeutica/ws/notificaciones).
+// Reemplaza al polling cada 60s: el backend manda un snapshot al conectar y
+// después empuja cada notificación nueva. El GET REST queda solo de respaldo
+// si el socket no logra abrir.
+const WS_RECONEXION_MIN = 2000;   // primer reintento
+const WS_RECONEXION_MAX = 30000;  // tope del backoff
+const WS_PING_MS = 25000;         // keepalive contra timeouts de proxy
+
 function useLiveNotifs(user) {
   const [notifs, setNotifs] = a_uS([]);
+  const socketRef = a_uR(null);
+  const reintentoRef = a_uR(WS_RECONEXION_MIN);
 
   const fetchNotifs = a_uC(async () => {
     if (!user) { setNotifs([]); return; }
     const data = await window.api.notificaciones(user);
-    const mapped = (data || []).map((n, i) => ({
-      id: n.id ?? n.notificacion_id ?? i,
-      type: n.type || n.tipo || 'info',
-      icon: n.icon || n.icono || 'bell',
-      title: n.title || n.titulo || n.asunto || 'Notificación',
-      msg: n.msg || n.mensaje || n.descripcion || '',
-      time: n.time || n.fecha || n.created_at || new Date().toISOString(),
-      unread: n.unread ?? (n.leido != null ? !n.leido : true),
-    }));
-    setNotifs(mapped);
+    setNotifs((data || []).map(mapNotif));
   }, [user]);
 
   a_uE(() => {
-    fetchNotifs();
-    const id = setInterval(fetchNotifs, 60000);
-    return () => clearInterval(id);
-  }, [fetchNotifs]);
+    if (!user) { setNotifs([]); return; }
+
+    let cerrado = false;      // true cuando el efecto se desmonta: no reconectar
+    let timerReconexion = null;
+    let timerPing = null;
+
+    const conectar = () => {
+      const url = window.api.urlNotificacionesWS();
+      if (!url) { fetchNotifs(); return; } // sin token todavía: respaldo REST
+
+      let ws;
+      try { ws = new WebSocket(url); } catch { fetchNotifs(); return; }
+      socketRef.current = ws;
+      let abrio = false;
+
+      ws.onopen = () => {
+        abrio = true;
+        reintentoRef.current = WS_RECONEXION_MIN;
+        timerPing = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+        }, WS_PING_MS);
+      };
+
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+
+        if (msg.tipo === 'snapshot') {
+          setNotifs((msg.notificaciones || []).map(mapNotif));
+          return;
+        }
+        if (msg.tipo === 'notificacion') {
+          const nueva = mapNotif(msg.notificacion, 0);
+          // Evita duplicar si el snapshot ya la traía (reconexión).
+          setNotifs(prev => prev.some(n => n.id === nueva.id) ? prev : [nueva, ...prev]);
+          return;
+        }
+        if (msg.tipo === 'leida') {
+          setNotifs(prev => prev.map(n => n.id === msg.id ? { ...n, unread: false } : n));
+          return;
+        }
+        if (msg.tipo === 'escalacion') {
+          // Aviso efímero de Sofia: no vive en la tabla, solo en esta sesión.
+          const nueva = mapNotif({
+            id: `esc-${msg.session_id}-${Date.now()}`,
+            tipo: 'warn',
+            icono: 'bell',
+            titulo: 'Conversación escalada',
+            mensaje: msg.motivo || `WhatsApp ${msg.wa_id} requiere atención humana`,
+          }, 0);
+          setNotifs(prev => [nueva, ...prev]);
+        }
+      };
+
+      ws.onclose = () => {
+        clearInterval(timerPing);
+        if (cerrado) return;
+        // Nunca abrió (proxy sin WS, backend caído): al menos pinta el estado
+        // actual con el GET de respaldo mientras se reintenta.
+        if (!abrio) fetchNotifs();
+        // Backoff exponencial con tope, para no martillar al backend caído.
+        timerReconexion = setTimeout(conectar, reintentoRef.current);
+        reintentoRef.current = Math.min(reintentoRef.current * 2, WS_RECONEXION_MAX);
+      };
+
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    };
+
+    conectar();
+
+    return () => {
+      cerrado = true;
+      clearTimeout(timerReconexion);
+      clearInterval(timerPing);
+      if (socketRef.current) { try { socketRef.current.close(); } catch {} }
+      socketRef.current = null;
+    };
+  }, [user, fetchNotifs]);
 
   const markAllRead = a_uC(() => {
     setNotifs(prev => {
       const unread = prev.filter(n => n.unread);
       // POST por cada notificación no leída; id numérico esperado por backend.
-      unread.forEach(n => { window.api.marcarNotificacionLeida(n.id); });
+      // Las escalaciones de Sofia son efímeras (id string): no viven en la tabla.
+      unread.forEach(n => {
+        if (Number.isFinite(Number(n.id))) window.api.marcarNotificacionLeida(n.id);
+      });
       return prev.map(n => ({ ...n, unread: false }));
     });
   }, []);
@@ -174,6 +266,49 @@ function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Errores de peticiones que la vista no muestra por su cuenta (los wrappers de
+  // lectura que devuelven listas). Se muestra el mensaje del servidor tal cual,
+  // con la ruta y el status, para saber qué falló y dónde.
+  const ultimosAvisos = a_uR(new Map());
+  const rafagaAvisos = a_uR({ desde: 0, mostrados: 0, callados: 0, timer: null });
+  a_uE(() => {
+    const VENTANA = 6000;   // agrupa lo que caiga junto (una vista que monta y pide 5 cosas)
+    const MAX_TOASTS = 3;   // más que esto se resume en uno solo
+
+    window.api.onError = (info) => {
+      const clave = `${info.metodo} ${info.ruta} ${info.error}`;
+      const ahora = Date.now();
+      // Varias vistas piden lo mismo al montar: no repetir el mismo toast.
+      if (ahora - (ultimosAvisos.current.get(clave) || 0) < VENTANA) return;
+      ultimosAvisos.current.set(clave, ahora);
+
+      const rafaga = rafagaAvisos.current;
+      if (ahora - rafaga.desde > VENTANA) { rafaga.desde = ahora; rafaga.mostrados = 0; rafaga.callados = 0; }
+
+      const titulo = info.status
+        ? `Error ${info.status} en ${info.ruta}`
+        : `Sin respuesta del servidor (${info.ruta})`;
+
+      if (rafaga.mostrados < MAX_TOASTS) {
+        rafaga.mostrados++;
+        toast.error(titulo, info.detalle || info.error);
+        return;
+      }
+      // Backend caído: no tapar la pantalla con un toast por endpoint.
+      // Se resume, y el detalle completo de cada uno queda en api.errores.
+      rafaga.callados++;
+      clearTimeout(rafaga.timer);
+      rafaga.timer = setTimeout(() => {
+        toast.error(
+          `Otras ${rafaga.callados} peticiones fallaron`,
+          `Última: ${titulo} — ${info.detalle || info.error}. El detalle de todas está en la consola (api.errores).`
+        );
+        rafaga.callados = 0;
+      }, 1200);
+    };
+    return () => { window.api.onError = null; clearTimeout(rafagaAvisos.current.timer); };
+  }, [toast]);
 
   const { notifs, unreadCount, markAllRead } = useLiveNotifs(auth?.id_usuario);
 

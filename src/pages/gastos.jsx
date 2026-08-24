@@ -56,7 +56,7 @@ function PageGastos({ user }) {
       setGastoFormS({ descripcion: '', costo: '', cantidad: '' });
       setGastos(await window.api.gastos());
     } else {
-      toast.error('Error al registrar', 'Verifica conexión con el servidor');
+      toast.error('No se pudo registrar el gasto', r.error);
     }
   };
 
@@ -89,7 +89,7 @@ function PageGastos({ user }) {
       window.fireConfetti();
       setCantidadSku(1);
     } else {
-      toast.error('Error al registrar', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo descontar ${p.sku}`, r.error);
     }
   };
 
@@ -103,7 +103,7 @@ function PageGastos({ user }) {
       setConsultaData(data);
       toast.success('Consulta realizada', `${data.length} registros`);
     } else {
-      toast.error('Error en consulta', 'Verifica conexión con el servidor');
+      toast.error('No se pudo consultar gastos', r.error);
     }
   };
 

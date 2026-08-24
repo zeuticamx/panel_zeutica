@@ -27,7 +27,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
   const [askConfirm, ConfirmModal] = window.useConfirm();
   const [embarque, setEmbarque] = ed_uS(null);
   const [loading, setLoading] = ed_uS(true);
-  const [error, setError] = ed_uS(false);
+  const [error, setError] = ed_uS(null);
   const [invoices, setInvoices] = ed_uS([]);
   const [proveedores, setProveedores] = ed_uS([]);
   const [etapasDraft, setEtapasDraft] = ed_uS({});
@@ -38,9 +38,10 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
   const [editandoProveedores, setEditandoProveedores] = ed_uS(false);
 
   const cargar = async () => {
-    setLoading(true); setError(false);
+    setLoading(true); setError(null);
     const data = await window.api.embarqueDetalle(id);
-    if (!data) { setError(true); setEmbarque(null); setLoading(false); return; }
+    // embarqueDetalle devuelve null al fallar; el motivo del servidor queda en api.ultimoError.
+    if (!data) { setError(window.api.ultimoError?.error || 'El servidor no devolvió el embarque'); setEmbarque(null); setLoading(false); return; }
     setEmbarque(data);
     setInvoices(data.invoices || []);
     setProveedores(data.proveedores || []);
@@ -65,7 +66,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       fecha_de_recibido: embarque.fecha_de_recibido,
       usuario: window.api.usuario || 'sistema',
     });
-    if (!r.ok) { toast.error('No se pudo guardar', r.error || 'Verifica conexión con el servidor'); return; }
+    if (!r.ok) { toast.error('No se pudo guardar', r.error); return; }
     toast.success('Invoices y proveedores actualizados');
     await cargar();
   };
@@ -82,7 +83,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       usuario: window.api.usuario || 'sistema',
     });
     setGuardandoLlegada(false);
-    if (!r.ok) { toast.error('No se pudo guardar la fecha de llegada', r.error || 'Verifica conexión con el servidor'); return; }
+    if (!r.ok) { toast.error('No se pudo guardar la fecha de llegada', r.error); return; }
     toast.success('Fecha de llegada actualizada', fechaLlegadaReal ? window.fmt.date(fechaLlegadaReal) : 'sin fecha');
     await cargar();
   };
@@ -100,7 +101,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       usuario: window.api.usuario || 'sistema',
     });
     if (!r.ok) {
-      toast.error('No se pudo actualizar la etapa', r.error || 'Verifica conexión con el servidor');
+      toast.error('No se pudo actualizar la etapa', r.error);
       setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], guardando: false } }));
       return;
     }
@@ -119,7 +120,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       usuario: window.api.usuario || 'sistema',
     });
     if (!r.ok) {
-      toast.error('No se pudo actualizar el estatus', r.error || 'Verifica conexión con el servidor');
+      toast.error('No se pudo actualizar el estatus', r.error);
       setEstatusDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], guardando: false } }));
       return;
     }
@@ -138,7 +139,8 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
     setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], buscandoTc: true } }));
     const data = await window.api.tipoCambioFecha(fecha);
     if (!data) {
-      toast.error('No se pudo obtener el tipo de cambio', 'Verifica conexión con el servidor');
+      // tipoCambioFecha devuelve null al fallar; el motivo queda en api.ultimoError.
+      toast.error(`No se pudo obtener el tipo de cambio de ${fecha}`, window.api.ultimoError?.error);
       setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], buscandoTc: false } }));
       return;
     }
@@ -151,7 +153,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       usuario: window.api.usuario || 'sistema',
     });
     if (!r.ok) {
-      toast.error('No se pudo guardar el tipo de cambio', r.error || 'Verifica conexión con el servidor');
+      toast.error('No se pudo guardar el tipo de cambio', r.error);
       setEtapasDraft(prev => ({ ...prev, [tipo]: { ...prev[tipo], buscandoTc: false } }));
       return;
     }
@@ -161,7 +163,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
 
   const eliminar = async () => {
     const r = await window.api.eliminarEmbarque(id);
-    if (!r.ok) { toast.error('No se pudo eliminar', r.error || 'Verifica conexión con el servidor'); return; }
+    if (!r.ok) { toast.error('No se pudo eliminar', r.error); return; }
     const desc = embarque?.numero_contenedor || (embarque?.invoices || []).join(', ') || '';
     toast.success('Embarque eliminado', desc);
     onDeleted();
@@ -176,6 +178,7 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
         <div className="empty">
           <div className="empty-icon"><Icon name="alert"/></div>
           <div>No se pudo cargar el embarque.</div>
+          <div className="empty-detail">{error}</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'center' }}>
             <button className="btn btn-secondary btn-sm" onClick={cargar}>Reintentar</button>
             <button className="btn btn-ghost btn-sm" onClick={onBack}>Volver</button>

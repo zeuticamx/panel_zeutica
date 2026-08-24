@@ -108,7 +108,7 @@ function PageClientes() {
       setForm(CLIENTE_BLANK);
       setEditingCliente(null);
     } else {
-      toast.error('Error al guardar', 'Verifica conexión con el servidor');
+      toast.error('No se pudo actualizar el cliente', r.error);
     }
   };
 
@@ -141,7 +141,7 @@ function PageClientes() {
       setForm(CLIENTE_BLANK);
       setShowForm(false);
     } else {
-      toast.error('Error al guardar', 'Verifica conexión con el servidor');
+      toast.error('No se pudo crear el cliente', r.error);
     }
   };
 

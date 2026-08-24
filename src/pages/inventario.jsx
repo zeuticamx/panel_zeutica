@@ -66,7 +66,7 @@ function PageInventario({ user }) {
     setUbicCache(prev => {
       if (prev[sku] !== undefined) return prev;
       window.api.ubicacionesSku(sku).then(r => {
-        setUbicCache(c => ({ ...c, [sku]: { loading: false, data: r.ok ? r.data : null, error: r.ok ? null : (r.error || 'Error al cargar') } }));
+        setUbicCache(c => ({ ...c, [sku]: { loading: false, data: r.ok ? r.data : null, error: r.ok ? null : r.error } }));
       });
       return { ...prev, [sku]: { loading: true, data: null, error: null } };
     });
@@ -237,7 +237,7 @@ function PageInventario({ user }) {
                   window.fireConfetti();
                   setEditProduct(null);
                 } else {
-                  toast.error('Error al guardar', r.error || 'Intenta de nuevo');
+                  toast.error('Error al guardar', r.error);
                 }
               })}>{editSaving ? <span className="spinner"/> : 'Guardar cambios'}</button>
             </div>
@@ -297,7 +297,7 @@ function PageInventario({ user }) {
                   setShowNew(false);
                   setNewProd({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_full: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 });
                 } else {
-                  toast.error('Error al crear', r.error || 'Intenta de nuevo');
+                  toast.error('Error al crear', r.error);
                 }
               })}>{newSaving ? <span className="spinner"/> : 'Crear producto'}</button>
             </div>

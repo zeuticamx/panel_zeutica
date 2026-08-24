@@ -7,12 +7,13 @@ const { useState: ev_uS, useEffect: ev_uE } = React;
 function EmbarqueViewer({ id, onBack }) {
   const [embarque, setEmbarque] = ev_uS(null);
   const [loading, setLoading] = ev_uS(true);
-  const [error, setError] = ev_uS(false);
+  const [error, setError] = ev_uS(null);
 
   const cargar = async () => {
-    setLoading(true); setError(false);
+    setLoading(true); setError(null);
     const data = await window.api.embarqueDetalle(id);
-    if (!data) { setError(true); setEmbarque(null); setLoading(false); return; }
+    // embarqueDetalle devuelve null al fallar; el motivo del servidor queda en api.ultimoError.
+    if (!data) { setError(window.api.ultimoError?.error || 'El servidor no devolvió el embarque'); setEmbarque(null); setLoading(false); return; }
     setEmbarque(data);
     setLoading(false);
   };
@@ -28,6 +29,7 @@ function EmbarqueViewer({ id, onBack }) {
         <div className="empty">
           <div className="empty-icon"><Icon name="alert"/></div>
           <div>No se pudo cargar el embarque.</div>
+          <div className="empty-detail">{error}</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'center' }}>
             <button className="btn btn-secondary btn-sm" onClick={cargar}>Reintentar</button>
             <button className="btn btn-ghost btn-sm" onClick={onBack}>Volver</button>

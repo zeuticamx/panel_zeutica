@@ -4,14 +4,18 @@ const { useState: ap_uS, useEffect: ap_uE, useCallback: ap_uC, useMemo: ap_uM } 
 const AP_API_JAVA = 'https://postgresqldb-api-java.i4mjht.easypanel.host';   // backend Java (FDK) de Zeutica
 
 async function apFetch(path, opts = {}) {
+  const metodo = (opts.method || 'GET').toUpperCase();
   try {
     const r = await fetch(`${AP_API_JAVA}${path}`, { signal: AbortSignal.timeout(5000), ...opts });
-    const data = await r.json().catch(() => null);
-    if (!r.ok) return { ok: false, status: r.status, data, error: data?.mensaje || data?.error || `HTTP ${r.status}` };
-    return { ok: true, status: r.status, data };
+    // Misma lectura que el resto del panel: el cuerpo del error se muestra tal cual.
+    return await window.api.interpretarRespuesta(r, { metodo, ruta: path });
   } catch (err) {
-    console.error(`apFetch ${path} falló:`, err);
-    return { ok: false, data: null, error: err.message || 'Sin conexión' };
+    // Red/CORS/timeout: el servidor no contestó, su estado real se desconoce.
+    return window.api.registrarError({
+      ok: false, status: 0, data: null,
+      error: `No se pudo contactar a ${AP_API_JAVA} — ${err.message}`,
+      detalle: err.message, cuerpo: null, texto: '', metodo, ruta: path, live: false,
+    });
   }
 }
 
@@ -114,7 +118,7 @@ function PageAccionesPendientes({ user }) {
       return;
     }
     if (r.status === 404) { setEnProceso([]); return; }
-    setError(r.error || 'No se pudo conectar con Servidor');
+    setError(r.error);
   }, [user]);
 
   // Lista completa de pendientes del usuario logeado (el backend filtra por ?usuario=).
@@ -123,7 +127,7 @@ function PageAccionesPendientes({ user }) {
     const r = await apFetch(`/api/pendientes?usuario=${encodeURIComponent(user)}`);
     setLoadingLista(false);
     if (!r.ok) {
-      setError(r.error || 'No se pudo cargar la lista');
+      setError(r.error);
       setMisPendientes([]);
       return;
     }
@@ -165,7 +169,7 @@ function PageAccionesPendientes({ user }) {
     const r = await apFetch(`/api/pendientes/${p.id}/atender?usuario=${encodeURIComponent(user)}`, { method: 'POST' });
     setActing(false);
     if (!r.ok) {
-      toast.error('No se pudo atender', r.error || 'Sin conexión');
+      toast.error('No se pudo atender', r.error);
       return;
     }
     const atendido = r.data?.atendido ?? null;
@@ -184,7 +188,7 @@ function PageAccionesPendientes({ user }) {
     setActing(false);
     setActingId(null);
     if (!r.ok) {
-      toast.error('No se pudo terminar', r.error || 'Sin conexión');
+      toast.error('No se pudo terminar', r.error);
       return;
     }
     toast.success('Tarea completada', tarea?.actividad || '');

@@ -53,7 +53,7 @@ function PageFull() {
       setCantidad(50);
       await cargarDatos();
     } else {
-      toast.error('Error al registrar', 'Verifica conexión con el servidor');
+      toast.error(`No se pudo traspasar ${selectedSku} a ${destino}`, r.error);
     }
   };
 

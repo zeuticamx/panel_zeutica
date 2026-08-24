@@ -74,7 +74,7 @@ function EmbarqueForm({ onSaved, onCancel }) {
     const r = await window.api.crearEmbarque(payload);
     if (!r.ok) {
       setSubmitting(false);
-      toast.error('No se pudo crear el embarque', r.error || 'Verifica conexión con el servidor');
+      toast.error('No se pudo crear el embarque', r.error);
       return;
     }
 
