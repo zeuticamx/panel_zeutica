@@ -50,6 +50,12 @@ function PageDashboard({ user }) {
   const [ventas, setVentas] = ds_uS([]);
   const [productos, setProductos] = ds_uS([]);
   const [gastos, setGastos] = ds_uS([]);
+  const [compras, setCompras] = ds_uS([]);
+  // Ventas del mes en curso, independientes del selector de periodo: el resumen
+  // financiero compara contra gastos y compras que siempre son del mes actual.
+  const [ventasMesActual, setVentasMesActual] = ds_uS([]);
+  const [loadingFin, setLoadingFin] = ds_uS(true);
+  const [errorFin, setErrorFin] = ds_uS(null);
   const [periodo, setPeriodo] = ds_uS('mes');
 
   ds_uE(() => {
@@ -66,36 +72,105 @@ function PageDashboard({ user }) {
     })();
   }, [periodo]);
 
-  ds_uE(() => {
-    (async () => {
-      const g = await window.api.gastos();
-      setGastos(Array.isArray(g) ? g : []);
-    })();
-  }, []);
+  const cargarFinanzas = async () => {
+    setLoadingFin(true);
+    setErrorFin(null);
+    const { f1, f2 } = getDateRange('mes');
+    const [g, c, v] = await Promise.all([
+      window.api.gastos(),
+      window.api.compras(),
+      window.api.ventasMes(f1, f2),
+    ]);
+    // listaConError deja ok/error pegados al array; sin esto el fallo sería invisible.
+    const fallo = [g, c, v].find(x => x && x.ok === false);
+    setGastos(Array.isArray(g) ? g : []);
+    setCompras(Array.isArray(c) ? c : []);
+    setVentasMesActual(Array.isArray(v) ? v : []);
+    setErrorFin(fallo ? fallo.error : null);
+    setLoadingFin(false);
+  };
 
-  const gastosMetrics = ds_uM(() => {
+  ds_uE(() => { cargarFinanzas(); }, []);
+
+  // Serie diaria + comparación contra el mes anterior, común a gastos y compras.
+  const resumenMensual = (registros, campoFecha, monto) => {
     const now = new Date();
     const y = now.getFullYear(), m = now.getMonth();
     const pm = m === 0 ? 11 : m - 1;
     const py = m === 0 ? y - 1 : y;
-    const montoGasto = g => Number(g.total ?? ((g.costo || 0) * (g.cantidad || 0))) || 0;
-    const delMes = gastos.filter(g => esMismoMes(g.fecha_registro, y, m));
-    const delMesAnterior = gastos.filter(g => esMismoMes(g.fecha_registro, py, pm));
-    const total = delMes.reduce((s, g) => s + montoGasto(g), 0);
-    const totalAnterior = delMesAnterior.reduce((s, g) => s + montoGasto(g), 0);
+    const delMes = registros.filter(r => esMismoMes(r[campoFecha], y, m));
+    const delMesAnterior = registros.filter(r => esMismoMes(r[campoFecha], py, pm));
+    const total = delMes.reduce((s, r) => s + monto(r), 0);
+    const totalAnterior = delMesAnterior.reduce((s, r) => s + monto(r), 0);
     const delta = totalAnterior > 0 ? ((total - totalAnterior) / totalAnterior) * 100 : 0;
 
     const byDay = {};
-    delMes.forEach(g => {
-      const d = new Date(g.fecha_registro).toISOString().slice(0, 10);
-      byDay[d] = (byDay[d] || 0) + montoGasto(g);
+    delMes.forEach(r => {
+      const d = new Date(r[campoFecha]).toISOString().slice(0, 10);
+      byDay[d] = (byDay[d] || 0) + monto(r);
     });
     const spark = Object.entries(byDay)
       .sort((a, b) => new Date(a[0]) - new Date(b[0]))
       .map(([, v]) => Math.round(v));
 
-    return { delMes, total, delta, spark };
+    return { delMes, total, totalAnterior, delta, spark };
+  };
+
+  const montoGasto  = g => Number(g.total ?? ((g.costo || 0) * (g.cantidad || 0))) || 0;
+  const montoCompra = c => Number(c.total ?? ((c.costo_total || 0) * (c.stock_bodega || 0))) || 0;
+
+  const gastosMetrics = ds_uM(() => {
+    const base = resumenMensual(gastos, 'fecha_registro', montoGasto);
+    const porConcepto = {};
+    base.delMes.forEach(g => {
+      const k = g.descripcion || g.concepto || 'Sin descripción';
+      porConcepto[k] = (porConcepto[k] || 0) + montoGasto(g);
+    });
+    const top = Object.entries(porConcepto).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return { ...base, top };
   }, [gastos]);
+
+  const comprasMetrics = ds_uM(() => {
+    const base = resumenMensual(compras, 'fecha_registro', montoCompra);
+    const porProveedor = {};
+    base.delMes.forEach(c => {
+      const k = c.proveedor || 'Sin proveedor';
+      porProveedor[k] = (porProveedor[k] || 0) + montoCompra(c);
+    });
+    const top = Object.entries(porProveedor).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return {
+      ...base,
+      top,
+      proveedores: new Set(base.delMes.map(c => c.proveedor).filter(Boolean)).size,
+      facturas: new Set(base.delMes.map(c => c.num_factura).filter(Boolean)).size,
+      unidades: base.delMes.reduce((s, c) => s + (Number(c.stock_bodega) || 0), 0),
+    };
+  }, [compras]);
+
+  // Resumen financiero del mes en curso. Las compras se reportan aparte del
+  // resultado operativo: son inversión en inventario, no gasto del periodo.
+  const finanzas = ds_uM(() => {
+    const ingresos = ventasMesActual.reduce(
+      (s, v) => s + (Number(v.total) || ((v.cantidad || 0) * (v.precio || 0))), 0);
+    const utilidadBruta = ventasMesActual.reduce(
+      (s, v) => s + (Number(v.utilidad_total) || ((v.cantidad || 0) * (v.precio || 0) * 0.28)), 0);
+    const gastosOp = gastosMetrics.total;
+    const comprasMes = comprasMetrics.total;
+    const resultadoOperativo = utilidadBruta - gastosOp;
+    const flujoNeto = ingresos - gastosOp - comprasMes;
+    return {
+      ingresos,
+      utilidadBruta,
+      gastosOp,
+      comprasMes,
+      resultadoOperativo,
+      flujoNeto,
+      margenBruto: ingresos > 0 ? (utilidadBruta / ingresos) * 100 : 0,
+      pesoGasto: ingresos > 0 ? (gastosOp / ingresos) * 100 : 0,
+      pesoCompra: ingresos > 0 ? (comprasMes / ingresos) * 100 : 0,
+      numVentas: ventasMesActual.length,
+    };
+  }, [ventasMesActual, gastosMetrics, comprasMetrics]);
 
   const metrics = ds_uM(() => {
     const totalUnidades = ventas.reduce((s, v) => s + (v.cantidad || 0), 0);
@@ -170,6 +245,7 @@ function PageDashboard({ user }) {
         <Kpi icon="pkg" label="Unidades vendidas" value={window.fmt.int(metrics.totalUnidades)} delta={-3.2} deltaLabel="vs mes anterior" spark={sparkData} color="var(--c2)"/>
         <Kpi icon="tag" label="Ticket promedio" value={window.fmt.mxn(metrics.ticketProm)} delta={5.7} deltaLabel={`${metrics.numVentas} transacciones`} spark={sparkData} color="var(--c4)"/>
         <Kpi icon="wallet" label="Gastos del mes" value={window.fmt.mxn(gastosMetrics.total)} delta={gastosMetrics.delta} deltaLabel={`${gastosMetrics.delMes.length} registros`} spark={gastosMetrics.spark.length ? gastosMetrics.spark : [0,0]} color="var(--danger)" invert/>
+        <Kpi icon="transfer" label="Compras del mes" value={window.fmt.mxn(comprasMetrics.total)} delta={comprasMetrics.delta} deltaLabel={`${comprasMetrics.facturas} facturas · ${comprasMetrics.proveedores} proveedores`} spark={comprasMetrics.spark.length ? comprasMetrics.spark : [0,0]} color="var(--c4)" invert/>
       </div>
 
       <div className="dash-grid">
@@ -268,6 +344,152 @@ function PageDashboard({ user }) {
           </div>
         </div>
       </div>
+
+      {/* ===== Resumen financiero y detalle de movimientos (siempre mes en curso) ===== */}
+      {errorFin && (
+        <div className="card" style={{ marginTop: 16, border: '1px solid var(--danger)' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ color: 'var(--danger)', fontSize: 13 }}>
+              No se pudieron cargar todos los movimientos financieros: {errorFin}
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={cargarFinanzas} disabled={loadingFin}>
+              {loadingFin ? <><span className="spinner"/> Reintentando...</> : <><Icon name="refresh" size={13}/> Reintentar</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loadingFin ? (
+        <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
+          <div className="skeleton" style={{ height: 220 }}/>
+          <div className="skeleton" style={{ height: 260 }}/>
+        </div>
+      ) : (
+        <>
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header">
+              <div>
+                <h3 className="card-title">Resumen financiero</h3>
+                <p className="card-subtitle">
+                  Mes en curso ({new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}) — {finanzas.numVentas} ventas · {gastosMetrics.delMes.length} gastos · {comprasMetrics.delMes.length} compras
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={cargarFinanzas}><Icon name="refresh" size={13}/> Actualizar</button>
+            </div>
+            <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, alignItems: 'start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                <FinRow label="Ingresos por ventas" value={finanzas.ingresos} nota={`${finanzas.numVentas} transacciones`}/>
+                <FinRow label="Utilidad bruta estimada" value={finanzas.utilidadBruta} nota={`margen ${finanzas.margenBruto.toFixed(1)}%`} color="var(--c3)"/>
+                <FinRow label="(−) Gastos operativos" value={-finanzas.gastosOp} nota={`${finanzas.pesoGasto.toFixed(1)}% de la venta`} color="var(--danger)"/>
+                <FinRow label="Resultado operativo" value={finanzas.resultadoOperativo} nota="utilidad bruta − gastos" fuerte
+                  color={finanzas.resultadoOperativo >= 0 ? 'var(--success)' : 'var(--danger)'}/>
+                <div style={{ borderTop: '1px solid var(--line)', margin: '4px 0' }}/>
+                <FinRow label="(−) Compras a proveedores" value={-finanzas.comprasMes} nota={`inversión en inventario · ${finanzas.pesoCompra.toFixed(1)}% de la venta`} color="var(--c4)"/>
+                <FinRow label="Flujo neto estimado" value={finanzas.flujoNeto} nota="ventas − gastos − compras" fuerte
+                  color={finanzas.flujoNeto >= 0 ? 'var(--success)' : 'var(--danger)'}/>
+                <p style={{ fontSize: 11, color: 'var(--fg-2)', margin: '4px 0 0', lineHeight: 1.5 }}>
+                  La utilidad usa <code>utilidad_total</code> de cada venta; si el registro no la trae, se estima con un margen del 28%.
+                  Las compras se muestran fuera del resultado operativo porque son inventario, no gasto del mes.
+                </p>
+              </div>
+              <div style={{ display: 'grid', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-2)', marginBottom: 8 }}>Top proveedores del mes</div>
+                  {comprasMetrics.top.length === 0
+                    ? <div className="empty" style={{ padding: 20 }}>Sin compras este mes</div>
+                    : <HBarChart data={comprasMetrics.top.map(([l, v], i) => ({ label: l, value: Math.round(v), color: ['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)'][i] }))}/>}
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-2)', marginBottom: 8 }}>Top conceptos de gasto</div>
+                  {gastosMetrics.top.length === 0
+                    ? <div className="empty" style={{ padding: 20 }}>Sin gastos este mes</div>
+                    : <HBarChart data={gastosMetrics.top.map(([l, v], i) => ({ label: l, value: Math.round(v), color: ['var(--c5)','var(--c4)','var(--c3)','var(--c2)','var(--c1)'][i] }))}/>}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header">
+              <div>
+                <h3 className="card-title">Gastos del mes — detalle</h3>
+                <p className="card-subtitle">{gastosMetrics.delMes.length} registros · {window.fmt.mxn(gastosMetrics.total)}</p>
+              </div>
+              <span className="badge badge-danger"><span className="badge-dot"/> {window.fmt.mxn(gastosMetrics.total)}</span>
+            </div>
+            <div className="table-wrap" style={{ maxHeight: 360, overflowY: 'auto' }}>
+              <table className="table">
+                <thead><tr><th>Fecha</th><th>Descripción</th><th>Usuario</th><th className="td-right">Cant.</th><th className="td-right">Costo unit.</th><th className="td-right">Total</th></tr></thead>
+                <tbody>
+                  {gastosMetrics.delMes.length === 0 ? (
+                    <tr><td colSpan={6}><div className="empty" style={{ padding: 32 }}>Sin gastos registrados este mes</div></td></tr>
+                  ) : [...gastosMetrics.delMes]
+                    .sort((a, b) => new Date(b.fecha_registro) - new Date(a.fecha_registro))
+                    .map((g, i) => (
+                      <tr key={g.id ?? i}>
+                        <td className="td-muted">{g.fecha_registro ? window.fmt.date(g.fecha_registro) : '—'}</td>
+                        <td style={{ fontWeight: 500 }}>{g.descripcion || g.concepto || '—'}</td>
+                        <td className="td-muted">{g.usuario_registro || g.usuario || '—'}</td>
+                        <td className="td-right mono">{window.fmt.int(g.cantidad ?? 0)}</td>
+                        <td className="td-right mono">{window.fmt.mxn(g.costo ?? 0)}</td>
+                        <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(montoGasto(g))}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header">
+              <div>
+                <h3 className="card-title">Compras del mes — detalle</h3>
+                <p className="card-subtitle">
+                  {comprasMetrics.delMes.length} registros · {comprasMetrics.facturas} facturas · {comprasMetrics.proveedores} proveedores · {window.fmt.int(comprasMetrics.unidades)} uds.
+                </p>
+              </div>
+              <span className="badge"><span className="badge-dot" style={{ background: 'var(--c4)' }}/> {window.fmt.mxn(comprasMetrics.total)}</span>
+            </div>
+            <div className="table-wrap" style={{ maxHeight: 360, overflowY: 'auto' }}>
+              <table className="table">
+                <thead><tr><th>Fecha</th><th>SKU</th><th>Producto</th><th>Proveedor</th><th>Factura</th><th className="td-right">Cant.</th><th className="td-right">Costo unit.</th><th className="td-right">Total</th></tr></thead>
+                <tbody>
+                  {comprasMetrics.delMes.length === 0 ? (
+                    <tr><td colSpan={8}><div className="empty" style={{ padding: 32 }}>Sin compras registradas este mes</div></td></tr>
+                  ) : [...comprasMetrics.delMes]
+                    .sort((a, b) => new Date(b.fecha_registro) - new Date(a.fecha_registro))
+                    .map((c, i) => (
+                      <tr key={c.id ?? i}>
+                        <td className="td-muted">{c.fecha_registro ? window.fmt.date(c.fecha_registro) : '—'}</td>
+                        <td className="mono td-muted" style={{ fontSize: 12 }}>{c.sku}</td>
+                        <td style={{ fontWeight: 500 }} className="truncate">{c.nombre}</td>
+                        <td>{c.proveedor || '—'}</td>
+                        <td className="mono td-muted">{c.num_factura || '—'}</td>
+                        <td className="td-right mono">{window.fmt.int(c.stock_bodega ?? 0)}</td>
+                        <td className="td-right mono">{window.fmt.mxn(c.costo_total ?? 0)}</td>
+                        <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(montoCompra(c))}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FinRow({ label, value, nota, color = 'var(--fg-1)', fuerte = false }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+      <span style={{ color: fuerte ? 'var(--fg-1)' : 'var(--fg-2)', fontWeight: fuerte ? 600 : 400 }}>
+        {label}
+        {nota && <span style={{ color: 'var(--fg-3)', fontSize: 11, marginLeft: 6 }}>{nota}</span>}
+      </span>
+      <span className="mono" style={{ color, fontWeight: fuerte ? 700 : 500, fontSize: fuerte ? 15 : 13, whiteSpace: 'nowrap' }}>
+        {value < 0 ? `−${window.fmt.mxn(Math.abs(value))}` : window.fmt.mxn(value)}
+      </span>
     </div>
   );
 }

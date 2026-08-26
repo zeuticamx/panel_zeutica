@@ -176,6 +176,8 @@ function PageAccionesPendientes({ user }) {
     if (atendido) setEnProceso((prev) => [...prev.filter((t) => t.id !== atendido.id), atendido]);
     toast.info('En proceso', atendido?.actividad || 'Tarea tomada');
     cargarLista();
+    // Solo notificación (Telegram), best-effort: no bloquea ni afecta el flujo si falla.
+    window.api.notificarPendienteTomado(p.id, { usuario: user, observaciones: p.observaciones || '' }).catch(() => {});
   };
 
   // Atendido: marca terminado una de las tareas abiertas; las demás siguen activas.
@@ -195,6 +197,8 @@ function PageAccionesPendientes({ user }) {
     window.fireConfetti?.();
     setEnProceso((prev) => prev.filter((t) => t.id !== id));
     cargarLista();
+    // Solo notificación (Telegram), best-effort: no bloquea ni afecta el flujo si falla.
+    window.api.notificarPendienteTerminado(id, { usuario: user, observaciones: tarea?.observaciones || '' }).catch(() => {});
   };
 
   const sinTareas = !loadingLista && !error && misPendientes.length === 0 && enProceso.length === 0;

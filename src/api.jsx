@@ -3,7 +3,7 @@
 // (cuando no hay servidor). Los datos de negocio vienen SIEMPRE de la API.
 
 //const API_BASE = 'http://127.0.0.1:8000'; // para desarrollo local
-const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host'
+const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';
 
 const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
 const REQUEST_TIMEOUT = 4000;
@@ -596,6 +596,15 @@ const api = {
   },
   async eliminarPendiente(id) {
     return tryFetch(`/zeutica/pendientes-eliminar/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  // Solo notifica por Telegram (backend no toca DB en estos dos). observaciones/usuario van por query, no por body.
+  async notificarPendienteTomado(id, { usuario, observaciones = '' } = {}) {
+    const q = `?observaciones=${encodeURIComponent(observaciones)}&usuario=${encodeURIComponent(usuario)}`;
+    return tryFetch(`/zeutica/pendientes-tomar/${encodeURIComponent(id)}${q}`, { method: 'POST' });
+  },
+  async notificarPendienteTerminado(id, { usuario, observaciones = '' } = {}) {
+    const q = `?observaciones=${encodeURIComponent(observaciones)}&usuario=${encodeURIComponent(usuario)}`;
+    return tryFetch(`/zeutica/pendientes-terminar/${encodeURIComponent(id)}${q}`, { method: 'POST' });
   },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });
