@@ -166,7 +166,19 @@ function PageAccionesPendientes({ user }) {
       return;
     }
     setActing(true);
-    const r = await apFetch(`/api/pendientes/${p.id}/atender?usuario=${encodeURIComponent(user)}`, { method: 'POST' });
+    const r = await apFetch(`/api/pendientes/${p.id}/atender?usuario=${encodeURIComponent(user)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id_pendiente: p.id,
+        usuario: user,
+        actividad: p.actividad,
+        prioridad: p.prioridad,
+        estado: 'en_proceso',
+        observaciones: p.observaciones ?? null,
+        fecha_promesa: p.fechaPromesa ?? null,
+      }),
+    });
     setActing(false);
     if (!r.ok) {
       toast.error('No se pudo atender', r.error);
@@ -177,7 +189,15 @@ function PageAccionesPendientes({ user }) {
     toast.info('En proceso', atendido?.actividad || 'Tarea tomada');
     cargarLista();
     // Solo notificación (Telegram), best-effort: no bloquea ni afecta el flujo si falla.
-    window.api.notificarPendienteTomado(p.id, { usuario: user, observaciones: p.observaciones || '' }).catch(() => {});
+    window.api.notificarPendienteTomado(p.id, {
+      id_pendiente: p.id,
+      usuario: user,
+      actividad: p.actividad,
+      prioridad: p.prioridad,
+      estado: 'en_proceso',
+      observaciones: p.observaciones ?? null,
+      fecha_promesa: p.fechaPromesa ?? null,
+    }).catch(() => {});
   };
 
   // Atendido: marca terminado una de las tareas abiertas; las demás siguen activas.
@@ -186,7 +206,19 @@ function PageAccionesPendientes({ user }) {
     if (id == null) return;
     setActing(true);
     setActingId(id);
-    const r = await apFetch(`/api/pendientes/${id}/terminar?usuario=${encodeURIComponent(user)}`, { method: 'POST' });
+    const r = await apFetch(`/api/pendientes/${id}/terminar?usuario=${encodeURIComponent(user)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id_pendiente: id,
+        usuario: user,
+        actividad: tarea?.actividad,
+        prioridad: tarea?.prioridad,
+        estado: 'terminado',
+        observaciones: tarea?.observaciones ?? null,
+        fecha_promesa: tarea?.fechaPromesa ?? null,
+      }),
+    });
     setActing(false);
     setActingId(null);
     if (!r.ok) {
@@ -198,7 +230,15 @@ function PageAccionesPendientes({ user }) {
     setEnProceso((prev) => prev.filter((t) => t.id !== id));
     cargarLista();
     // Solo notificación (Telegram), best-effort: no bloquea ni afecta el flujo si falla.
-    window.api.notificarPendienteTerminado(id, { usuario: user, observaciones: tarea?.observaciones || '' }).catch(() => {});
+    window.api.notificarPendienteTerminado(id, {
+      id_pendiente: id,
+      usuario: user,
+      actividad: tarea?.actividad,
+      prioridad: tarea?.prioridad,
+      estado: 'terminado',
+      observaciones: tarea?.observaciones ?? null,
+      fecha_promesa: tarea?.fechaPromesa ?? null,
+    }).catch(() => {});
   };
 
   const sinTareas = !loadingLista && !error && misPendientes.length === 0 && enProceso.length === 0;

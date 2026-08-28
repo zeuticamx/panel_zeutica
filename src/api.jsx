@@ -597,14 +597,12 @@ const api = {
   async eliminarPendiente(id) {
     return tryFetch(`/zeutica/pendientes-eliminar/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
-  // Solo notifica por Telegram (backend no toca DB en estos dos). observaciones/usuario van por query, no por body.
-  async notificarPendienteTomado(id, { usuario, observaciones = '' } = {}) {
-    const q = `?observaciones=${encodeURIComponent(observaciones)}&usuario=${encodeURIComponent(usuario)}`;
-    return tryFetch(`/zeutica/pendientes-tomar/${encodeURIComponent(id)}${q}`, { method: 'POST' });
+  // Solo notifica por Telegram (backend no toca DB en estos dos). Payload completo del schema `pendientes`.
+  async notificarPendienteTomado(id, payload = {}) {
+    return tryFetch(`/zeutica/pendientes-tomar/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(payload) });
   },
-  async notificarPendienteTerminado(id, { usuario, observaciones = '' } = {}) {
-    const q = `?observaciones=${encodeURIComponent(observaciones)}&usuario=${encodeURIComponent(usuario)}`;
-    return tryFetch(`/zeutica/pendientes-terminar/${encodeURIComponent(id)}${q}`, { method: 'POST' });
+  async notificarPendienteTerminado(id, payload = {}) {
+    return tryFetch(`/zeutica/pendientes-terminar/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(payload) });
   },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });

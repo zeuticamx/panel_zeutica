@@ -242,7 +242,7 @@ function PageDashboard({ user }) {
 
       <div className="dash-kpis">
         <Kpi icon="cash" label="Ventas del mes" value={window.fmt.mxn(metrics.totalMonto)} delta={12.4} deltaLabel="vs mes anterior" spark={sparkData}/>
-        <Kpi icon="cash" label="U. BRUTA" value={window.fmt.mxn(metrics.utilidad)} delta={8.1} deltaLabel={`margen ${metrics.utilidadPct.toFixed(1)}%`} spark={sparkData} color="var(--c5)"/>
+        <Kpi icon="cash" label="OPER. PROF." value={window.fmt.mxn(finanzas.resultadoOperativo)} delta={8.1} deltaLabel={`margen ${metrics.utilidadPct.toFixed(1)}%`} spark={sparkData} color="var(--c5)"/>
         <Kpi icon="pkg" label="Unidades vendidas" value={window.fmt.int(metrics.totalUnidades)} delta={-3.2} deltaLabel="vs mes anterior" spark={sparkData} color="var(--c2)"/>
         <Kpi icon="tag" label="Ticket promedio" value={window.fmt.mxn(metrics.ticketProm)} delta={5.7} deltaLabel={`${metrics.numVentas} transacciones`} spark={sparkData} color="var(--c4)"/>
         <Kpi icon="wallet" label="Gastos del mes" value={window.fmt.mxn(gastosMetrics.total)} delta={gastosMetrics.delta} deltaLabel={`${gastosMetrics.delMes.length} registros`} spark={gastosMetrics.spark.length ? gastosMetrics.spark : [0,0]} color="var(--danger)" invert/>
