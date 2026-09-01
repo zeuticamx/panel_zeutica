@@ -676,8 +676,13 @@ window.fmt = {
   mxn: (n) => '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   int: (n) => Number(n || 0).toLocaleString('es-MX'),
   date: (iso) => {
-    try { return new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
-    catch { return iso; }
+    try {
+      // Las columnas DATE llegan como 'YYYY-MM-DD' y new Date() las lee como UTC:
+      // en México eso restaba un día. Cuando viene solo fecha, la armo local.
+      const m = typeof iso === 'string' && iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(iso);
+      return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return iso; }
   },
   datetime: (iso) => {
     try { return new Date(iso).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
