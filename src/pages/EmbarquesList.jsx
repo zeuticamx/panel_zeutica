@@ -16,7 +16,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
     const r = await window.api.embarques({
       proveedor: proveedor.trim() || undefined,
       conForwarder: conForwarder === '' ? undefined : conForwarder === 'true',
-      salioDeChina: salioDeChina === '' ? undefined : salioDeChina === 'true',
+      salioDeChina: salioDeChina === '' ? undefined : salioDeChina === 'true',      
     });
     // r es un array con ok/error pegados (ver listaConError en api.jsx).
     if (r.ok === false) { setError(r.error); setEmbarques([]); } else { setEmbarques(r); }
@@ -83,7 +83,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
             <thead>
               <tr>
                 <th>Contenedor</th><th>Invoices</th><th>Proveedores</th>
-                <th className="td-right">SKUs</th><th>Con forwarder</th><th>Salió de China</th>
+                <th className="td-right">SKUs</th><th>Con forwarder</th><th>Salió de China</th><th>Llegada a Bodega</th>
                 <th>Llegada tent.</th><th></th>
               </tr>
             </thead>
@@ -114,6 +114,7 @@ function EmbarquesList({ onSelect, onNew, reloadToken, esGerencia }) {
                   <td className="td-right mono">{e.items_count ?? 0}</td>
                   <td><span className={`badge badge-${e.con_forwarder ? 'success' : 'info'}`}><span className="badge-dot"/>{e.con_forwarder ? 'Concluido' : 'Pendiente'}</span></td>
                   <td><span className={`badge badge-${e.salio_de_china ? 'success' : 'info'}`}><span className="badge-dot"/>{e.salio_de_china ? 'Concluido' : 'Pendiente'}</span></td>
+                  <td><span className={`badge badge-${e.fecha_llegada_real ? 'success' : 'info'}`}><span className="badge-dot"/>{e.fecha_llegada_real ? 'Concluido' : 'Pendiente'}</span></td>
                   <td>{e.llegada_manzanillo_tentativa ? window.fmt.date(e.llegada_manzanillo_tentativa) : '—'}</td>
                   <td className="td-right" onClick={ev => ev.stopPropagation()}>
                     {esGerencia && (
