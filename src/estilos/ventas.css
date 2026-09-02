@@ -119,6 +119,23 @@
 }
 .qty-input:focus { outline: none; background: var(--bg-1); }
 
+/* Precio unitario editable por línea del carrito. */
+.price-ctl { display: inline-flex; align-items: center; gap: 6px; }
+.price-input {
+  width: 86px;
+  height: 26px;
+  padding: 0 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  text-align: right;
+  font-size: 12px;
+  color: var(--fg-0);
+}
+.price-input:focus { outline: none; background: var(--bg-1); border-color: var(--brand); }
+/* Vendiendo por debajo del precio de lista: se avisa, no se bloquea. */
+.price-input.below { border-color: var(--warn); color: var(--warn); }
+
 .cart-summary {
   border-top: 1px solid var(--line);
   padding: 12px 16px;

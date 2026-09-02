@@ -56,7 +56,8 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
   ed_uE(() => { cargar(); }, [id]);
 
   const guardarInvoicesProveedores = async () => {
-    setEditandoInvoices(false); setEditandoProveedores(false);
+    // El modo edición se cierra hasta que el guardado confirma: al cerrarlo antes,
+    // un fallo dejaba la tabla en solo lectura mostrando datos sin persistir.
     const r = await window.api.editarEmbarqueCabecera(id, {
       numero_contenedor: embarque.numero_contenedor,
       invoices: invoices.filter(i => i.trim()),

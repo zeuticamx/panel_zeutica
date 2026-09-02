@@ -384,7 +384,7 @@ function PageCotizaciones({ user }) {
         if (!next[c.codigo_cotizacion]) {
           next[c.codigo_cotizacion] = {
             relacion_factura: c.relacion_factura || '',
-            forma_pago: cotNormalizaFormaPago(c.forma_pago),
+            forma_pago: cotNormalizaFormaPago(c.metodo_pago),
             fecha_pago: c.fecha_pago ? c.fecha_pago.slice(0, 10) : '',
           };
         }
@@ -922,7 +922,7 @@ function PageCotizaciones({ user }) {
             <table className="table">
               <thead><tr>
                 <th>Código</th><th>Cliente</th><th className="td-right">Total</th>
-                <th>N° Factura</th><th>Forma de pago</th><th>Fecha de pago</th><th>Firma</th><th>Complementos</th><th></th>
+                <th>N° Factura</th><th>Método de pago</th><th>Fecha de pago</th><th>Firma</th><th>Complementos</th><th></th>
               </tr></thead>
               <tbody>
                 {cots.map(c => {

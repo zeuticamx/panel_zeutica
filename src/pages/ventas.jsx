@@ -139,26 +139,54 @@ function PageVentas({ user }) {
     const price = Number(p[priceList] || p.precio);
     if (existing) {
       if (existing.cantidad + 1 > p.stock_bodega) { toast.warn('Stock insuficiente', `Solo hay ${p.stock_bodega} disponibles`); return; }
-      setCart(cart.map(i => i.sku === p.sku ? { ...i, cantidad: i.cantidad + 1, total: (i.cantidad + 1) * i.precio } : i));
+      // Se conserva el precio que ya tenga la línea: si el vendedor lo ajustó a mano,
+      // sumar una pieza no debe revertirlo al de lista.
+      setCart(cart.map(i => i.sku === p.sku ? { ...i, cantidad: i.cantidad + 1, total: (i.cantidad + 1) * (Number(i.precio) || 0) } : i));
     } else {
-      setCart([...cart, { sku: p.sku, nombre: p.nombre, cantidad: 1, precio: price, total: price, stock: p.stock_bodega, lista: priceLabels[priceList] }]);
+      // precioLista queda como referencia fija para avisar cuando se vende por debajo.
+      setCart([...cart, { sku: p.sku, nombre: p.nombre, cantidad: 1, precio: price, precioLista: price, total: price, stock: p.stock_bodega, lista: priceLabels[priceList] }]);
     }
     toast.success('Añadido al carrito', `${p.nombre}`);
   };
 
   const updateQty = (sku, n) => {
-    setCart(cart.map(i => i.sku === sku ? { ...i, cantidad: Math.max(1, Math.min(i.stock, n)), total: Math.max(1, Math.min(i.stock, n)) * i.precio } : i));
+    setCart(cart.map(i => {
+      if (i.sku !== sku) return i;
+      const cantidad = Math.max(1, Math.min(i.stock, n));
+      return { ...i, cantidad, total: cantidad * (Number(i.precio) || 0) };
+    }));
+  };
+
+  // El precio se guarda tal cual se teclea (permite el campo vacío a media captura);
+  // normalizaPrecio lo deja en un número válido al salir del input.
+  const updatePrecio = (sku, valor) => {
+    setCart(cart.map(i => i.sku === sku
+      ? { ...i, precio: valor, total: (Number(valor) || 0) * i.cantidad }
+      : i));
+  };
+
+  const normalizaPrecio = (sku) => {
+    setCart(cart.map(i => {
+      if (i.sku !== sku) return i;
+      // Vacío, cero o negativo no es vendible: regresa al precio de lista de la línea.
+      const tecleado = Number(i.precio);
+      const precio = tecleado > 0 ? Math.round(tecleado * 100) / 100 : (Number(i.precioLista) || 0);
+      return { ...i, precio, total: precio * i.cantidad };
+    }));
   };
   const removeItem = (sku) => setCart(cart.filter(i => i.sku !== sku));
   const clearCart = () => { setCart([]); setDescuento(0); };
 
-  const subtotal = cart.reduce((s, i) => s + i.total, 0);
+  const subtotal = cart.reduce((s, i) => s + (Number(i.total) || 0), 0);
   const descMonto = subtotal * (descuento / 100);
   const iva = (subtotal - descMonto) * 0.16;
   const total = subtotal - descMonto + iva;
 
+  // Una línea a mitad de captura (precio vacío) no puede mandarse al servidor.
+  const preciosValidos = cart.every(i => Number(i.precio) > 0);
+
   const clienteObj = clientes.find(c => c.nombre === cliente);
-  const puedeProcesar = cart.length > 0 && cliente && !(metPago === 'CREDITO' && !clienteObj?.credito);
+  const puedeProcesar = cart.length > 0 && cliente && preciosValidos && !(metPago === 'CREDITO' && !clienteObj?.credito);
 
   const procesar = async () => {
     if (metPago === 'CREDITO' && !clienteObj?.credito) {
@@ -175,7 +203,8 @@ function PageVentas({ user }) {
     const fallos = [];
 
     for (const item of cart) {
-      const precio = Math.round(item.precio * (1 - descuento / 100) * 100) / 100;
+      // Number() explícito: el precio de la línea se edita a mano y viaja como texto.
+      const precio = Math.round(Number(item.precio) * (1 - descuento / 100) * 100) / 100;
       const payload = {
         id_venta,
         sku: item.sku,
@@ -284,6 +313,8 @@ function PageVentas({ user }) {
                           nombre: i.nombre_producto || i.nombre || i.sku,
                           cantidad: Number(i.cantidad),
                           precio: Number(i.precio_unitario ?? i.precio),
+                          // Para una cotización el precio de referencia es el cotizado.
+                          precioLista: Number(i.precio_unitario ?? i.precio),
                           total: Number(i.total_linea ?? i.total ?? (i.cantidad * (i.precio_unitario ?? i.precio))),
                           stock: Infinity,
                           lista: 'Cotización',
@@ -379,7 +410,9 @@ function PageVentas({ user }) {
                 <div>El carrito está vacío</div>
                 <div style={{ fontSize: 11, marginTop: 4 }}>Busca productos a la izquierda para agregar</div>
               </div>
-            ) : cart.map(i => (
+            ) : cart.map(i => {
+              const bajoLista = Number(i.precio) > 0 && Number(i.precio) < Number(i.precioLista);
+              return (
               <div key={i.sku} className="cart-item">
                 <div className="cart-item-head">
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -394,11 +427,27 @@ function PageVentas({ user }) {
                     <input className="qty-input mono" value={i.cantidad} onChange={e => updateQty(i.sku, Number(e.target.value) || 1)}/>
                     <button className="qty-btn" onClick={() => updateQty(i.sku, i.cantidad + 1)}><Icon name="plus" size={12}/></button>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--fg-2)' }}>× {window.fmt.mxn(i.precio)}</div>
+                  <div className="price-ctl">
+                    <span style={{ fontSize: 11, color: 'var(--fg-2)' }}>×</span>
+                    <input
+                      className={`price-input mono ${bajoLista ? 'below' : ''}`}
+                      type="number" min="0" step="0.01"
+                      value={i.precio}
+                      onChange={e => updatePrecio(i.sku, e.target.value)}
+                      onBlur={() => normalizaPrecio(i.sku)}
+                      title={bajoLista ? `Por debajo del precio de lista (${window.fmt.mxn(i.precioLista)})` : 'Precio unitario'}
+                    />
+                  </div>
                   <div className="cart-item-total mono">{window.fmt.mxn(i.total)}</div>
                 </div>
+                {bajoLista && (
+                  <div style={{ fontSize: 10, color: 'var(--warn)', marginTop: 4 }}>
+                    <Icon name="alert" size={11}/> Bajo lista {i.lista}: {window.fmt.mxn(i.precioLista)}
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {cart.length > 0 && (
