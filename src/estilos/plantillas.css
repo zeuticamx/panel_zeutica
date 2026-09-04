@@ -1,0 +1,206 @@
+/* ===== Zeutica — Enviar plantillas (WhatsApp) ===== */
+/* Dos columnas: captura a la izquierda, vista previa fija a la derecha.
+   Los colores de la burbuja son los de WhatsApp en modo oscuro, a propósito:
+   la vista previa vale por parecerse a lo que ve el cliente, no al panel. */
+
+.ep-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: var(--s-4);
+  align-items: start;
+}
+
+.ep-formulario { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.ep-formulario .card-body { display: flex; flex-direction: column; gap: var(--s-3); }
+
+.ep-preview { position: sticky; top: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); }
+
+/* ---------- Avisos ---------- */
+.ep-aviso { margin-bottom: var(--s-4); border-color: var(--warn); }
+.ep-aviso-body { display: flex; gap: var(--s-3); align-items: flex-start; color: var(--warn); font-size: 13px; line-height: 1.6; }
+.ep-aviso code, .ep-ultimo code {
+  font-family: var(--f-mono); font-size: 11px;
+  background: var(--bg-2); padding: 1px 5px; border-radius: var(--r-xs); color: var(--fg-0);
+}
+
+/* ---------- Selector de destinatario ---------- */
+.ep-tabs { align-self: flex-start; }
+.ep-tabs .tab { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 32px; }
+
+.ep-lista-clientes {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-0);
+}
+
+.ep-cliente {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 34px 10px 12px;
+  min-height: 44px;             /* área táctil mínima */
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.ep-cliente:last-child { border-bottom: none; }
+.ep-cliente:hover { background: var(--bg-2); }
+.ep-cliente.activo { background: var(--brand-bg); }
+.ep-cliente:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+
+.ep-cliente-nombre { font-size: 13px; font-weight: 500; color: var(--fg-0); }
+.ep-cliente-datos { font-size: 12px; color: var(--fg-2); margin-top: 2px; }
+.ep-telefono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.ep-cliente-contacto { margin-left: 4px; }
+.ep-cliente-check { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--brand); }
+
+.ep-skeleton-fila { height: 44px; border-radius: 0; border-bottom: 1px solid var(--line); }
+
+/* Cliente ya elegido: reemplaza el buscador para que "Quitar" sea la única
+   acción visible — evita que se seleccione un segundo cliente sin querer. */
+.ep-cliente-elegido {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+}
+.ep-cliente-elegido-avatar {
+  width: 36px; height: 36px; border-radius: var(--r-full);
+  background: var(--brand-bg); color: var(--brand-hi);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+.ep-cliente-elegido-info { flex: 1; min-width: 0; }
+.ep-lista-vacia { padding: 28px 16px; font-size: 12px; }
+.ep-lista-tope { padding: 8px 12px; font-size: 11px; color: var(--fg-3); text-align: center; }
+
+.ep-destino-ok {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--success);
+  background: var(--success-bg);
+  padding: 8px 10px; border-radius: var(--r-sm);
+}
+.ep-destino-ok strong { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- Variables ---------- */
+.ep-contexto { font-family: var(--f-mono); font-size: 11px; color: var(--fg-2); }
+.ep-sin-variables { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-2); }
+.ep-cargando { padding: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; }
+.ep-error { padding: 24px; gap: 10px; color: var(--danger); font-size: 12px; }
+
+/* ---------- Vista previa ---------- */
+.ep-preview-card { overflow: hidden; }
+.ep-preview-cuerpo { background: #0b141a; }
+
+.wa-encabezado-chat {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: #202c33;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.wa-avatar {
+  width: 34px; height: 34px; border-radius: var(--r-full);
+  background: #2a3942; color: #aebac1;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+.wa-titulo { font-size: 13px; font-weight: 500; color: #e9edef; }
+.wa-sub { font-size: 11px; color: #8696a0; font-variant-numeric: tabular-nums; }
+
+.wa-chat {
+  /* Trama tenue: evoca el fondo de WhatsApp sin pedir una imagen externa. */
+  background-color: #0b141a;
+  background-image:
+    radial-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+    radial-gradient(rgba(255,255,255,0.022) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: 0 0, 11px 11px;
+  padding: 18px 14px 24px;
+  min-height: 240px;
+  max-height: 52vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.wa-chat-vacio { align-items: center; justify-content: center; }
+.wa-chat-vacio .empty { color: #8696a0; }
+
+.wa-burbuja {
+  max-width: 88%;
+  background: #005c4b;
+  color: #e9edef;
+  border-radius: 8px 0 8px 8px;
+  padding: 7px 9px 5px;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  font-size: 13.5px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.wa-encabezado { font-weight: 700; margin-bottom: 4px; }
+.wa-cuerpo { white-space: pre-wrap; }
+.wa-pie { margin-top: 6px; font-size: 11.5px; color: #8fb5ac; }
+
+.wa-media { margin: -3px -5px 6px; border-radius: 6px; overflow: hidden; background: #0b141a; }
+.wa-media img { display: block; width: 100%; max-height: 200px; object-fit: cover; }
+.wa-media-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  height: 120px; color: #8696a0; font-size: 11px;
+}
+
+/* Variable sin llenar: se marca para que no se escape a un envío real. */
+.wa-hueco {
+  background: rgba(255, 214, 102, 0.22);
+  border-bottom: 1px dashed rgba(255, 214, 102, 0.75);
+  color: #ffe08a;
+  font-family: var(--f-mono);
+  font-size: 12px;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.wa-meta {
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: #8fb5ac;
+  font-variant-numeric: tabular-nums;
+}
+
+.wa-botones { margin: 6px -9px -5px; border-top: 1px solid rgba(255,255,255,0.12); }
+.wa-boton {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px; min-height: 38px;
+  font-size: 13px; color: #53bdeb;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+.wa-boton:last-child { border-bottom: none; }
+
+.ep-preview-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+.ep-motivo { font-size: 11.5px; color: var(--warn); }
+
+.ep-ultimo { border-color: var(--success); }
+.ep-ultimo-body { display: flex; align-items: flex-start; gap: 10px; color: var(--success); }
+.ep-ultimo-titulo { font-size: 13px; font-weight: 500; color: var(--fg-0); font-variant-numeric: tabular-nums; }
+.ep-ultimo-detalle { font-size: 11px; color: var(--fg-2); margin-top: 2px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1024px) {
+  .ep-layout { grid-template-columns: 1fr; }
+  /* En una columna la vista previa deja de ser lateral: fijarla estorbaría el scroll. */
+  .ep-preview { position: static; }
+  .wa-chat { max-height: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ep-cliente { transition: none; }
+}

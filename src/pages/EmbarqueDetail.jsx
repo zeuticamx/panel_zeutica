@@ -36,6 +36,12 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
   const [guardandoLlegada, setGuardandoLlegada] = ed_uS(false);
   const [editandoInvoices, setEditandoInvoices] = ed_uS(false);
   const [editandoProveedores, setEditandoProveedores] = ed_uS(false);
+  const [items, setItems] = ed_uS([]);
+  const [editandoItems, setEditandoItems] = ed_uS(false);
+  const [guardandoItems, setGuardandoItems] = ed_uS(false);
+  const [productos, setProductos] = ed_uS([]);
+
+  ed_uE(() => { (async () => setProductos(await window.api.productos()))(); }, []);
 
   const cargar = async () => {
     setLoading(true); setError(null);
@@ -48,8 +54,10 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
     setEtapasDraft(Object.fromEntries((data.etapas || []).map(e => [e.tipo, embarqueEtapaDraftInicial(e)])));
     setEstatusDraft(Object.fromEntries((data.estatus || []).map(e => [e.tipo, embarqueEstatusDraftInicial(e)])));
     setFechaLlegadaReal(data.fecha_llegada_real || '');
+    setItems((data.items || []).map(it => ({ ...it })));
     setEditandoInvoices(false);
     setEditandoProveedores(false);
+    setEditandoItems(false);
     setLoading(false);
   };
 
@@ -126,6 +134,55 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       return;
     }
     toast.success('Estatus actualizado', tipo.replaceAll('_', ' '));
+    await cargar();
+  };
+
+  const actualizarItem = (idx, campo, valor) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, [campo]: valor } : it));
+  const agregarItemFila = () => setItems(prev => [...prev, { sku: '', qty: 1, cbm: '', pct_contenedor: '' }]);
+  const quitarItemFila = (idx) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
+
+  const guardarItems = async () => {
+    const itemsValidos = items.filter(it => it.sku && it.sku.trim());
+    if (itemsValidos.length === 0) { toast.error('Sin SKUs', 'Agrega al menos un SKU antes de guardar'); return; }
+    setGuardandoItems(true);
+
+    const originales = embarque.items || [];
+    const idsConservados = new Set(itemsValidos.filter(it => it.id).map(it => it.id));
+    const fallos = [];
+
+    for (const original of originales) {
+      if (!idsConservados.has(original.id)) {
+        const r = await window.api.eliminarItemEmbarque(id, original.id);
+        if (!r.ok) fallos.push(`eliminar ${original.sku}`);
+      }
+    }
+
+    for (const it of itemsValidos) {
+      const payload = {
+        sku: it.sku.trim(),
+        qty: Number(it.qty) || 0,
+        cbm: it.cbm === '' || it.cbm == null ? null : Number(it.cbm),
+        pct_contenedor: it.pct_contenedor === '' || it.pct_contenedor == null ? null : Number(it.pct_contenedor),
+      };
+      if (it.id) {
+        const original = originales.find(o => o.id === it.id);
+        const sinCambios = original && original.sku === payload.sku && Number(original.qty) === payload.qty
+          && (original.cbm ?? null) === payload.cbm && (original.pct_contenedor ?? null) === payload.pct_contenedor;
+        if (sinCambios) continue;
+        const r = await window.api.editarItemEmbarque(id, it.id, payload);
+        if (!r.ok) fallos.push(`editar ${payload.sku}`);
+      } else {
+        const r = await window.api.agregarItemEmbarque(id, payload);
+        if (!r.ok) fallos.push(`agregar ${payload.sku}`);
+      }
+    }
+
+    setGuardandoItems(false);
+    if (fallos.length > 0) {
+      toast.warn('SKUs actualizados con avisos', `No se pudo: ${fallos.join(', ')}`);
+    } else {
+      toast.success('SKUs del contenedor actualizados');
+    }
     await cargar();
   };
 
@@ -294,24 +351,64 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-header"><h3 className="card-title">SKUs del contenedor ({(embarque.items || []).length})</h3></div>
+        <div className="card-header" style={{ gap: 12 }}>
+          <h3 className="card-title">SKUs del contenedor ({(embarque.items || []).length})</h3>
+          {!editandoItems && <button
+            className="btn btn-secondary btn-sm"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => { setEditandoItems(true); setItems(prev => prev.length === 0 ? [{ sku: '', qty: 1, cbm: '', pct_contenedor: '' }] : prev); }}
+          >
+            <Icon name="edit" size={13}/> Editar
+          </button>}
+        </div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>SKU</th><th className="td-right">Cantidad</th><th className="td-right">CBM</th><th className="td-right">% contenedor</th></tr></thead>
+            <thead>
+              <tr>
+                <th>SKU</th><th className="td-right">Cantidad</th><th className="td-right">CBM</th><th className="td-right">% contenedor</th>
+                {editandoItems && <th></th>}
+              </tr>
+            </thead>
             <tbody>
-              {(embarque.items || []).length === 0 ? (
-                <tr><td colSpan={4} className="empty">Sin SKUs registrados</td></tr>
-              ) : embarque.items.map(it => (
-                <tr key={it.id}>
-                  <td className="mono">{it.sku}</td>
-                  <td className="td-right mono">{it.qty}</td>
-                  <td className="td-right mono">{it.cbm != null ? it.cbm : '—'}</td>
-                  <td className="td-right mono">{it.pct_contenedor != null ? `${it.pct_contenedor}%` : '—'}</td>
+              {editandoItems ? items.map((it, idx) => (
+                <tr key={it.id ?? `nuevo-${idx}`}>
+                  <td>
+                    <select className="select" value={it.sku} onChange={ev => actualizarItem(idx, 'sku', ev.target.value)}>
+                      <option value="">Selecciona SKU...</option>
+                      {productos.map(p => <option key={p.sku} value={p.sku}>{p.sku} — {p.nombre}</option>)}
+                    </select>
+                  </td>
+                  <td><input className="input mono" type="number" min="0" value={it.qty} onChange={ev => actualizarItem(idx, 'qty', ev.target.value)}/></td>
+                  <td><input className="input mono" type="number" min="0" step="0.0001" value={it.cbm ?? ''} onChange={ev => actualizarItem(idx, 'cbm', ev.target.value)} placeholder="0.0000"/></td>
+                  <td><input className="input mono" type="number" min="0" max="100" step="0.01" value={it.pct_contenedor ?? ''} onChange={ev => actualizarItem(idx, 'pct_contenedor', ev.target.value)} placeholder="0.00"/></td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => quitarItemFila(idx)} disabled={items.length === 1}><Icon name="trash" size={13}/></button></td>
                 </tr>
-              ))}
+              )) : (
+                (embarque.items || []).length === 0 ? (
+                  <tr><td colSpan={4} className="empty">Sin SKUs registrados</td></tr>
+                ) : embarque.items.map(it => (
+                  <tr key={it.id}>
+                    <td className="mono">{it.sku}</td>
+                    <td className="td-right mono">{it.qty}</td>
+                    <td className="td-right mono">{it.cbm != null ? it.cbm : '—'}</td>
+                    <td className="td-right mono">{it.pct_contenedor != null ? `${it.pct_contenedor}%` : '—'}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
+        {editandoItems && (
+          <div className="card-footer">
+            <button className="btn btn-secondary btn-sm" onClick={() => { setEditandoItems(false); cargar(); }}>Cancelar</button>
+            <button className="btn btn-primary btn-sm" onClick={agregarItemFila}>
+              <Icon name="plus" size={13}/> Agregar fila
+            </button>
+            <button className="btn btn-primary btn-sm" disabled={guardandoItems} onClick={guardarItems} style={{ marginLeft: 'auto' }}>
+              {guardandoItems ? <span className="spinner"/> : <><Icon name="check" size={13}/> Guardar</>}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>

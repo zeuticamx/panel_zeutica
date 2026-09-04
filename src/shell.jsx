@@ -7,6 +7,7 @@ const NAV = [
   { key: 'clientes_potenciales', label: 'Clientes Potenciales', icon: 'users' },
   { key: 'promociones_meli', label: 'Promociones Meli', icon: 'tag' },
   { key: 'conversaciones_sofi', label: 'Conversaciones Sofi', icon: 'chat' },
+  { key: 'enviar_plantillas', label: 'Enviar Plantillas', icon: 'send' },
   { key: 'inventario',   label: 'Inventario',       icon: 'box' },
   { key: 'ubicaciones',  label: 'Ubicaciones',      icon: 'building' },
   { key: 'conteo',       label: 'Conteo de Inv.',   icon: 'ok' },
@@ -49,15 +50,15 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
 
       <nav className="sidebar-nav">
         <div className="sidebar-section">General</div>
-        {NAV.slice(0, 5).map((n) => (
+        {NAV.slice(0, 6).map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Operación</div>
-        {NAV.slice(5, 16).map((n) => (
+        {NAV.slice(6, 17).map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Finanzas</div>
-        {NAV.slice(16, 20).map((n) => (
+        {NAV.slice(17, 21).map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
       </nav>

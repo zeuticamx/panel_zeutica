@@ -621,6 +621,28 @@ const api = {
     return tryFetch('/zeutica/cambio-passw', { method: 'PUT', body: JSON.stringify({ usuario, password_nueva }) });
   },
 
+  // ---- Enviar plantillas (WhatsApp Cloud API de Meta) ----
+  // Devuelve { ok, data: [plantillas], configuracion }. Las plantillas vienen
+  // directo de Meta (solo las APPROVED) con sus `componentes` para la vista previa.
+  async plantillasWhatsapp({ refrescar = false } = {}) {
+    const q = refrescar ? '?refrescar=true' : '';
+    // Meta puede tardar más que el timeout corto por defecto en la primera llamada.
+    const r = await tryFetch(`/zeutica/whatsapp/plantillas${q}`, { timeout: 15000 });
+    if (!r.ok) return { ok: false, error: r.error, status: r.status, data: [], configuracion: null };
+    const lista = Array.isArray(r.data) ? r.data : (r.data?.plantillas ?? []);
+    return { ok: true, data: lista, configuracion: r.data?.configuracion ?? null };
+  },
+  // payload: { telefono, plantilla, idioma, variables_encabezado, variables_cuerpo,
+  //            url_encabezado, tipo_encabezado, nombre_archivo, destinatario }
+  // Envío real y no reversible: un 200 significa que el mensaje ya salió.
+  async enviarPlantillaWhatsapp(payload, usuario) {
+    return tryFetch('/zeutica/whatsapp/enviar-plantilla', {
+      method: 'POST',
+      timeout: 20000,
+      body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }),
+    });
+  },
+
   // ---- Rastreo de Importaciones (embarques) ----
   async embarques({ proveedor, numeroContenedor, conForwarder, salioDeChina } = {}) {
     const params = new URLSearchParams();
@@ -653,6 +675,16 @@ const api = {
   // tipo: 'CON_FORWARDER' | 'SALIO_DE_CHINA'
   async marcarEstatusEmbarque(id, tipo, payload) {
     return tryFetch(`/zeutica/embarques/${encodeURIComponent(id)}/estatus/${tipo}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  // item: { sku, qty, cbm, pct_contenedor }
+  async agregarItemEmbarque(embarqueId, item) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/items`, { method: 'POST', body: JSON.stringify(item) });
+  },
+  async editarItemEmbarque(embarqueId, itemId, item) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/items/${encodeURIComponent(itemId)}`, { method: 'PUT', body: JSON.stringify(item) });
+  },
+  async eliminarItemEmbarque(embarqueId, itemId) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
   },
   // { valor, fecha } — tipo de cambio USD/MXN del dia (Banxico, con cache diaria en backend)
   async tipoCambioHoy() {
