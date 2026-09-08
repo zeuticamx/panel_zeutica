@@ -492,6 +492,12 @@ const api = {
   async registrarComplementoPago(payload) {
     return tryFetch('/zeutica/complemento-pago', { method: 'POST', body: JSON.stringify(payload) });
   },
+  async actualizarSeguimiento(codigo_cotizacion, seguimiento, usuario) {
+    return tryFetch('/zeutica/cotizaciones/seguimiento', {
+      method: 'POST',
+      body: JSON.stringify({ codigo_cotizacion, seguimiento, usuario: usuario || api.usuario }),
+    });
+  },
   async registrarVenta(payload) {
     return tryFetch('/zeutica/producto/venta', { method: 'POST', body: JSON.stringify(payload) });
   },

@@ -2,10 +2,10 @@
 const { useState: inv_uS, useEffect: inv_uE, useMemo: inv_uM } = React;
 
 function exportarInventarioCSV(productos) {
-  const headers = ['SKU','Nombre','Categoría','Ubicación','Stock Bodega','Stock Full','Stock FBA','Stock Clean','Stock Mínimo','Costo Total','Precio A','Precio B','Precio C'];
+  const headers = ['SKU','Nombre','Categoría','Ubicación','Stock Bodega','Stock FBA','Stock Clean','Stock Mínimo','Costo Total','Precio A','Precio B','Precio C'];
   const rows = productos.map(p => [
     p.sku, p.nombre, p.categoria, p.ubicacion ?? '',
-    p.stock_bodega, p.stock_full ?? '', p.stock_fba ?? '', p.stock_clean ?? '',
+    p.stock_bodega, p.stock_fba ?? '', p.stock_clean ?? '',
     p.stock_minimo, p.costo_total, p.precio, p.precio_2 ?? '', p.precio_3 ?? ''
   ]);
   const csv = [headers, ...rows]
@@ -29,7 +29,7 @@ function PageInventario({ user }) {
   const [cat, setCat] = inv_uS('Todas');
   const [stockFilter, setStockFilter] = inv_uS('todos');
   const [showNew, setShowNew] = inv_uS(false);
-  const [newProd, setNewProd] = inv_uS({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_full: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 });
+  const [newProd, setNewProd] = inv_uS({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 });
   const [newSaving, setNewSaving] = inv_uS(false);
   const [editProduct, setEditProduct] = inv_uS(null);
   const [editSaving, setEditSaving] = inv_uS(false);

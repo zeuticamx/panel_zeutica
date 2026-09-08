@@ -373,6 +373,8 @@ function PageCotizaciones({ user }) {
   const [nuevoComplemento, setNuevoComplemento] = rp_uS('');
   const [nuevoPago, setNuevoPago] = rp_uS('');
   const [savingComplemento, setSavingComplemento] = rp_uS(false);
+  const [seguimientoEdit, setSeguimientoEdit] = rp_uS({});
+  const [seguimientoSaving, setSeguimientoSaving] = rp_uS(null);
 
   rp_uE(() => { (async () => setCots(await window.api.cotizaciones()))(); }, []);
 
@@ -636,6 +638,21 @@ function PageCotizaciones({ user }) {
       setCots(await window.api.cotizaciones());
     } else {
       toast.error('No se pudieron guardar las relaciones', r.error);
+    }
+  };
+
+  const guardarSeguimiento = async (codigo) => {
+    const valor = seguimientoEdit[codigo];
+    if (valor === undefined) return;
+    const original = cots.find(c => c.codigo_cotizacion === codigo)?.seguimiento || '';
+    if (valor === original) return;
+    setSeguimientoSaving(codigo);
+    const r = await window.api.actualizarSeguimiento(codigo, valor, user);
+    setSeguimientoSaving(null);
+    if (r.ok) {
+      setCots(prev => prev.map(c => c.codigo_cotizacion === codigo ? { ...c, seguimiento: valor } : c));
+    } else {
+      toast.error(`No se pudo guardar el seguimiento de ${codigo}`, r.error);
     }
   };
 
@@ -1136,7 +1153,7 @@ function PageCotizaciones({ user }) {
         </div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th className="td-right">Items</th><th className="td-right">Subtotal</th><th className="td-right">Total</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th className="td-right">Items</th><th className="td-right">Subtotal</th><th className="td-right">Total</th><th>Estado</th><th>Seguimiento</th><th></th></tr></thead>
             <tbody>
               {filtered.map(c => (
                 <tr key={c.codigo_cotizacion}>
@@ -1154,6 +1171,19 @@ function PageCotizaciones({ user }) {
                     <span className={`badge badge-${c.vendido ? 'success' : c.estado === 'Seguimiento' ? 'warn' : 'info'}`}>
                       <span className="badge-dot"/>{c.estado}
                     </span>
+                  </td>
+                  <td style={{ minWidth: 150 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        className="input"
+                        style={{ fontSize: 12, padding: '4px 8px' }}
+                        value={seguimientoEdit[c.codigo_cotizacion] ?? c.seguimiento ?? ''}
+                        placeholder="Sin seguimiento"
+                        onChange={e => setSeguimientoEdit(prev => ({ ...prev, [c.codigo_cotizacion]: e.target.value }))}
+                        onBlur={() => guardarSeguimiento(c.codigo_cotizacion)}
+                      />
+                      {seguimientoSaving === c.codigo_cotizacion && <span className="spinner"/>}
+                    </div>
                   </td>
                   <td className="td-right">
                     <button className="btn btn-ghost btn-sm" disabled={verLoading === c.codigo_cotizacion} onClick={() => verCotizacion(c.codigo_cotizacion)}>
