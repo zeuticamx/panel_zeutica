@@ -418,7 +418,20 @@ function PageCotizaciones({ user }) {
 
   const cargarSaldo = async () => setSaldoSky(await window.api.skydropxSaldo());
 
-  rp_uE(() => { cargarEnvios(); cargarSaldo(); }, []);
+  // Clientes se cargaba solo al abrir "Nueva cotización", pero el modal de
+  // Skydropx también lo necesita (para precargar CP/teléfono/domicilio del
+  // cliente ya registrado) y puede abrirse sin haber tocado ese formulario.
+  rp_uE(() => { cargarEnvios(); cargarSaldo(); (async () => setClientes(await window.api.clientes()))(); }, []);
+
+  // /consulta/cotizacion solo trae "empresa" (el nombre), no domicilio/CP/teléfono
+  // del cliente — esos viven en la tabla clientes. Al guardar la cotización,
+  // empresa se llenó con clienteObj.nombre (ver "guardar" más arriba), así que
+  // cruzar por ese mismo campo recupera esos datos para precargar el modal de
+  // Skydropx sin pedírselos de nuevo al usuario.
+  const abrirSkydropx = (c) => {
+    const cliente = clientes.find(cl => cl.nombre === c.empresa) || null;
+    setEnvioModal({ ...c, cliente });
+  };
 
   rp_uE(() => {
     if (!showForm) return;
@@ -1298,14 +1311,14 @@ function PageCotizaciones({ user }) {
                       const envio = enviosGenerados[c.codigo_cotizacion];
                       if (!envio) {
                         return (
-                          <button className="btn btn-ghost btn-sm sky-btn-tabla" onClick={() => setEnvioModal(c)}
+                          <button className="btn btn-ghost btn-sm sky-btn-tabla" onClick={() => abrirSkydropx(c)}
                             title="Cotizar envío con Skydropx">
                             <Icon name="pkg" size={12} /> Cotizar envío
                           </button>
                         );
                       }
                       return (
-                        <button className="btn btn-ghost btn-sm sky-celda-envio" onClick={() => setEnvioModal(c)}
+                        <button className="btn btn-ghost btn-sm sky-celda-envio" onClick={() => abrirSkydropx(c)}
                           title={`${envio.carrier || 'Guía'} · ${envio.tracking_number || ''} — ${envio.estatus_descripcion || envio.estatus_texto}`}>
                           <span className={`badge badge-${envio.estatus_tono}`}>
                             <span className="badge-dot" />{envio.estatus_texto}

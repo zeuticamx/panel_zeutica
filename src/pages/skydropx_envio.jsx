@@ -69,6 +69,22 @@ function skyGuardarEnvio(codigo, datos) {
   try { localStorage.setItem(skyClave(codigo), JSON.stringify(datos)); } catch (_) {}
 }
 
+// Datos del cliente ya registrado (tabla `clientes`, cruzada por nombre desde
+// cotizaciones.jsx) para no pedirle al usuario CP/teléfono/domicilio que ya
+// existen. `direccion` es un solo campo de texto libre en esa tabla (no viene
+// separado en calle/colonia/municipio/estado), así que solo se usa para
+// precargar `street1`; el resto de las llaves de destino se dejan para que el
+// usuario las llene o las traiga de un envío anterior (localStorage).
+function skyDefaultsDeCliente(cliente) {
+  if (!cliente) return {};
+  return {
+    postal_code: cliente.cp != null ? String(cliente.cp) : '',
+    phone: cliente.telefono != null ? String(cliente.telefono) : '',
+    email: cliente.email || '',
+    street1: cliente.direccion || '',
+  };
+}
+
 // Combina un objeto guardado en localStorage con los defaults actuales: un
 // valor guardado se respeta si no está vacío; si falta la llave (objeto viejo,
 // de antes de que existiera ese campo) o quedó en blanco, se usa el default.
@@ -150,12 +166,17 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   const primerCampo = sk_uR(null);
 
   const [config, setConfig] = sk_uS(null);
-  const [destino, setDestino] = sk_uS(() => skyConDefaults({
-    country_code: 'MX', postal_code: '', area_level1: '', area_level2: '', area_level3: '',
-    // Referencia obligatoria para generar la guía; se precarga con la empresa
-    // para que nunca llegue en blanco, editable si hay una mejor seña.
-    street1: '', name: cot.empresa || '', company: cot.empresa || '', phone: '', email: '', reference: cot.empresa || '',
-  }, guardado?.destino));
+  const [destino, setDestino] = sk_uS(() => skyConDefaults(
+    skyConDefaults({
+      country_code: 'MX', postal_code: '', area_level1: '', area_level2: '', area_level3: '',
+      // Referencia obligatoria para generar la guía; se precarga con la empresa
+      // para que nunca llegue en blanco, editable si hay una mejor seña.
+      street1: '', name: cot.empresa || '', company: cot.empresa || '', phone: '', email: '', reference: cot.empresa || '',
+    }, skyDefaultsDeCliente(cot.cliente)),
+    // Lo guardado en un envío anterior de ESTA cotización manda sobre el
+    // cliente: si el usuario ya corrigió algo aquí, no se lo pisa el maestro.
+    guardado?.destino
+  ));
   const [paquete, setPaquete] = sk_uS(() => skyConDefaults({
     ...SKY_PAQUETE_DEFAULT,
     consignment_note: skyContenidoDefault(cot),
