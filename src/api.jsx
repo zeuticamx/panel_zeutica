@@ -649,6 +649,43 @@ const api = {
     });
   },
 
+  // ---- Envíos Skydropx (cotización, guía y rastreo) ----
+  // Todos los timeouts van muy por encima del REQUEST_TIMEOUT de 4s: Skydropx
+  // consulta a los carriers en vivo y el backend además espacia las llamadas
+  // para respetar el límite de 2 req/s.
+  //
+  // Devuelve { client_id, client_secret, webhook_secret, base_url, ambiente }.
+  // `ambiente` es lo que decide si la UI advierte que las guías son reales.
+  async skydropxConfiguracion() {
+    return valorConError(await tryFetch('/zeutica/skydropx/configuracion', { timeout: 10000 }), d => d, null);
+  },
+  // payload: { address_from, address_to, parcels: [{length,width,height,weight}], extras }
+  // Cotizar no cuesta ni genera guía. Devuelve { cotizacion_id, tarifas[] }.
+  async skydropxCotizar(payload) {
+    return tryFetch('/zeutica/skydropx/cotizaciones', {
+      method: 'POST',
+      timeout: 45000,
+      body: JSON.stringify(payload),
+    });
+  },
+  // Reconsulta una cotización que llegó sin tarifas porque los carriers seguían respondiendo.
+  async skydropxCotizacion(id) {
+    return tryFetch(`/zeutica/skydropx/cotizaciones/${encodeURIComponent(id)}`, { timeout: 30000 });
+  },
+  // payload: { rate_id, address_from, address_to, parcels, referencia, usuario }
+  // OJO: en ambiente producción esto contrata el envío y se cobra. No es reversible.
+  async skydropxGenerarGuia(payload, usuario) {
+    return tryFetch('/zeutica/skydropx/envios', {
+      method: 'POST',
+      timeout: 60000,
+      body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }),
+    });
+  },
+  async skydropxRastreo(trackingNumber, carrierName) {
+    const params = new URLSearchParams({ tracking_number: trackingNumber, carrier_name: carrierName });
+    return tryFetch(`/zeutica/skydropx/rastreo?${params.toString()}`, { timeout: 30000 });
+  },
+
   // ---- Rastreo de Importaciones (embarques) ----
   async embarques({ proveedor, numeroContenedor, conForwarder, salioDeChina } = {}) {
     const params = new URLSearchParams();

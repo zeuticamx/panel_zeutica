@@ -375,6 +375,10 @@ function PageCotizaciones({ user }) {
   const [savingComplemento, setSavingComplemento] = rp_uS(false);
   const [seguimientoEdit, setSeguimientoEdit] = rp_uS({});
   const [seguimientoSaving, setSeguimientoSaving] = rp_uS(null);
+  // Envío Skydropx: cotización abierta en el modal y guías ya generadas por código.
+  // Las guías viven en localStorage (el backend quedó passthrough, no las persiste).
+  const [envioModal, setEnvioModal] = rp_uS(null);
+  const [enviosGenerados, setEnviosGenerados] = rp_uS({});
 
   rp_uE(() => { (async () => setCots(await window.api.cotizaciones()))(); }, []);
 
@@ -393,6 +397,19 @@ function PageCotizaciones({ user }) {
       });
       return next;
     });
+  }, [cots]);
+
+  // Guías Skydropx ya generadas, para marcar el renglón sin volver a llamar al API.
+  rp_uE(() => {
+    if (cots.length === 0) return;
+    const leer = window.skydropxLeerEnvio;
+    if (!leer) return;
+    const mapa = {};
+    cots.forEach(c => {
+      const envio = leer(c.codigo_cotizacion);
+      if (envio?.guia?.tracking) mapa[c.codigo_cotizacion] = envio.guia;
+    });
+    setEnviosGenerados(mapa);
   }, [cots]);
 
   rp_uE(() => {
@@ -1130,6 +1147,15 @@ function PageCotizaciones({ user }) {
         </div>
       )}
 
+      {envioModal && window.SkydropxEnvioModal && (
+        <window.SkydropxEnvioModal
+          cot={envioModal}
+          user={user}
+          onClose={() => setEnvioModal(null)}
+          onGuiaGenerada={(codigo, guia) => setEnviosGenerados(prev => ({ ...prev, [codigo]: guia }))}
+        />
+      )}
+
       <div className="dash-kpis">
         <window.MiniStat label="Total cotizaciones" value={cots.length} icon="doc"/>
         <window.MiniStat label="Abiertas" value={abiertas} icon="clock" tone="warn"/>
@@ -1153,7 +1179,7 @@ function PageCotizaciones({ user }) {
         </div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th className="td-right">Items</th><th className="td-right">Subtotal</th><th className="td-right">Total</th><th>Estado</th><th>Seguimiento</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th className="td-right">Items</th><th className="td-right">Subtotal</th><th className="td-right">Total</th><th>Estado</th><th>Seguimiento</th><th>Envío</th><th></th></tr></thead>
             <tbody>
               {filtered.map(c => (
                 <tr key={c.codigo_cotizacion}>
@@ -1184,6 +1210,23 @@ function PageCotizaciones({ user }) {
                       />
                       {seguimientoSaving === c.codigo_cotizacion && <span className="spinner"/>}
                     </div>
+                  </td>
+                  <td>
+                    {(() => {
+                      const guia = enviosGenerados[c.codigo_cotizacion];
+                      return (
+                        <button
+                          className={`btn btn-sm sky-btn-tabla ${guia ? 'btn-secondary' : 'btn-ghost'}`}
+                          onClick={() => setEnvioModal(c)}
+                          title={guia ? `Guía ${guia.carrier}: ${guia.tracking}` : 'Cotizar envío con Skydropx'}
+                        >
+                          <Icon name="pkg" size={12} />
+                          {guia
+                            ? <span className="mono" style={{ fontSize: 11 }}>{guia.tracking}</span>
+                            : 'Cotizar envío'}
+                        </button>
+                      );
+                    })()}
                   </td>
                   <td className="td-right">
                     <button className="btn btn-ghost btn-sm" disabled={verLoading === c.codigo_cotizacion} onClick={() => verCotizacion(c.codigo_cotizacion)}>

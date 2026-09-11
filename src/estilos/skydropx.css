@@ -1,0 +1,226 @@
+/* ===== Zeutica — Envíos Skydropx =====
+   Estilos del modal de cotización/guía por cotización.
+   Todo va con prefijo .sky- para no pisar nada de components.css.
+   No se define ni un color nuevo: se reusan los tokens del panel. */
+
+/* El .modal base topa en 520px y aquí conviven destino + paquete + tarifas. */
+.sky-modal { max-width: 760px; }
+
+.sky-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg-1);
+  z-index: 2;
+}
+.sky-head-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+
+.sky-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+/* ---------- Avisos (credenciales, ambiente productivo, errores) ---------- */
+.sky-aviso {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sky-aviso svg { flex-shrink: 0; margin-top: 1px; }
+.sky-aviso code {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--bg-3);
+}
+.sky-aviso-danger { color: var(--danger); background: var(--danger-bg); border-color: oklch(0.38 0.11 25 / 0.5); }
+.sky-aviso-warn   { color: var(--warn);   background: var(--warn-bg);   border-color: oklch(0.42 0.09 80 / 0.5); }
+.sky-aviso-info   { color: var(--fg-1);   background: var(--info-bg);   border-color: oklch(0.36 0.08 220 / 0.45); }
+
+/* ---------- Secciones numeradas (mismo tono que el generador de cotizaciones) ---------- */
+.sky-seccion-titulo {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-2);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sky-seccion-titulo .sky-paso {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-full);
+  background: var(--bg-3);
+  color: var(--fg-1);
+  font-size: 10px;
+  font-weight: 700;
+}
+.sky-seccion-titulo .sky-paso.sky-paso-ok { background: var(--success-bg); color: var(--success); }
+
+.sky-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sky-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sky-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+/* ---------- Origen plegable ---------- */
+.sky-origen {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  font-size: 12px;
+  color: var(--fg-1);
+}
+
+/* ---------- Presets de paquete ---------- */
+.sky-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.sky-preset {
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease, ease), border-color var(--dur-fast, 120ms) var(--ease, ease);
+}
+.sky-preset:hover { background: var(--bg-3); border-color: var(--line-strong); }
+.sky-preset.activo { background: var(--brand-bg); border-color: var(--brand); color: var(--brand-hi); font-weight: 600; }
+
+/* ---------- Tarifas ---------- */
+.sky-tarifas { display: flex; flex-direction: column; gap: 6px; }
+.sky-tarifa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease, ease), border-color var(--dur-fast, 120ms) var(--ease, ease);
+}
+.sky-tarifa:hover { background: var(--bg-3); border-color: var(--line-strong); }
+.sky-tarifa:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.sky-tarifa.activa { border-color: var(--brand); background: var(--brand-bg); }
+.sky-tarifa-radio {
+  width: 16px; height: 16px;
+  border-radius: var(--r-full);
+  border: 2px solid var(--line-strong);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.sky-tarifa.activa .sky-tarifa-radio { border-color: var(--brand); }
+.sky-tarifa.activa .sky-tarifa-radio::after {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: var(--r-full);
+  background: var(--brand);
+}
+.sky-tarifa-info { flex: 1; min-width: 0; }
+.sky-tarifa-carrier { font-size: 13px; font-weight: 600; text-transform: capitalize; }
+.sky-tarifa-servicio { font-size: 11px; color: var(--fg-2); }
+.sky-tarifa-precio { text-align: right; }
+.sky-tarifa-monto { font-size: 14px; font-weight: 700; }
+.sky-tarifa-dias { font-size: 11px; color: var(--fg-2); }
+
+/* La más barata se marca sola: es la decisión que el usuario toma el 90% de las veces. */
+.sky-chip-barata {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  background: var(--success-bg);
+  color: var(--success);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ---------- Guía generada ---------- */
+.sky-guia {
+  border: 1px solid var(--success);
+  background: var(--success-bg);
+  border-radius: var(--r-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sky-guia-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sky-guia-track { font-size: 16px; font-weight: 700; letter-spacing: 0.02em; }
+.sky-guia-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------- Rastreo ---------- */
+.sky-eventos { display: flex; flex-direction: column; gap: 0; }
+.sky-evento {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 10px;
+  padding-bottom: 12px;
+  position: relative;
+}
+.sky-evento:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 14px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-strong);
+}
+.sky-evento-dot {
+  width: 9px; height: 9px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  margin-top: 4px;
+  z-index: 1;
+}
+.sky-evento:first-child .sky-evento-dot { background: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); }
+.sky-evento-texto { font-size: 12px; }
+.sky-evento-fecha { font-size: 11px; color: var(--fg-2); }
+
+.sky-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-1);
+}
+
+/* Botón de la tabla de cotizaciones */
+.sky-btn-tabla { white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .sky-grid-2, .sky-grid-3, .sky-grid-4 { grid-template-columns: 1fr 1fr; }
+  .sky-modal { max-width: 100%; }
+}
