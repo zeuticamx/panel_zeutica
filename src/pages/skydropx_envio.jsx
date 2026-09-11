@@ -11,6 +11,10 @@ const { useState: sk_uS, useEffect: sk_uE, useMemo: sk_uM, useRef: sk_uR } = Rea
 
 // Origen fijo: la bodega. Es el mismo domicilio que ya sale impreso en el PDF de
 // la cotización (ver generarPDFCotizacion en cotizaciones.jsx).
+//
+// `reference` es obligatorio para Skydropx al generar la guía (confirmado en
+// sandbox: sin él, 422 "reference: no puede estar en blanco" en address_from Y
+// address_to). Antes esta llave no existía aquí, así que nunca se mandaba.
 const SKY_ORIGEN_DEFAULT = {
   country_code: 'MX',
   postal_code: '45145',
@@ -22,6 +26,7 @@ const SKY_ORIGEN_DEFAULT = {
   company: 'Zeutica',
   phone: '3312995688',
   email: 'ventas1@zeutica.com',
+  reference: 'Bodega Zeutica, portón gris',
 };
 
 // Medidas típicas de la operación. Evitan capturar 4 números en el caso común.
@@ -32,7 +37,23 @@ const SKY_PRESETS = [
   { id: 'grande',  label: 'Caja grande',  length: 60, width: 40, height: 40, weight: 12 },
 ];
 
-const SKY_PAQUETE_DEFAULT = { length: 25, width: 20, height: 15, weight: 2 };
+// package_type es un código del catálogo de embalaje de Skydropx que el
+// sandbox exige al generar la guía ("package_type es requerido en todos los
+// paquetes"). "4G" es el valor más citado para caja de cartón en integraciones
+// de Skydropx, pero no está confirmado contra esta cuenta — si el sandbox lo
+// rechaza, el mensaje de error normalmente lista los códigos válidos; ajusta
+// el campo "Tipo de paquete" con ese valor.
+const SKY_PAQUETE_DEFAULT = { length: 25, width: 20, height: 15, weight: 2, package_type: '4G', consignment_note: 'Mercancía general' };
+
+// Contenido por defecto para la carta porte, armado con los productos de la
+// cotización en vez de un texto genérico. Mismo requisito confirmado en
+// sandbox: "consignment_note es requerido en todos los paquetes".
+function skyContenidoDefault(cot) {
+  const nombres = (cot.items || []).map(i => i?.nombre_producto).filter(Boolean);
+  if (nombres.length === 0) return SKY_PAQUETE_DEFAULT.consignment_note;
+  const preview = nombres.slice(0, 3).join(', ');
+  return nombres.length > 3 ? `${preview} y ${nombres.length - 3} más` : preview;
+}
 
 // ---------- Memoria local por cotización ----------
 // El backend quedó como passthrough (no guarda envíos en MySQL), así que el número
@@ -46,6 +67,23 @@ function skyLeerEnvio(codigo) {
 
 function skyGuardarEnvio(codigo, datos) {
   try { localStorage.setItem(skyClave(codigo), JSON.stringify(datos)); } catch (_) {}
+}
+
+// Combina un objeto guardado en localStorage con los defaults actuales: un
+// valor guardado se respeta si no está vacío; si falta la llave (objeto viejo,
+// de antes de que existiera ese campo) o quedó en blanco, se usa el default.
+//
+// Necesario porque `guardado?.origen || SKY_ORIGEN_DEFAULT` tomaba el objeto
+// completo del caché si existía, ignorando cualquier campo que se agregara a
+// los defaults después de que el usuario ya hubiera cotizado esa cotización
+// una vez — exactamente lo que pasó con reference/package_type/consignment_note:
+// quedaron sin valor porque el caché era de antes de que existieran.
+function skyConDefaults(base, guardadoParcial) {
+  const out = { ...base };
+  Object.entries(guardadoParcial || {}).forEach(([k, v]) => {
+    if (v !== '' && v !== null && v !== undefined) out[k] = v;
+  });
+  return out;
 }
 
 // ---------- Normalizadores ----------
@@ -87,6 +125,8 @@ function skyNormalizaGuia(envio) {
     tracking: skyCampo(raiz, 'tracking_number') || deIncluido('tracking_number') || '',
     carrier: String(skyCampo(raiz, 'provider', 'carrier', 'carrier_name') || deIncluido('provider') || ''),
     etiqueta: skyCampo(raiz, 'label_url', 'label', 'pdf_url') || deIncluido('label_url') || '',
+    // PDF de remisión / packing slip, para la documentación que acompaña al envío.
+    ordenDetalle: skyCampo(raiz, 'order_detail_url', 'order_detail') || deIncluido('order_detail_url') || '',
     id: skyCampo(raiz, 'id') || '',
   };
 }
@@ -102,7 +142,7 @@ function skyNormalizaEventos(rastreo) {
   }));
 }
 
-function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
+function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
   const codigo = cot.codigo_cotizacion;
@@ -110,12 +150,17 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
   const primerCampo = sk_uR(null);
 
   const [config, setConfig] = sk_uS(null);
-  const [destino, setDestino] = sk_uS(guardado?.destino || {
+  const [destino, setDestino] = sk_uS(() => skyConDefaults({
     country_code: 'MX', postal_code: '', area_level1: '', area_level2: '', area_level3: '',
-    street1: '', name: cot.empresa || '', company: cot.empresa || '', phone: '', email: '', reference: '',
-  });
-  const [paquete, setPaquete] = sk_uS(guardado?.paquete || SKY_PAQUETE_DEFAULT);
-  const [origen, setOrigen] = sk_uS(guardado?.origen || SKY_ORIGEN_DEFAULT);
+    // Referencia obligatoria para generar la guía; se precarga con la empresa
+    // para que nunca llegue en blanco, editable si hay una mejor seña.
+    street1: '', name: cot.empresa || '', company: cot.empresa || '', phone: '', email: '', reference: cot.empresa || '',
+  }, guardado?.destino));
+  const [paquete, setPaquete] = sk_uS(() => skyConDefaults({
+    ...SKY_PAQUETE_DEFAULT,
+    consignment_note: skyContenidoDefault(cot),
+  }, guardado?.paquete));
+  const [origen, setOrigen] = sk_uS(() => skyConDefaults(SKY_ORIGEN_DEFAULT, guardado?.origen));
   const [verOrigen, setVerOrigen] = sk_uS(false);
 
   const [cotizando, setCotizando] = sk_uS(false);
@@ -125,29 +170,68 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
   const [cotizado, setCotizado] = sk_uS(false);
 
   const [generando, setGenerando] = sk_uS(false);
-  const [guia, setGuia] = sk_uS(guardado?.guia || null);
+  // La guía persistida en el backend manda sobre lo que quedó en localStorage:
+  // el estatus solo existe del lado del servidor, que es quien recibe el webhook.
+  const [guia, setGuia] = sk_uS(() => (
+    envio
+      ? {
+          tracking: envio.tracking_number,
+          carrier: envio.carrier,
+          servicio: envio.servicio,
+          etiqueta: envio.etiqueta_url,
+          ordenDetalle: envio.orden_detalle_url,
+          costo: envio.costo,
+          estatus_texto: envio.estatus_texto,
+          estatus_tono: envio.estatus_tono,
+          estatus_descripcion: envio.estatus_descripcion,
+        }
+      : (guardado?.guia || null)
+  ));
 
   const [rastreando, setRastreando] = sk_uS(false);
   const [eventos, setEventos] = sk_uS(null);
+  // Línea de tiempo que dejó el webhook (histórico propio, no consulta al carrier).
+  const [historial, setHistorial] = sk_uS([]);
 
   const [error, setError] = sk_uS(null);
   const [tocadoCP, setTocadoCP] = sk_uS(false);
+  // Saldo de la cuenta: se muestra antes de generar para que el costo de la
+  // guía no sea una sorpresa, y se recarga después porque la guía lo descuenta.
+  const [saldo, setSaldo] = sk_uS(null);
 
   const cpValido = /^\d{5}$/.test(String(destino.postal_code || '').trim());
   const paqueteValido = ['length', 'width', 'height', 'weight'].every(k => Number(paquete[k]) > 0);
   const puedeCotizar = cpValido && paqueteValido && !cotizando;
+  // Skydropx no exige reference/consignment_note/package_type para cotizar, solo
+  // para generar la guía (confirmado en sandbox). Los defaults ya los dejan
+  // llenos, así que esto casi siempre pasa; solo bloquea si el usuario los borró.
+  const datosGuiaCompletos = !!(destino.reference || '').trim()
+    && !!(paquete.package_type || '').trim()
+    && !!(paquete.consignment_note || '').trim();
   // Mientras se genera la guía no se puede cerrar: la llamada ya salió y cerrar
   // dejaría al usuario sin el número de rastreo de un envío que ya se contrató.
   const cerrarBloqueado = generando;
+
+  const cargarSaldo = async () => setSaldo(await window.api.skydropxSaldo());
 
   sk_uE(() => {
     (async () => {
       const cfg = await window.api.skydropxConfiguracion();
       setConfig(cfg);
     })();
+    cargarSaldo();
     // El CP es el único dato que siempre falta: ahí arranca el foco.
     setTimeout(() => primerCampo.current?.focus(), 60);
   }, []);
+
+  // Historial de estatus que dejó el webhook para esta guía.
+  const cargarHistorial = async (tracking) => {
+    if (!tracking) return;
+    const lista = await window.api.skydropxEventosEnvio(tracking);
+    if (lista.ok) setHistorial(lista);
+  };
+
+  sk_uE(() => { cargarHistorial(guia?.tracking); }, [guia?.tracking]);
 
   // ESC cierra, como el resto de modales del panel.
   sk_uE(() => {
@@ -180,6 +264,18 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
     return out;
   };
 
+  // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
+  // exactamente los mismos campos, o el rate_id de la cotización podría no
+  // coincidir con lo que se está empaquetando de verdad.
+  const construirParcela = () => ({
+    length: Number(paquete.length),
+    width: Number(paquete.width),
+    height: Number(paquete.height),
+    weight: Number(paquete.weight),
+    consignment_note: (paquete.consignment_note || '').trim() || undefined,
+    package_type: (paquete.package_type || '').trim() || undefined,
+  });
+
   const cotizar = async () => {
     setCotizando(true);
     setError(null);
@@ -188,12 +284,7 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
     const payload = {
       address_from: limpiarDireccion(origen),
       address_to: limpiarDireccion(destino),
-      parcels: [{
-        length: Number(paquete.length),
-        width: Number(paquete.width),
-        height: Number(paquete.height),
-        weight: Number(paquete.weight),
-      }],
+      parcels: [construirParcela()],
     };
     const r = await window.api.skydropxCotizar(payload);
     setCotizando(false);
@@ -247,13 +338,16 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
       rate_id: tarifa.id,
       address_from: limpiarDireccion(origen),
       address_to: limpiarDireccion(destino),
-      parcels: [{
-        length: Number(paquete.length),
-        width: Number(paquete.width),
-        height: Number(paquete.height),
-        weight: Number(paquete.weight),
-      }],
+      parcels: [construirParcela()],
       referencia: codigo,
+      // Liga la guía con la cotización: es lo que permite que el estatus del
+      // webhook caiga en el renglón correcto de la tabla.
+      codigo_cotizacion: codigo,
+      // Solo para guardarlos junto a la guía: Skydropx no los repite en la
+      // respuesta del envío. NO van dentro de `extras`, que se reenvía tal cual
+      // al API de Skydropx.
+      servicio: tarifa.servicio,
+      costo: tarifa.total,
     }, user);
     setGenerando(false);
     if (!r.ok) {
@@ -267,8 +361,13 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
     nueva.costo = tarifa.total;
     nueva.servicio = tarifa.servicio;
     nueva.fecha = new Date().toISOString();
+    // Mismo estatus inicial con el que el backend acaba de guardar la fila, para
+    // que el badge aparezca de una vez y no hasta reabrir el modal.
+    nueva.estatus_texto = 'Guía creada';
+    nueva.estatus_tono = 'info';
     setGuia(nueva);
     persistir({ guia: nueva });
+    cargarSaldo();   // la guía ya descontó saldo
     onGuiaGenerada?.(codigo, nueva);
     toast.success('Guía generada', `${nueva.carrier} · ${nueva.tracking || 'sin número de rastreo'}`);
     window.fireConfetti();
@@ -312,6 +411,14 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
               {config && (
                 <span className={`badge badge-${esProduccion ? 'danger' : 'info'}`}>
                   <span className="badge-dot" />{esProduccion ? 'Producción' : 'Sandbox'}
+                </span>
+              )}
+              {saldo && (
+                <span style={{ fontSize: 11, color: 'var(--fg-2)' }}>
+                  <Icon name="wallet" size={11} /> Saldo:{' '}
+                  <span className="mono" style={{ color: saldo.saldo == null ? 'var(--fg-2)' : 'var(--fg-1)' }}>
+                    {saldo.saldo != null ? window.fmt.mxn(saldo.saldo) : 'no disponible'}
+                  </span>
                 </span>
               )}
             </div>
@@ -415,6 +522,18 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
               </div>
             </div>
 
+            <div className="field" style={{ marginTop: 10 }}>
+              <label className="field-label" htmlFor="sky-referencia">Referencia para el repartidor</label>
+              <input
+                id="sky-referencia"
+                className="input"
+                value={destino.reference}
+                onChange={e => setD('reference', e.target.value)}
+                placeholder="Entre calles, color de fachada, portón negro…"
+              />
+              <span className="field-hint">Requerida por Skydropx para generar la guía; se precargó con el nombre del cliente.</span>
+            </div>
+
             <div className="field-hint" style={{ marginTop: 8 }}>
               Para cotizar basta el código postal. El resto lo exige el carrier al generar la guía.
             </div>
@@ -447,6 +566,11 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
                   <input id="sky-omunicipio" className="input" value={origen.area_level2}
                     onChange={e => setOrigen(p => ({ ...p, area_level2: e.target.value }))} />
                 </div>
+                <div className="field">
+                  <label className="field-label" htmlFor="sky-oreferencia">Referencia</label>
+                  <input id="sky-oreferencia" className="input" value={origen.reference}
+                    onChange={e => setOrigen(p => ({ ...p, reference: e.target.value }))} />
+                </div>
               </div>
             )}
           </div>
@@ -462,7 +586,12 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
                   key={p.id}
                   type="button"
                   className={`sky-preset ${presetActivo?.id === p.id ? 'activo' : ''}`}
-                  onClick={() => setPaquete({ length: p.length, width: p.width, height: p.height, weight: p.weight })}
+                  // Merge, no reemplazo: un setPaquete({...}) a secas tiraba
+                  // package_type/consignment_note (bug real: el preset "Caja
+                  // chica" coincide con SKY_PAQUETE_DEFAULT, así que quedaba
+                  // activo sin que el usuario lo tocara, pero elegir cualquier
+                  // OTRO preset borraba esos dos campos ya rellenados).
+                  onClick={() => setPaquete(prev => ({ ...prev, length: p.length, width: p.width, height: p.height, weight: p.weight }))}
                   aria-pressed={presetActivo?.id === p.id}
                 >
                   {p.label}
@@ -490,6 +619,33 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
                   />
                 </div>
               ))}
+            </div>
+
+            <div className="sky-grid-2" style={{ marginTop: 10 }}>
+              <div className="field">
+                <label className="field-label" htmlFor="sky-package-type">Tipo de paquete</label>
+                <input
+                  id="sky-package-type"
+                  className="input mono"
+                  value={paquete.package_type}
+                  onChange={e => setP('package_type', e.target.value)}
+                  onBlur={e => { if (!e.target.value.trim()) setP('package_type', SKY_PAQUETE_DEFAULT.package_type); }}
+                />
+                <span className="field-hint">
+                  Código de embalaje de Skydropx (default "4G" = caja, sin confirmar contra esta
+                  cuenta). Si el sandbox lo rechaza, el error suele listar los valores válidos.
+                </span>
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="sky-contenido">Contenido (carta porte)</label>
+                <input
+                  id="sky-contenido"
+                  className="input"
+                  value={paquete.consignment_note}
+                  onChange={e => setP('consignment_note', e.target.value)}
+                  onBlur={e => { if (!e.target.value.trim()) setP('consignment_note', skyContenidoDefault(cot)); }}
+                />
+              </div>
             </div>
           </div>
 
@@ -563,6 +719,18 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
                       {guia.carrier} {guia.servicio ? `· ${guia.servicio}` : ''}
                     </div>
                     <div className="sky-guia-track mono">{guia.tracking || 'Sin número de rastreo'}</div>
+                    {guia.estatus_texto && (
+                      <div style={{ marginTop: 6 }}>
+                        <span className={`badge badge-${guia.estatus_tono || 'info'}`}>
+                          <span className="badge-dot" />{guia.estatus_texto}
+                        </span>
+                        {guia.estatus_descripcion && (
+                          <span style={{ fontSize: 11, color: 'var(--fg-1)', marginLeft: 8 }}>
+                            {guia.estatus_descripcion}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {guia.costo > 0 && (
                     <div style={{ textAlign: 'right' }}>
@@ -577,9 +745,16 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
                       <Icon name="doc" size={12} /> Copiar rastreo
                     </button>
                   )}
+                  {/* Documentación para imprimir: la etiqueta se pega al paquete;
+                      la remisión (packing slip) acompaña la entrega. */}
                   {guia.etiqueta && (
                     <a className="btn btn-secondary btn-sm" href={guia.etiqueta} target="_blank" rel="noopener noreferrer">
-                      <Icon name="download" size={12} /> Abrir etiqueta
+                      <Icon name="download" size={12} /> Imprimir etiqueta
+                    </a>
+                  )}
+                  {guia.ordenDetalle && (
+                    <a className="btn btn-secondary btn-sm" href={guia.ordenDetalle} target="_blank" rel="noopener noreferrer">
+                      <Icon name="doc" size={12} /> Imprimir remisión
                     </a>
                   )}
                   {/* Sin carrier el endpoint de rastreo responde 422: mejor no ofrecer el botón. */}
@@ -589,8 +764,38 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
                 </div>
               </div>
 
+              {/* Historial propio: lo que Skydropx nos empujó por webhook. A
+                  diferencia de "Rastrear", esto no consulta al carrier: ya está
+                  guardado y queda aunque el carrier deje de responder. */}
+              {historial.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="sky-seccion-titulo" style={{ marginBottom: 8 }}>
+                    Historial de estatus ({historial.length})
+                  </div>
+                  <div className="sky-eventos">
+                    {historial.map((ev, i) => (
+                      <div className="sky-evento" key={i}>
+                        <span className="sky-evento-dot" />
+                        <span>
+                          <span className="sky-evento-texto">
+                            {ev.estatus_texto}
+                            {ev.descripcion ? ` — ${ev.descripcion}` : ''}
+                          </span>
+                          <span className="sky-evento-fecha" style={{ display: 'block' }}>
+                            {ev.recibido_en ? window.fmt.date(ev.recibido_en) : ''}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {eventos && (
                 <div style={{ marginTop: 12 }}>
+                  <div className="sky-seccion-titulo" style={{ marginBottom: 8 }}>
+                    Rastreo en vivo del carrier
+                  </div>
                   {eventos.length === 0 ? (
                     <div className="field-hint">El carrier aún no reporta movimientos de esta guía.</div>
                   ) : (
@@ -628,12 +833,29 @@ function SkydropxEnvioModal({ cot, user, onClose, onGuiaGenerada }) {
               </button>
               <button
                 className="btn btn-primary btn-sm"
-                disabled={!tarifaSel || generando || cotizando}
+                disabled={!tarifaSel || generando || cotizando || !datosGuiaCompletos}
+                title={!datosGuiaCompletos
+                  ? 'Completa Referencia (Destino) y Tipo de paquete / Contenido (Paquete) antes de generar la guía'
+                  : undefined}
                 onClick={() => {
                   const t = tarifas.find(x => x.id === tarifaSel);
                   if (!t) return;
+                  // El saldo restante se calcula solo si se pudo leer: con saldo
+                  // desconocido es mejor no decir nada que dar una cifra inventada.
+                  const hay = saldo?.saldo != null;
+                  const restante = hay ? saldo.saldo - t.total : null;
+                  // Cuando no alcanza se dice "faltan X" en vez de "quedarían
+                  // $-X": fmt.mxn antepone el signo de pesos al número, así que
+                  // un negativo saldría como "$-89.50" y además se lee peor.
+                  const lineaSaldo = !hay
+                    ? ' No se pudo leer el saldo de Skydropx.'
+                    : restante >= 0
+                      ? ` Saldo Skydropx: ${window.fmt.mxn(saldo.saldo)} → quedarían ${window.fmt.mxn(restante)}.`
+                      : ` Saldo Skydropx: ${window.fmt.mxn(saldo.saldo)} → faltan ${window.fmt.mxn(-restante)}.` +
+                        ' El saldo NO alcanza: Skydropx puede rechazar la guía.';
                   askConfirm(
                     `¿Generar la guía de ${codigo} con ${t.carrier} por ${window.fmt.mxn(t.total)}?` +
+                    lineaSaldo +
                     (esProduccion ? ' El envío se contrata en producción y se cobra. No se puede cancelar desde el panel.' : ''),
                     generarGuia
                   );

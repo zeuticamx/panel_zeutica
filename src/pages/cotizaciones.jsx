@@ -341,7 +341,7 @@ function PageCotizaciones({ user }) {
   const [askConfirm, ConfirmModal] = window.useConfirm();
   const [cots, setCots] = rp_uS([]);
   const [q, setQ] = rp_uS('');
-  const [estado, setEstado] = rp_uS('todos');
+  const [estado, setEstado] = rp_uS('vigentes');
 
   const [showForm, setShowForm] = rp_uS(false);
   const [clientes, setClientes] = rp_uS([]);
@@ -376,9 +376,12 @@ function PageCotizaciones({ user }) {
   const [seguimientoEdit, setSeguimientoEdit] = rp_uS({});
   const [seguimientoSaving, setSeguimientoSaving] = rp_uS(null);
   // Envío Skydropx: cotización abierta en el modal y guías ya generadas por código.
-  // Las guías viven en localStorage (el backend quedó passthrough, no las persiste).
+  // El estatus lo mantiene el webhook en la BD, así que la fuente de verdad es el
+  // backend (el navegador no puede recibir la notificación de Skydropx).
   const [envioModal, setEnvioModal] = rp_uS(null);
   const [enviosGenerados, setEnviosGenerados] = rp_uS({});
+  // Saldo de la cuenta de Skydropx: de ahí se descuenta cada guía generada.
+  const [saldoSky, setSaldoSky] = rp_uS(null);
 
   rp_uE(() => { (async () => setCots(await window.api.cotizaciones()))(); }, []);
 
@@ -399,18 +402,23 @@ function PageCotizaciones({ user }) {
     });
   }, [cots]);
 
-  // Guías Skydropx ya generadas, para marcar el renglón sin volver a llamar al API.
-  rp_uE(() => {
-    if (cots.length === 0) return;
-    const leer = window.skydropxLeerEnvio;
-    if (!leer) return;
+  // Guías Skydropx con su último estatus. Se pide una sola vez y se arma el mapa
+  // por código de cotización; cada renglón solo lee su entrada.
+  const cargarEnvios = async () => {
+    const lista = await window.api.skydropxEnvios();
+    if (!lista.ok) return; // el error ya se avisó en la capa de API
     const mapa = {};
-    cots.forEach(c => {
-      const envio = leer(c.codigo_cotizacion);
-      if (envio?.guia?.tracking) mapa[c.codigo_cotizacion] = envio.guia;
+    lista.forEach(e => {
+      // Si una cotización tuviera más de una guía, se queda la más reciente
+      // (el backend ordena por id descendente).
+      if (e.codigo_cotizacion && !mapa[e.codigo_cotizacion]) mapa[e.codigo_cotizacion] = e;
     });
     setEnviosGenerados(mapa);
-  }, [cots]);
+  };
+
+  const cargarSaldo = async () => setSaldoSky(await window.api.skydropxSaldo());
+
+  rp_uE(() => { cargarEnvios(); cargarSaldo(); }, []);
 
   rp_uE(() => {
     if (!showForm) return;
@@ -694,14 +702,33 @@ function PageCotizaciones({ user }) {
     }
   };
 
+  // Fecha de hoy en YYYY-MM-DD para comparar contra fecha_vencimiento como texto.
+  // Se evita new Date(fecha) a propósito: parsear "2026-09-15 12:12:43" no es
+  // consistente entre navegadores y mete corrimientos de zona horaria.
+  const hoy = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
+  // Misma regla que tenía el SQL (fecha_vencimiento >= CURDATE()), ahora del lado
+  // del panel. Sin fecha se considera vigente: no se esconde una cotización por
+  // un dato faltante.
+  const esVigente = c => !c.fecha_vencimiento || String(c.fecha_vencimiento).slice(0, 10) >= hoy;
+
   const filtered = cots.filter(c => {
+    if (estado === 'vigentes' && !esVigente(c)) return false;
+    if (estado === 'vencidas' && esVigente(c)) return false;
     if (estado === 'abiertas' && c.vendido) return false;
     if (estado === 'vendidas' && !c.vendido) return false;
     if (q && !`${c.codigo_cotizacion} ${c.empresa}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
-  const abiertas = cots.filter(c => !c.vendido).length;
-  const totalAbiertas = cots.filter(c => !c.vendido).reduce((s, c) => s + (parseFloat(c.subtotal) || 0), 0);
+  // El pipeline solo cuenta lo que sigue vivo: una cotización vencida ya no es
+  // negocio por cerrar. Contarlas infla el valor con cotizaciones muertas y
+  // vuelve el número inútil para decidir.
+  const abiertasVigentes = cots.filter(c => !c.vendido && esVigente(c));
+  const totalPipeline = abiertasVigentes.reduce((s, c) => s + (parseFloat(c.subtotal) || 0), 0);
+  const vendidas = cots.filter(c => c.vendido).length;
 
   return (
     <div className="page">
@@ -1151,16 +1178,35 @@ function PageCotizaciones({ user }) {
         <window.SkydropxEnvioModal
           cot={envioModal}
           user={user}
-          onClose={() => setEnvioModal(null)}
-          onGuiaGenerada={(codigo, guia) => setEnviosGenerados(prev => ({ ...prev, [codigo]: guia }))}
+          envio={enviosGenerados[envioModal.codigo_cotizacion] || null}
+          // Se recarga del backend en vez de parchear el estado local: el estatus
+          // lo mueve el webhook, y pudo cambiar mientras el modal estaba abierto.
+          // Generar una guía descuenta saldo, así que se recarga junto con los envíos.
+          onClose={() => { setEnvioModal(null); cargarEnvios(); cargarSaldo(); }}
+          onGuiaGenerada={() => { cargarEnvios(); cargarSaldo(); }}
         />
       )}
 
       <div className="dash-kpis">
+        {/* Las etiquetas dicen "vigentes" a propósito: los dos últimos KPIs
+            excluyen las vencidas, y sin decirlo no cuadrarían con la pestaña
+            Abiertas, que sí las incluye. */}
         <window.MiniStat label="Total cotizaciones" value={cots.length} icon="doc"/>
-        <window.MiniStat label="Abiertas" value={abiertas} icon="clock" tone="warn"/>
-        <window.MiniStat label="Vendidas" value={cots.filter(c => c.vendido).length} icon="check" tone="success"/>
-        <window.MiniStat label="Valor en pipeline" value={window.fmt.mxn(totalAbiertas)} icon="cash"/>
+        <window.MiniStat label="Abiertas vigentes" value={abiertasVigentes.length} icon="clock" tone="warn"/>
+        <window.MiniStat label="Vendidas" value={vendidas} icon="check" tone="success"/>
+        <window.MiniStat label="Pipeline vigente" value={window.fmt.mxn(totalPipeline)} icon="cash"/>
+        {/* Saldo Skydropx. Si no se pudo leer se muestra "—" en vez de $0.00:
+            un cero se interpretaría como "sin saldo" y frenaría envíos por error.
+            Umbral de aviso arbitrario (500 MXN ≈ 2-3 guías); ajustable. */}
+        <window.MiniStat
+          label="Saldo Skydropx"
+          value={saldoSky?.saldo != null ? window.fmt.mxn(saldoSky.saldo) : '—'}
+          icon="wallet"
+          tone={saldoSky?.saldo == null ? undefined
+            : saldoSky.saldo <= 0 ? 'danger'
+            : saldoSky.saldo < 500 ? 'warn'
+            : undefined}
+        />
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -1171,21 +1217,57 @@ function PageCotizaciones({ user }) {
               <input className="input" placeholder="Buscar cotización o cliente..." value={q} onChange={e => setQ(e.target.value)}/>
             </div>
             <div className="tabs">
-              <button className={`tab ${estado === 'todos' ? 'active' : ''}`} onClick={() => setEstado('todos')}>Todas</button>
-              <button className={`tab ${estado === 'abiertas' ? 'active' : ''}`} onClick={() => setEstado('abiertas')}>Abiertas</button>
-              <button className={`tab ${estado === 'vendidas' ? 'active' : ''}`} onClick={() => setEstado('vendidas')}>Vendidas</button>
+              {[
+                ['vigentes', 'Vigentes'],
+                ['vencidas', 'Vencidas'],
+                ['abiertas', 'Abiertas'],
+                ['vendidas', 'Vendidas'],
+                ['todos', 'Todas'],
+              ].map(([k, label]) => (
+                <button key={k} className={`tab ${estado === k ? 'active' : ''}`} onClick={() => setEstado(k)}>{label}</button>
+              ))}
             </div>
           </div>
         </div>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th className="td-right">Items</th><th className="td-right">Subtotal</th><th className="td-right">Total</th><th>Estado</th><th>Seguimiento</th><th>Envío</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Cliente</th><th>Fecha</th><th>Vence</th><th className="td-right">Items</th><th className="td-right">Subtotal</th><th className="td-right">Total</th><th>Estado</th><th>Seguimiento</th><th>Envío</th><th></th></tr></thead>
             <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={11}>
+                    <div className="empty" style={{ padding: 24 }}>
+                      <div className="empty-icon"><Icon name="doc"/></div>
+                      <div>Sin cotizaciones en esta vista</div>
+                      <div className="empty-detail">
+                        {q
+                          ? `Ninguna coincide con "${q}".`
+                          : estado === 'vigentes'
+                            ? 'Ninguna cotización sigue vigente hoy. Revisa Vencidas o Todas.'
+                            : estado === 'vencidas'
+                              ? 'Ninguna cotización ha vencido.'
+                              : 'Cambia de pestaña para ver otras cotizaciones.'}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {filtered.map(c => (
                 <tr key={c.codigo_cotizacion}>
                   <td className="mono" style={{ fontSize: 12, fontWeight: 500 }}>{c.codigo_cotizacion}</td>
                   <td>{c.empresa}</td>
                   <td className="td-muted">{window.fmt.date(c.fecha)}</td>
+                  <td className="td-muted">
+                    {(() => {
+                      if (!c.fecha_vencimiento) return '—';
+                      // Se recorta a YYYY-MM-DD para que fmt.date la arme como fecha
+                      // local: pasarle "2026-09-15 12:12:43" depende del navegador.
+                      const fecha = window.fmt.date(String(c.fecha_vencimiento).slice(0, 10));
+                      return esVigente(c)
+                        ? fecha
+                        : <span style={{ color: 'var(--danger)' }} title="Cotización vencida">{fecha}</span>;
+                    })()}
+                  </td>
                   <td className="td-right mono">{(c.items || []).map((item, index) => (
                     <li key={index}>
                         {item.nombre_producto}
@@ -1213,17 +1295,22 @@ function PageCotizaciones({ user }) {
                   </td>
                   <td>
                     {(() => {
-                      const guia = enviosGenerados[c.codigo_cotizacion];
+                      const envio = enviosGenerados[c.codigo_cotizacion];
+                      if (!envio) {
+                        return (
+                          <button className="btn btn-ghost btn-sm sky-btn-tabla" onClick={() => setEnvioModal(c)}
+                            title="Cotizar envío con Skydropx">
+                            <Icon name="pkg" size={12} /> Cotizar envío
+                          </button>
+                        );
+                      }
                       return (
-                        <button
-                          className={`btn btn-sm sky-btn-tabla ${guia ? 'btn-secondary' : 'btn-ghost'}`}
-                          onClick={() => setEnvioModal(c)}
-                          title={guia ? `Guía ${guia.carrier}: ${guia.tracking}` : 'Cotizar envío con Skydropx'}
-                        >
-                          <Icon name="pkg" size={12} />
-                          {guia
-                            ? <span className="mono" style={{ fontSize: 11 }}>{guia.tracking}</span>
-                            : 'Cotizar envío'}
+                        <button className="btn btn-ghost btn-sm sky-celda-envio" onClick={() => setEnvioModal(c)}
+                          title={`${envio.carrier || 'Guía'} · ${envio.tracking_number || ''} — ${envio.estatus_descripcion || envio.estatus_texto}`}>
+                          <span className={`badge badge-${envio.estatus_tono}`}>
+                            <span className="badge-dot" />{envio.estatus_texto}
+                          </span>
+                          <span className="mono sky-celda-track">{envio.tracking_number || 'sin rastreo'}</span>
                         </button>
                       );
                     })()}

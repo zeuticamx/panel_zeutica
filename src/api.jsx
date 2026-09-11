@@ -685,6 +685,25 @@ const api = {
     const params = new URLSearchParams({ tracking_number: trackingNumber, carrier_name: carrierName });
     return tryFetch(`/zeutica/skydropx/rastreo?${params.toString()}`, { timeout: 30000 });
   },
+  // Saldo disponible en la cuenta de Skydropx. Devuelve { saldo, moneda, crudo }.
+  // `saldo` llega en null si Skydropx cambió el nombre de la llave: en ese caso
+  // el panel avisa que no se pudo leer, en vez de pintar un cero engañoso.
+  async skydropxSaldo() {
+    return valorConError(await tryFetch('/zeutica/skydropx/saldo', { timeout: 15000 }), d => d, null);
+  },
+  // Envíos guardados con su último estatus (el que dejó el webhook de Skydropx).
+  // Cada fila trae `estatus_texto` y `estatus_tono` ya traducidos por el backend.
+  async skydropxEnvios(codigoCotizacion) {
+    const q = codigoCotizacion ? `?codigo_cotizacion=${encodeURIComponent(codigoCotizacion)}` : '';
+    return listaConError(await tryFetch(`/zeutica/skydropx/envios${q}`, { timeout: 15000 }), d => d?.envios);
+  },
+  // Línea de tiempo de una guía, armada con los eventos que mandó el webhook.
+  async skydropxEventosEnvio(trackingNumber) {
+    return listaConError(
+      await tryFetch(`/zeutica/skydropx/envios/${encodeURIComponent(trackingNumber)}/eventos`, { timeout: 15000 }),
+      d => d?.eventos
+    );
+  },
 
   // ---- Rastreo de Importaciones (embarques) ----
   async embarques({ proveedor, numeroContenedor, conForwarder, salioDeChina } = {}) {

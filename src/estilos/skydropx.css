@@ -220,6 +220,19 @@
 /* Botón de la tabla de cotizaciones */
 .sky-btn-tabla { white-space: nowrap; }
 
+/* Celda con estatus + número de guía: el badge lleva el peso visual y el
+   tracking va debajo en mono, para que el estado se lea de un barrido. */
+.sky-celda-envio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  height: auto;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.sky-celda-track { font-size: 10px; color: var(--fg-2); }
+
 @media (max-width: 720px) {
   .sky-grid-2, .sky-grid-3, .sky-grid-4 { grid-template-columns: 1fr 1fr; }
   .sky-modal { max-width: 100%; }
