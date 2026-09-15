@@ -210,6 +210,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   ));
 
   const [rastreando, setRastreando] = sk_uS(false);
+  const [actualizando, setActualizando] = sk_uS(false);
   const [eventos, setEventos] = sk_uS(null);
   // Línea de tiempo que dejó el webhook (histórico propio, no consulta al carrier).
   const [historial, setHistorial] = sk_uS([]);
@@ -407,6 +408,38 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     const lista = skyNormalizaEventos(r.data?.rastreo);
     setEventos(lista);
     if (lista.length === 0) toast.info('Sin movimientos', 'El carrier aún no reporta eventos de esta guía');
+  };
+
+  // La guía casi siempre se crea SIN tracking_number/label_url: Skydropx la
+  // genera con el carrier de forma asíncrona y los completa después (el backend
+  // ya reconsulta un par de segundos, pero si el carrier tarda más, el dato
+  // solo llega por webhook). Sin esto, quien deja el modal abierto nunca ve el
+  // número de rastreo ni el botón de imprimir aparecer por sí solos.
+  const actualizarGuia = async () => {
+    setActualizando(true);
+    const lista = await window.api.skydropxEnvios(codigo);
+    setActualizando(false);
+    if (!lista.ok || lista.length === 0) {
+      toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
+      return;
+    }
+    const ultimo = lista[0]; // el backend ya ordena por id DESC
+    const actualizada = {
+      ...guia,
+      tracking: ultimo.tracking_number || guia?.tracking || '',
+      carrier: ultimo.carrier || guia?.carrier || '',
+      etiqueta: ultimo.etiqueta_url || guia?.etiqueta || '',
+      ordenDetalle: ultimo.orden_detalle_url || guia?.ordenDetalle || '',
+      estatus_texto: ultimo.estatus_texto || guia?.estatus_texto,
+      estatus_tono: ultimo.estatus_tono || guia?.estatus_tono,
+      estatus_descripcion: ultimo.estatus_descripcion || guia?.estatus_descripcion,
+    };
+    setGuia(actualizada);
+    persistir({ guia: actualizada });
+    cargarHistorial(actualizada.tracking);
+    const huboNovedad = actualizada.tracking !== guia?.tracking || actualizada.etiqueta !== guia?.etiqueta;
+    if (huboNovedad) toast.success('Actualizado', 'Se encontraron datos nuevos de Skydropx');
+    else toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
   };
 
   const copiar = (texto) => {
@@ -740,6 +773,13 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                       {guia.carrier} {guia.servicio ? `· ${guia.servicio}` : ''}
                     </div>
                     <div className="sky-guia-track mono">{guia.tracking || 'Sin número de rastreo'}</div>
+                    {!guia.tracking && (
+                      <div className="field-hint">
+                        Skydropx genera el número de rastreo y la etiqueta con el carrier
+                        después de contratar la guía; puede tardar unos minutos. Usa
+                        "Actualizar" para revisar si ya está lista.
+                      </div>
+                    )}
                     {guia.estatus_texto && (
                       <div style={{ marginTop: 6 }}>
                         <span className={`badge badge-${guia.estatus_tono || 'info'}`}>
@@ -778,6 +818,12 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                       <Icon name="doc" size={12} /> Imprimir remisión
                     </a>
                   )}
+                  {/* Trae lo que ya haya en el backend (tracking/etiqueta/estatus que
+                      dejó el webhook mientras el modal estaba abierto), sin tener que
+                      cerrar y volver a abrir el modal para verlo. */}
+                  <button className="btn btn-secondary btn-sm" onClick={actualizarGuia} disabled={actualizando}>
+                    {actualizando ? <><span className="spinner" /> Actualizando…</> : <><Icon name="refresh" size={12} /> Actualizar</>}
+                  </button>
                   {/* Sin carrier el endpoint de rastreo responde 422: mejor no ofrecer el botón. */}
                   <button className="btn btn-primary btn-sm" onClick={rastrear} disabled={rastreando || !guia.tracking || !guia.carrier}>
                     {rastreando ? <><span className="spinner" /> Consultando…</> : <><Icon name="refresh" size={12} /> Rastrear</>}
