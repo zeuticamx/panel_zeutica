@@ -45,15 +45,10 @@ const SKY_PRESETS = [
 // el campo "Tipo de paquete" con ese valor.
 const SKY_PAQUETE_DEFAULT = { length: 25, width: 20, height: 15, weight: 2, package_type: '4G', consignment_note: 'Mercancía general' };
 
-// Contenido por defecto para la carta porte, armado con los productos de la
-// cotización en vez de un texto genérico. Mismo requisito confirmado en
-// sandbox: "consignment_note es requerido en todos los paquetes".
-function skyContenidoDefault(cot) {
-  const nombres = (cot.items || []).map(i => i?.nombre_producto).filter(Boolean);
-  if (nombres.length === 0) return SKY_PAQUETE_DEFAULT.consignment_note;
-  const preview = nombres.slice(0, 3).join(', ');
-  return nombres.length > 3 ? `${preview} y ${nombres.length - 3} más` : preview;
-}
+// Código SAT por defecto para carta porte. Skydropx espera un código, no
+// descripción. El formulario muestra "53103200 - Ropa Desechable" pero el
+// payload viaja solo con el código "53103200".
+const CONSIGNMENT_CODE_DEFAULT = '53103200';
 
 // ---------- Memoria local por cotización ----------
 // El backend quedó como passthrough (no guarda envíos en MySQL), así que el número
@@ -124,6 +119,12 @@ function skyNormalizaTarifa(t) {
     dias: skyCampo(t, 'days', 'estimated_delivery_days', 'delivery_estimate'),
     total: Number(skyCampo(t, 'total_pricing', 'total', 'amount', 'price') || 0),
     moneda: String(skyCampo(t, 'currency', 'currency_code') || 'MXN'),
+    // Solo informativo para envíos multipaquete: si el carrier soporta
+    // multipaquete nativo, Skydropx agrupa los bultos en una sola guía
+    // ("multipackage"); si no, genera una guía independiente por bulto
+    // ("multishipment"). No confirmado contra esta cuenta qué carriers
+    // devuelven cada valor.
+    tipoCreacion: skyCampo(t, 'shipment_creation_type') || null,
   };
 }
 
@@ -179,10 +180,17 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   ));
   const [paquete, setPaquete] = sk_uS(() => skyConDefaults({
     ...SKY_PAQUETE_DEFAULT,
-    consignment_note: skyContenidoDefault(cot),
+    consignment_note: CONSIGNMENT_CODE_DEFAULT,
   }, guardado?.paquete));
   const [origen, setOrigen] = sk_uS(() => skyConDefaults(SKY_ORIGEN_DEFAULT, guardado?.origen));
   const [verOrigen, setVerOrigen] = sk_uS(false);
+  // Envío multipaquete: cuántos bultos idénticos lleva este ítem/pedido. Con 1
+  // (default) el comportamiento es exactamente el de siempre.
+  const [cantidadBultos, setCantidadBultos] = sk_uS(() => (Number(guardado?.cantidadBultos) > 0 ? Number(guardado.cantidadBultos) : 1));
+  // Un renglón por guía generada (1 en el caso normal, varias en multipaquete).
+  // Se completa al generar la guía o al usar "Actualizar", que ya trae todos
+  // los renglones que el backend tiene guardados para esta cotización.
+  const [bultos, setBultos] = sk_uS(() => guardado?.bultos || []);
 
   const [cotizando, setCotizando] = sk_uS(false);
   const [tarifas, setTarifas] = sk_uS([]);
@@ -262,7 +270,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [cerrarBloqueado, onClose]);
 
-  const persistir = (extra = {}) => skyGuardarEnvio(codigo, { destino, paquete, origen, guia, ...extra });
+  const persistir = (extra = {}) => skyGuardarEnvio(codigo, { destino, paquete, origen, guia, cantidadBultos, bultos, ...extra });
 
   const setD = (k, v) => setDestino(prev => ({ ...prev, [k]: v }));
   const setP = (k, v) => setPaquete(prev => ({ ...prev, [k]: v }));
@@ -285,6 +293,11 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     });
     return out;
   };
+  
+  const SAT_OPTIONS = [
+  { code: '53103200', label: '53103200 - Ropa Desechable' },
+  { code: '52101508', label: '52101508 - Tapetes de Entrada' },
+];
 
   // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
   // exactamente los mismos campos, o el rate_id de la cotización podría no
@@ -294,8 +307,12 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     width: Number(paquete.width),
     height: Number(paquete.height),
     weight: Number(paquete.weight),
-    consignment_note: (paquete.consignment_note || '').trim() || undefined,
+    // consignment_note: solo viaja el código SAT como integer
+    // (ej: 53103200, no "53103200 - Ropa Desechable")
+    consignment_note: paquete.consignment_note ? Number(paquete.consignment_note) : undefined,
     package_type: (paquete.package_type || '').trim() || undefined,
+    package_protected: true,
+    declared_value: 2000.0,
   });
 
   const cotizar = async () => {
@@ -307,6 +324,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       address_from: limpiarDireccion(origen),
       address_to: limpiarDireccion(destino),
       parcels: [construirParcela()],
+      cantidad_bultos: cantidadBultos,
     };
     const r = await window.api.skydropxCotizar(payload);
     setCotizando(false);
@@ -361,6 +379,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       address_from: limpiarDireccion(origen),
       address_to: limpiarDireccion(destino),
       parcels: [construirParcela()],
+      cantidad_bultos: cantidadBultos,
       referencia: codigo,
       // Liga la guía con la cotización: es lo que permite que el estatus del
       // webhook caiga en el renglón correcto de la tabla.
@@ -387,11 +406,35 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     // que el badge aparezca de una vez y no hasta reabrir el modal.
     nueva.estatus_texto = 'Guía creada';
     nueva.estatus_tono = 'info';
+
+    // Multipaquete: el backend ya arma `paquetes` con el detalle por bulto
+    // (tracking/etiqueta propios de cada uno). En el caso normal (1 bulto)
+    // trae un solo elemento con el mismo dato que `nueva` ya tiene.
+    const paquetesResp = Array.isArray(r.data?.paquetes) ? r.data.paquetes : [];
+    const nuevosBultos = paquetesResp.length > 0
+      ? paquetesResp.map((p, i) => ({
+          numero: p.package_number || (i + 1),
+          tracking: p.tracking_number || '',
+          etiqueta: p.etiqueta_url || '',
+          shipmentId: p.shipment_id || '',
+        }))
+      : [{ numero: 1, tracking: nueva.tracking, etiqueta: nueva.etiqueta, shipmentId: nueva.id }];
+    // El shipment (nivel raíz del envío) no siempre trae tracking/etiqueta
+    // propios en multipaquete -- viven en cada paquete. Se completa `nueva`
+    // (la guía "principal" que usan rastreo/historial) con el primer bulto.
+    if (!nueva.tracking && nuevosBultos[0]?.tracking) nueva.tracking = nuevosBultos[0].tracking;
+    if (!nueva.etiqueta && nuevosBultos[0]?.etiqueta) nueva.etiqueta = nuevosBultos[0].etiqueta;
+
+    setBultos(nuevosBultos);
     setGuia(nueva);
-    persistir({ guia: nueva });
+    persistir({ guia: nueva, bultos: nuevosBultos });
     cargarSaldo();   // la guía ya descontó saldo
     onGuiaGenerada?.(codigo, nueva);
-    toast.success('Guía generada', `${nueva.carrier} · ${nueva.tracking || 'sin número de rastreo'}`);
+    toast.success(
+      cantidadBultos > 1 ? `${nuevosBultos.length} guías generadas` : 'Guía generada',
+      `${nueva.carrier} · ${nueva.tracking || 'sin número de rastreo'}` +
+        (cantidadBultos > 1 && nuevosBultos.length > 1 ? ` (+${nuevosBultos.length - 1} más)` : '')
+    );
     window.fireConfetti();
   };
 
@@ -435,9 +478,24 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       estatus_descripcion: ultimo.estatus_descripcion || guia?.estatus_descripcion,
     };
     setGuia(actualizada);
-    persistir({ guia: actualizada });
+
+    // Multipaquete: cada bulto generado para esta cotización queda como su
+    // propio renglón en skydropx_envios (misma columna codigo_cotizacion), y
+    // `lista` ya trae todos. Se ordenan por id ascendente (orden en que se
+    // crearon) para numerarlos "Bulto 1, 2, 3..."; la tabla no guarda el
+    // package_number que asignó Skydropx.
+    const ordenAscendente = [...lista].reverse();
+    const nuevosBultos = ordenAscendente.map((e, i) => ({
+      numero: i + 1,
+      tracking: e.tracking_number || '',
+      etiqueta: e.etiqueta_url || '',
+      shipmentId: e.shipment_id || '',
+    }));
+    setBultos(nuevosBultos);
+    persistir({ guia: actualizada, bultos: nuevosBultos });
     cargarHistorial(actualizada.tracking);
-    const huboNovedad = actualizada.tracking !== guia?.tracking || actualizada.etiqueta !== guia?.etiqueta;
+    const huboNovedad = actualizada.tracking !== guia?.tracking || actualizada.etiqueta !== guia?.etiqueta
+      || nuevosBultos.length !== bultos.length;
     if (huboNovedad) toast.success('Actualizado', 'Se encontraron datos nuevos de Skydropx');
     else toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
   };
@@ -652,7 +710,31 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                 </button>
               ))}
             </div>
-            <div className="sky-grid-4">
+            <div className="field" style={{ marginTop: 10, maxWidth: 220 }}>
+              <label className="field-label" htmlFor="sky-bultos">Cantidad de bultos / guías</label>
+              <input
+                id="sky-bultos"
+                className="input mono"
+                type="number"
+                min="1"
+                max="20"
+                step="1"
+                value={cantidadBultos}
+                onChange={e => setCantidadBultos(e.target.value)}
+                onBlur={e => {
+                  const n = Math.round(Number(e.target.value));
+                  setCantidadBultos(n > 0 ? Math.min(n, 20) : 1);
+                }}
+                disabled={!!guia}
+              />
+              <span className="field-hint">
+                {cantidadBultos > 1
+                  ? `Se cotizarán/generarán ${cantidadBultos} bultos idénticos (misma medida) en un solo envío.`
+                  : 'Un solo bulto. Aumenta el número si este pedido se divide en varias cajas idénticas.'}
+              </span>
+            </div>
+
+            <div className="sky-grid-4" style={{ marginTop: 10 }}>
               {[
                 ['length', 'Largo (cm)'],
                 ['width', 'Ancho (cm)'],
@@ -673,7 +755,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                   />
                 </div>
               ))}
-            </div>
+            </div>            
 
             <div className="sky-grid-2" style={{ marginTop: 10 }}>
               <div className="field">
@@ -690,15 +772,30 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                   cuenta). Si el sandbox lo rechaza, el error suele listar los valores válidos.
                 </span>
               </div>
-              <div className="field">
-                <label className="field-label" htmlFor="sky-contenido">Contenido (carta porte)</label>
-                <input
-                  id="sky-contenido"
-                  className="input"
-                  value={paquete.consignment_note}
-                  onChange={e => setP('consignment_note', e.target.value)}
-                  onBlur={e => { if (!e.target.value.trim()) setP('consignment_note', skyContenidoDefault(cot)); }}
-                />
+              <div className="field-select">
+                  <label className="field-label" htmlFor="sky-contenido">
+                    CONTENIDO (CARTA PORTE)
+                  </label>
+                  <select
+                    id="sky-contenido"
+                    className="input"
+                    style={{ fontSize: 12, color: 'var(--fg-1)' }}
+                    value={paquete.consignment_note || ''}
+                    onChange={e => setP('consignment_note', e.target.value)}
+                  >
+                    <option value="" disabled style={{ backgroundColor: '#090a0c', color: '#888' }}>
+                      Selecciona un código SAT
+                    </option>
+                    {SAT_OPTIONS.map(item => (
+                      <option 
+                        key={item.code} 
+                        value={item.code} 
+                        style={{ fontSize: 12, color: 'var(--fg-1)' }}
+                      >
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>                
               </div>
             </div>
           </div>
@@ -748,6 +845,15 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                           {masBarata?.id === t.id && tarifas.length > 1 && <span className="sky-chip-barata">Más barata</span>}
                         </span>
                         <span className="sky-tarifa-servicio">{t.servicio || 'Servicio estándar'}</span>
+                        {cantidadBultos > 1 && t.tipoCreacion && (
+                          <span className="field-hint" style={{ display: 'block' }}>
+                            {t.tipoCreacion === 'multipackage'
+                              ? `Multipaquete nativo: ${cantidadBultos} bultos en una sola guía maestra.`
+                              : t.tipoCreacion === 'multishipment'
+                                ? `Sin multipaquete nativo: generará ${cantidadBultos} guías independientes.`
+                                : t.tipoCreacion}
+                          </span>
+                        )}
                       </span>
                       <span className="sky-tarifa-precio">
                         <span className="sky-tarifa-monto mono">{window.fmt.mxn(t.total)}</span>
@@ -830,6 +936,34 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                   </button>
                 </div>
               </div>
+
+              {/* Multipaquete: un botón de descarga por cada bulto generado. Con
+                  1 solo bulto no se muestra nada aquí -- la guía ya está arriba. */}
+              {bultos.length > 1 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="sky-seccion-titulo" style={{ marginBottom: 8 }}>
+                    Bultos generados ({bultos.length})
+                  </div>
+                  <div className="sky-guia-acciones" style={{ flexWrap: 'wrap' }}>
+                    {bultos.map((b) => (
+                      <a
+                        key={b.shipmentId ? `${b.shipmentId}-${b.numero}` : b.numero}
+                        className="btn btn-secondary btn-sm"
+                        href={b.etiqueta || undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => { if (!b.etiqueta) e.preventDefault(); }}
+                        title={b.tracking || 'Sin número de rastreo'}
+                        aria-disabled={!b.etiqueta}
+                        style={!b.etiqueta ? { opacity: 0.5, cursor: 'default' } : undefined}
+                      >
+                        <Icon name="download" size={12} /> Guía Bulto {b.numero}
+                        {b.tracking && <span className="mono" style={{ marginLeft: 6, fontSize: 10 }}>{b.tracking}</span>}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Historial propio: lo que Skydropx nos empujó por webhook. A
                   diferencia de "Rastrear", esto no consulta al carrier: ya está
@@ -920,8 +1054,10 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                       ? ` Saldo Skydropx: ${window.fmt.mxn(saldo.saldo)} → quedarían ${window.fmt.mxn(restante)}.`
                       : ` Saldo Skydropx: ${window.fmt.mxn(saldo.saldo)} → faltan ${window.fmt.mxn(-restante)}.` +
                         ' El saldo NO alcanza: Skydropx puede rechazar la guía.';
+                  const lineaBultos = cantidadBultos > 1 ? ` Se generarán ${cantidadBultos} bultos/guías en este envío.` : '';
                   askConfirm(
                     `¿Generar la guía de ${codigo} con ${t.carrier} por ${window.fmt.mxn(t.total)}?` +
+                    lineaBultos +
                     lineaSaldo +
                     (esProduccion ? ' El envío se contrata en producción y se cobra. No se puede cancelar desde el panel.' : ''),
                     generarGuia

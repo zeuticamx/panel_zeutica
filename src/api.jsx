@@ -659,7 +659,9 @@ const api = {
   async skydropxConfiguracion() {
     return valorConError(await tryFetch('/zeutica/skydropx/configuracion', { timeout: 10000 }), d => d, null);
   },
-  // payload: { address_from, address_to, parcels: [{length,width,height,weight}], extras }
+  // payload: { address_from, address_to, parcels: [{length,width,height,weight}], extras, cantidad_bultos }
+  // cantidad_bultos (default 1): envíos multipaquete. El backend clona el
+  // único parcel esa cantidad de veces si no vienen detallados uno por uno.
   // Cotizar no cuesta ni genera guía. Devuelve { cotizacion_id, tarifas[] }.
   async skydropxCotizar(payload) {
     return tryFetch('/zeutica/skydropx/cotizaciones', {
@@ -672,7 +674,8 @@ const api = {
   async skydropxCotizacion(id) {
     return tryFetch(`/zeutica/skydropx/cotizaciones/${encodeURIComponent(id)}`, { timeout: 30000 });
   },
-  // payload: { rate_id, address_from, address_to, parcels, referencia, usuario }
+  // payload: { rate_id, address_from, address_to, parcels, cantidad_bultos, referencia, usuario }
+  // Con cantidad_bultos > 1, la respuesta trae { envio, guardado, paquetes: [{package_number, tracking_number, etiqueta_url, shipment_id}] }.
   // OJO: en ambiente producción esto contrata el envío y se cobra. No es reversible.
   async skydropxGenerarGuia(payload, usuario) {
     return tryFetch('/zeutica/skydropx/envios', {
