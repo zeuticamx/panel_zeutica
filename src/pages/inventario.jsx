@@ -190,7 +190,6 @@ function PageInventario({ user }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
                 <div className="field"><label className="field-label">Stock bodega</label><input className="input" type="number" value={editProduct.stock_bodega || 0} onChange={e => setEditProduct(p => ({ ...p, stock_bodega: Number(e.target.value) }))}/></div>
-                <div className="field"><label className="field-label">Stock Full</label><input className="input" type="number" value={editProduct.stock_full || 0} onChange={e => setEditProduct(p => ({ ...p, stock_full: Number(e.target.value) }))}/></div>
                 <div className="field"><label className="field-label">Stock FBA</label><input className="input" type="number" value={editProduct.stock_fba || 0} onChange={e => setEditProduct(p => ({ ...p, stock_fba: Number(e.target.value) }))}/></div>
                 <div className="field"><label className="field-label">Stock Clean</label><input className="input" type="number" value={editProduct.stock_clean || 0} onChange={e => setEditProduct(p => ({ ...p, stock_clean: Number(e.target.value) }))}/></div>
                 <div className="field"><label className="field-label">Stock Total</label><input className="input" type="number" value={editProduct.stock_total || 0} onChange={e => setEditProduct(p => ({ ...p, stock_total: Number(e.target.value) }))}/></div>
@@ -216,11 +215,9 @@ function PageInventario({ user }) {
                   medida: editProduct.medida || '',
                   ubicacion: editProduct.ubicacion || '',
                   stock_minimo: editProduct.stock_minimo,
-                  stock_bodega: editProduct.stock_bodega || 0,
-                  stock_full: editProduct.stock_full || 0,
+                  stock_bodega: editProduct.stock_bodega || 0,                  
                   stock_fba: editProduct.stock_fba || 0,
-                  stock_clean: editProduct.stock_clean || 0,
-                  stock_total: editProduct.stock_total || 0,
+                  stock_clean: editProduct.stock_clean || 0,                  
                   numero_referencia: editProduct.numero_referencia || 0,
                   costo_total: editProduct.costo_total,
                   precio: editProduct.precio,
@@ -246,7 +243,7 @@ function PageInventario({ user }) {
       )}
 
       {showNew && (
-        <div className="modal-backdrop" onClick={() => { setShowNew(false); setNewProd({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_full: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 }); }}>
+        <div className="modal-backdrop" onClick={() => { setShowNew(false); setNewProd({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 }); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="card-header">
               <h3 className="card-title">Nuevo producto</h3>
@@ -268,8 +265,7 @@ function PageInventario({ user }) {
                 <div className="field"><label className="field-label">Costo total</label><input className="input" type="number" value={newProd.costo_total} onChange={e => setNewProd(p => ({ ...p, costo_total: Number(e.target.value) }))}/></div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
-                <div className="field"><label className="field-label">Stock bodega</label><input className="input" type="number" value={newProd.stock_bodega} onChange={e => setNewProd(p => ({ ...p, stock_bodega: Number(e.target.value) }))}/></div>
-                <div className="field"><label className="field-label">Stock Full</label><input className="input" type="number" value={newProd.stock_full} onChange={e => setNewProd(p => ({ ...p, stock_full: Number(e.target.value) }))}/></div>
+                <div className="field"><label className="field-label">Stock bodega</label><input className="input" type="number" value={newProd.stock_bodega} onChange={e => setNewProd(p => ({ ...p, stock_bodega: Number(e.target.value) }))}/></div>                                
                 <div className="field"><label className="field-label">Stock FBA</label><input className="input" type="number" value={newProd.stock_fba} onChange={e => setNewProd(p => ({ ...p, stock_fba: Number(e.target.value) }))}/></div>
                 <div className="field"><label className="field-label">Stock Clean</label><input className="input" type="number" value={newProd.stock_clean} onChange={e => setNewProd(p => ({ ...p, stock_clean: Number(e.target.value) }))}/></div>
                 <div className="field"><label className="field-label">Stock Total</label><input className="input" type="number" value={newProd.stock_total} onChange={e => setNewProd(p => ({ ...p, stock_total: Number(e.target.value) }))}/></div>
@@ -295,7 +291,7 @@ function PageInventario({ user }) {
                   toast.success('Producto creado', newProd.nombre);
                   window.fireConfetti();
                   setShowNew(false);
-                  setNewProd({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_full: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 });
+                  setNewProd({ sku: '', nombre: '', categoria: '', medida: '', ubicacion: '', stock_minimo: 0, stock_bodega: 0, stock_fba: 0, stock_clean: 0, stock_total: 0, numero_referencia: 0, costo_total: 0, precio: 0, precio_2: 0, precio_3: 0, precio_amazon: 0, precio_clean: 0 });
                 } else {
                   toast.error('Error al crear', r.error);
                 }
