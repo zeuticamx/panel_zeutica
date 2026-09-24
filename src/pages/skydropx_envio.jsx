@@ -295,8 +295,8 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   };
   
   const SAT_OPTIONS = [
-  { code: '53103200', label: '53103200 - Ropa Desechable' },
-  { code: '52101508', label: '52101508 - Tapetes de Entrada' },
+  { code: '53103200', label: '53103200' },
+  { code: '52101508', label: '52101508' },
 ];
 
   // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
