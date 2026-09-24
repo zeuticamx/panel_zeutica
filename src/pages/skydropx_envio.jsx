@@ -45,9 +45,9 @@ const SKY_PRESETS = [
 // el campo "Tipo de paquete" con ese valor.
 const SKY_PAQUETE_DEFAULT = { length: 25, width: 20, height: 15, weight: 2, package_type: '4G', consignment_note: 'Mercancía general' };
 
-// Código SAT por defecto para carta porte. Skydropx espera un código, no
-// descripción. El formulario muestra "53103200 - Ropa Desechable" pero el
-// payload viaja solo con el código "53103200".
+// Código SAT por defecto para carta porte. Skydropx espera un string con el código.
+// El formulario muestra "53103200 - Ropa Desechable" (label amigable) pero el
+// payload viaja solo con el código como string: "53103200" (sin descripción).
 const CONSIGNMENT_CODE_DEFAULT = '53103200';
 
 // ---------- Memoria local por cotización ----------
@@ -295,8 +295,8 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   };
   
   const SAT_OPTIONS = [
-  { code: '53103200', label: '53103200' },
-  { code: '52101508', label: '52101508' },
+  { code: '53103200', label: '53103200 - Ropa Desechable' },
+  { code: '52101508', label: '52101508 - Tapetes de Entrada' },
 ];
 
   // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
@@ -307,9 +307,9 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     width: Number(paquete.width),
     height: Number(paquete.height),
     weight: Number(paquete.weight),
-    // consignment_note: solo viaja el código SAT como integer
-    // (ej: 53103200, no "53103200 - Ropa Desechable")
-    consignment_note: paquete.consignment_note ? Number(paquete.consignment_note) : undefined,
+    // consignment_note: viaja como string (código SAT sin la descripción)
+    // El formulario muestra label "53103200 - Ropa Desechable" pero payload envía solo "53103200"
+    consignment_note: paquete.consignment_note ? String(paquete.consignment_note).trim() : undefined,
     package_type: (paquete.package_type || '').trim() || undefined,
     package_protected: true,
     declared_value: 2000.0,
