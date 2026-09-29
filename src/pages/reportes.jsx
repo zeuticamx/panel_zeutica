@@ -1,10 +1,14 @@
 // ===== Zeutica — Reportes =====
 const { useState: rp_uS, useEffect: rp_uE, useMemo: rp_uM } = React;
 
+// YYYY-MM-DD en hora local: toISOString() es UTC y en México después de las 18:00 ya da "mañana".
+const rp_ymdLocal = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 function PageReportes() {
   const today = new Date();
-  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  const defaultTo   = today.toISOString().slice(0, 10);
+  const defaultFrom = rp_ymdLocal(new Date(today.getFullYear(), today.getMonth(), 1));
+  const defaultTo   = rp_ymdLocal(today);
 
   const [ventas, setVentas]     = rp_uS([]);
   const [loading, setLoading]   = rp_uS(true);
@@ -12,7 +16,11 @@ function PageReportes() {
   const [dateTo, setDateTo]     = rp_uS(defaultTo);
   const [q, setQ]               = rp_uS('');
 
+  // min/max del input no impiden teclear un rango invertido ni borrar la fecha.
+  const rangoValido = Boolean(dateFrom && dateTo && dateFrom <= dateTo);
+
   rp_uE(() => {
+    if (!rangoValido) { setVentas([]); setLoading(false); return; }
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -20,7 +28,7 @@ function PageReportes() {
       if (!cancelled) { setVentas(Array.isArray(data) ? data : []); setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, rangoValido]);
 
   const filtered = rp_uM(() => {
     if (!q.trim()) return ventas;
@@ -31,7 +39,7 @@ function PageReportes() {
       (v.plataforma     || '').toLowerCase().includes(lq) ||
       (v.condicion_pago || '').toLowerCase().includes(lq) ||
       (v.usuario        || '').toLowerCase().includes(lq) ||
-      String(v.id_venta || '').includes(lq)
+      String(v.id_ventas ?? '').toLowerCase().includes(lq)
     );
   }, [ventas, q]);
 
@@ -45,9 +53,9 @@ function PageReportes() {
   const plataformas  = rp_uM(() => new Set(filtered.map(v => v.plataforma)).size, [filtered]);
 
   const descargarCSV = () => {
-    const header = ['ID','SKU','Fecha','Producto','Cliente','Plataforma','Pago','Vendedor','Cantidad','Precio','Total'];
+    const header = ['ID','SKU','Fecha de registro','Producto','Cliente','Plataforma','Pago','Vendedor','Cantidad','Precio','Total'];
     const rows = filtered.map(v => [
-      v.id_venta, v.sku, v.fecha, v.producto, v.nombreComprador,
+      v.id_ventas, v.sku, v.fecha_registro, v.producto, v.nombreComprador,
       v.plataforma, v.condicion_pago, v.usuario,
       v.cantidad, v.precio, v.total
     ]);
@@ -63,7 +71,7 @@ function PageReportes() {
       <div className="section-header">
         <div>
           <h2 className="section-title">Reportes de ventas</h2>
-          <p className="section-subtitle">Filtra y exporta ventas por fecha, producto, cliente o vendedor.</p>
+          <p className="section-subtitle">Filtra y exporta ventas por fecha de registro, producto, cliente o vendedor.</p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={descargarCSV} disabled={filtered.length === 0}>
           <Icon name="download" size={13}/> Descargar CSV
@@ -73,12 +81,12 @@ function PageReportes() {
       <div className="card" style={{ marginBottom: 16, padding: '12px 16px' }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="field" style={{ flex: '0 0 auto' }}>
-            <label className="field-label">Fecha inicio</label>
+            <label className="field-label">Registrada desde</label>
             <input className="input" type="date" value={dateFrom} max={dateTo}
               onChange={e => setDateFrom(e.target.value)} style={{ width: 150 }}/>
           </div>
           <div className="field" style={{ flex: '0 0 auto' }}>
-            <label className="field-label">Fecha fin</label>
+            <label className="field-label">Registrada hasta</label>
             <input className="input" type="date" value={dateTo} min={dateFrom} max={defaultTo}
               onChange={e => setDateTo(e.target.value)} style={{ width: 150 }}/>
           </div>
@@ -98,6 +106,11 @@ function PageReportes() {
           )}
           {loading && <div className="spinner" style={{ alignSelf: 'flex-end', marginBottom: 6 }}/>}
         </div>
+        {!rangoValido && (
+          <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 8 }}>
+            {dateFrom && dateTo ? 'La fecha inicial no puede ser posterior a la final.' : 'Selecciona ambas fechas.'}
+          </div>
+        )}
       </div>
 
       <div className="dash-grid">
@@ -138,24 +151,24 @@ function PageReportes() {
           <table className="table">
             <thead>
               <tr>
-                <th>ID</th><th>SKU</th><th>Fecha</th><th>Producto</th><th>Cliente</th>
+                <th>ID</th><th>SKU</th><th>Registro</th><th>Producto</th><th>Cliente</th>
                 <th>Plataforma</th><th>Pago</th><th>Vendedor</th>
                 <th className="td-right">Cant.</th><th className="td-right">Total</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={9}>
+                <tr><td colSpan={10}>
                   <div className="empty" style={{ padding: 32 }}>
                     <div className="empty-icon"><Icon name="search"/></div>
                     <div>{loading ? 'Cargando…' : 'Sin resultados para los filtros aplicados'}</div>
                   </div>
                 </td></tr>
               ) : filtered.map(v => (
-                <tr key={v.id_ventas}>
+                <tr key={v.id ?? `${v.id_ventas}-${v.sku}`}>
                   <td className="mono td-muted" style={{ fontSize: 11 }}>#{String(v.id_ventas)}</td>
                   <td className="mono td-muted" style={{ fontSize: 11 }}>{v.sku}</td>
-                  <td className="td-muted">{window.fmt.datetime(v.fecha)}</td>
+                  <td className="td-muted">{window.fmt.datetime(v.fecha_registro)}</td>
                   <td>{v.producto}</td>
                   <td className="td-muted">{v.nombreComprador}</td>
                   <td><span className="badge">{v.plataforma}</span></td>

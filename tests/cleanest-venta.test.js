@@ -35,7 +35,7 @@ test('venta no existe (404) → registra con payload correcto', async () => {
   assert.equal(p.sku, 'UNIAZLMED');
   assert.equal(p.producto, 'Uniforme Azul Mediano');
   assert.equal(p.stock_clean, 10);
-  assert.equal(p.precio, 85.5);
+  assert.equal(p.precio, 99.18);               // precio_clean 85.50 + IVA 16%
   assert.equal(p.fecha, '2026-06-12 10:30:00');
   assert.equal(p.nombreComprador, 'CLEANEST CHOICE');
   assert.equal(p.condicion_pago, 'CREDITO');

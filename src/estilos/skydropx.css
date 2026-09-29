@@ -177,6 +177,16 @@
 .sky-guia-track { font-size: 16px; font-weight: 700; letter-spacing: 0.02em; }
 .sky-guia-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* ---------- Recolección ---------- */
+.sky-recolecciones { display: flex; flex-direction: column; gap: 8px; }
+.sky-recoleccion {
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+}
+.sky-recoleccion-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
 /* ---------- Rastreo ---------- */
 .sky-eventos { display: flex; flex-direction: column; gap: 0; }
 .sky-evento {
@@ -236,4 +246,17 @@
 @media (max-width: 720px) {
   .sky-grid-2, .sky-grid-3, .sky-grid-4 { grid-template-columns: 1fr 1fr; }
   .sky-modal { max-width: 100%; }
+}
+
+/* ---------- Libreta de direcciones / nueva caja ---------- */
+.sky-libreta-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
 }

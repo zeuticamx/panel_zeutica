@@ -197,35 +197,25 @@ function PageVentas({ user }) {
     
     const id_venta = Math.floor(Math.random() * 9e9 + 1e9);
     const fecha = new Date().toISOString().slice(0, 10);
-    let intentosDeVenta = 0;
-    // Cada SKU es un POST aparte: se guarda el motivo que da el servidor por SKU
-    // para poder decir cuál falló y por qué, en vez de un "no se pudo" global.
-    const fallos = [];
+    // Toda la venta viaja en un solo POST: el servidor valida que id_venta no exista
+    // y registra todas las partidas o ninguna.
+    const payload = {
+      id_venta,
+      fecha,
+      nombreComprador: cliente,
+      otros: metPago,
+      plataforma,
+      usuario: user,
+      condicion_pago: metPago,
+      items: cart.map(item => {
+        // Number() explícito: el precio de la línea se edita a mano y viaja como texto.
+        const precio = Math.round(Number(item.precio) * (1 - descuento / 100) * 100) / 100;
+        return { sku: item.sku, producto: item.nombre, cantidad: item.cantidad, precio: precio * 1.16 };
+      }),
+    };
 
-    for (const item of cart) {
-      // Number() explícito: el precio de la línea se edita a mano y viaja como texto.
-      const precio = Math.round(Number(item.precio) * (1 - descuento / 100) * 100) / 100;
-      const payload = {
-        id_venta,
-        sku: item.sku,
-        stock_bodega: item.cantidad,
-        precio: precio * 1.16,
-        producto: item.nombre,
-        fecha,
-        nombreComprador: cliente,
-        otros: metPago,
-        plataforma,
-        usuario: user,
-        condicion_pago: metPago,
-      };
-      
-      const r = await window.api.registrarVenta(payload);
-      if (!r.ok) fallos.push(`${item.sku}: ${r.error}`);
-      intentosDeVenta++;
-    }
-
-    const allOk = fallos.length === 0;
-    if (cotCargada && intentosDeVenta > 0 && allOk) {
+    const r = await window.api.registrarVentaCompleta(payload);
+    if (cotCargada && r.ok) {
       await window.api.marcarCotizacionVendida(cotCargada);
     }
 
@@ -240,7 +230,7 @@ function PageVentas({ user }) {
     
     setSubmitting(false);
     
-    if (allOk && intentosDeVenta > 0) {
+    if (r.ok) {
       toast.success(`Venta ${id_venta} registrada`, `${cart.length} artículos · ${window.fmt.mxn(total)}`);
       window.fireConfetti();
       setLastTicket(ticketData);
@@ -249,14 +239,9 @@ function PageVentas({ user }) {
       setCliente(null);
       setCotCargada(null);
     } else {
-      // Puede ser fallo total o parcial: se dice cuántas líneas entraron y el
-      // motivo exacto de las que no, para saber qué quedó en el servidor.
-      const registradas = intentosDeVenta - fallos.length;
-      toast.error(
-        `Venta ${id_venta}: ${fallos.length} de ${intentosDeVenta} líneas fallaron` +
-          (registradas > 0 ? ` (${registradas} sí se registraron)` : ''),
-        fallos.join(' · ') || 'El carrito no generó ninguna petición'
-      );
+      // Con respuesta del servidor (409 duplicado, 400 stock, 500…) la transacción se
+      // revirtió completa. Con status 0 no contestó y r.error ya dice que el estado es desconocido.
+      toast.error(`Venta ${id_venta} no registrada`, r.error);
     }
   };
   return (

@@ -30,6 +30,8 @@ const SKY_ORIGEN_DEFAULT = {
 };
 
 // Medidas típicas de la operación. Evitan capturar 4 números en el caso común.
+// Los botones salen del catálogo de cajas del backend (GET /skydropx/cajas,
+// sembrado con estas mismas 4); esta lista solo se usa si no se pudo leer.
 const SKY_PRESETS = [
   { id: 'sobre',   label: 'Sobre',        length: 30, width: 25, height: 2,  weight: 0.5 },
   { id: 'chica',   label: 'Caja chica',   length: 25, width: 20, height: 15, weight: 2 },
@@ -159,6 +161,173 @@ function skyNormalizaEventos(rastreo) {
   }));
 }
 
+// Selector de la libreta de direcciones de Skydropx. Elegir una llena el
+// formulario (origen o destino); los campos siguen siendo editables después.
+function SkyDireccionGuardada({ id, direcciones, tipo, disabled, onElegir }) {
+  const [sel, setSel] = sk_uS('');
+  // Primero las del tipo de esta sección (origen = from, destino = to); las
+  // otras quedan abajo por si una dirección se usa en los dos sentidos.
+  const propias = direcciones.filter(d => d.tipo === tipo);
+  const otras = direcciones.filter(d => d.tipo !== tipo);
+  const opcion = (d) => (
+    <option key={d.id} value={d.id}>
+      {d.alias}{d.default ? ' (predeterminada)' : ''} · CP {d.direccion.postal_code}{d.direccion.area_level2 ? ` · ${d.direccion.area_level2}` : ''}
+    </option>
+  );
+  return (
+    <div className="field" style={{ marginBottom: 10 }}>
+      <label className="field-label" htmlFor={id}>Dirección guardada en Skydropx</label>
+      <select
+        id={id}
+        className="input"
+        style={{ fontSize: 12 }}
+        value={sel}
+        disabled={disabled}
+        onChange={e => {
+          setSel(e.target.value);
+          const d = direcciones.find(x => x.id === e.target.value);
+          if (d) onElegir(d);
+        }}
+      >
+        <option value="">Elegir de la libreta…</option>
+        {propias.map(opcion)}
+        {otras.length > 0 && (
+          <optgroup label={tipo === 'from' ? 'Guardadas como destino' : 'Guardadas como origen'}>
+            {otras.map(opcion)}
+          </optgroup>
+        )}
+      </select>
+    </div>
+  );
+}
+
+// "Guardar esta dirección en mi libreta": da de alta lo que está capturado en
+// el formulario como plantilla de la cuenta de Skydropx.
+function SkyGuardarDireccion({ tipo, direccion, user, disabled, onGuardada }) {
+  const toast = window.useToast();
+  const [abierto, setAbierto] = sk_uS(false);
+  const [alias, setAlias] = sk_uS('');
+  const [guardando, setGuardando] = sk_uS(false);
+  const faltan = window.skydropxLogica.faltantesParaGuardarDireccion(direccion);
+  const idAlias = `sky-alias-${tipo}`;
+
+  if (!abierto) {
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        style={{ marginTop: 8 }}
+        disabled={disabled}
+        onClick={() => { setAlias(direccion.company || direccion.name || ''); setAbierto(true); }}
+      >
+        <Icon name="plus" size={12} /> Guardar esta dirección en mi libreta
+      </button>
+    );
+  }
+
+  const guardar = async () => {
+    setGuardando(true);
+    const payload = window.skydropxLogica.armarPlantillaDireccion({ alias, tipo, direccion, usuario: user });
+    const r = await window.api.skydropxGuardarDireccion(payload, user);
+    setGuardando(false);
+    if (!r.ok) {
+      toast.error('No se pudo guardar la dirección', r.error);
+      return;
+    }
+    toast.success('Dirección guardada', `"${r.data.direccion.alias}" ya aparece en tu libreta de Skydropx`);
+    setAbierto(false);
+    onGuardada?.(r.data.direccion);
+  };
+
+  return (
+    <div className="sky-libreta-form">
+      <div className="field" style={{ flex: 1, minWidth: 180 }}>
+        <label className="field-label" htmlFor={idAlias}>Alias en la libreta</label>
+        <input
+          id={idAlias}
+          className="input"
+          maxLength={60}
+          value={alias}
+          onChange={e => setAlias(e.target.value)}
+          placeholder={tipo === 'from' ? 'Bodega Zapopan' : 'Cliente – sucursal centro'}
+          autoFocus
+        />
+        {faltan.length > 0 && (
+          <span className="field-hint" style={{ color: 'var(--danger)' }} role="alert">
+            Skydropx pide también: {faltan.join(', ')}.
+          </span>
+        )}
+      </div>
+      <div className="sky-guia-acciones">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAbierto(false)} disabled={guardando}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={guardar}
+          disabled={guardando || !alias.trim() || faltan.length > 0}
+        >
+          {guardando ? <><span className="spinner" /> Guardando…</> : 'Guardar'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Diálogo simple para registrar una medida de caja nueva en el catálogo propio.
+// Arranca con las medidas que ya están capturadas en el paquete.
+function SkyNuevaCaja({ paquete, user, onGuardada, onCancelar }) {
+  const toast = window.useToast();
+  const [form, setForm] = sk_uS({
+    nombre: '',
+    length: paquete.length, width: paquete.width, height: paquete.height, weight: paquete.weight,
+    package_type: paquete.package_type || '4G',
+  });
+  const [guardando, setGuardando] = sk_uS(false);
+  const [error, setError] = sk_uS(null);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const guardar = async () => {
+    const { payload, error: invalido } = window.skydropxLogica.armarCaja(form, user);
+    if (invalido) { setError(invalido); return; }
+    setGuardando(true);
+    setError(null);
+    const r = await window.api.skydropxGuardarCaja(payload, user);
+    setGuardando(false);
+    if (!r.ok) { setError(r.error || 'No se pudo guardar la caja'); return; }
+    toast.success('Caja guardada', `"${r.data.caja.nombre}" ya aparece en los presets`);
+    onGuardada(r.data.caja);
+  };
+
+  return (
+    <div className="sky-libreta-form" role="group" aria-label="Nueva medida de caja"
+      onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); onCancelar(); } }}>
+      <div className="sky-grid-3" style={{ width: '100%' }}>
+        <div className="field">
+          <label className="field-label" htmlFor="sky-caja-nombre">Nombre</label>
+          <input id="sky-caja-nombre" className="input" maxLength={60} value={form.nombre}
+            onChange={e => set('nombre', e.target.value)} placeholder="Caja tapetes" autoFocus />
+        </div>
+        {[['length', 'Largo (cm)'], ['width', 'Ancho (cm)'], ['height', 'Alto (cm)'], ['weight', 'Peso (kg)']].map(([k, label]) => (
+          <div className="field" key={k}>
+            <label className="field-label" htmlFor={`sky-caja-${k}`}>{label}</label>
+            <input id={`sky-caja-${k}`} className="input mono" type="number" min="0.1"
+              step={k === 'weight' ? '0.1' : '1'} value={form[k]} onChange={e => set(k, e.target.value)} />
+          </div>
+        ))}
+      </div>
+      {error && <span className="field-hint" style={{ color: 'var(--danger)', width: '100%' }} role="alert">{error}</span>}
+      <div className="sky-guia-acciones" style={{ marginLeft: 'auto' }}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancelar} disabled={guardando}>Cancelar</button>
+        <button type="button" className="btn btn-primary btn-sm" onClick={guardar} disabled={guardando}>
+          {guardando ? <><span className="spinner" /> Guardando…</> : 'Guardar caja'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
@@ -229,6 +398,21 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   // guía no sea una sorpresa, y se recarga después porque la guía lo descuenta.
   const [saldo, setSaldo] = sk_uS(null);
 
+  // Catálogos de la cuenta de Skydropx para autocompletar. Si fallan, el
+  // formulario sigue funcionando a mano como siempre.
+  // direcciones en null = todavía no se consulta la libreta.
+  const [direcciones, setDirecciones] = sk_uS(null);
+  const [embalajes, setEmbalajes] = sk_uS([]);
+  // Catálogo propio de medidas de caja (botones de presets).
+  const [cajasApi, setCajasApi] = sk_uS([]);
+  const [nuevaCaja, setNuevaCaja] = sk_uS(false);
+
+  // Recolecciones ya agendadas, por shipment_id, y el formulario de la que se
+  // está agendando (una a la vez): { shipmentId, cargando, horarios, fecha, inicio, fin }.
+  const [recolecciones, setRecolecciones] = sk_uS({});
+  const [recForm, setRecForm] = sk_uS(null);
+  const [agendando, setAgendando] = sk_uS(false);
+
   const cpValido = /^\d{5}$/.test(String(destino.postal_code || '').trim());
   const paqueteValido = ['length', 'width', 'height', 'weight'].every(k => Number(paquete[k]) > 0);
   const puedeCotizar = cpValido && paqueteValido && !cotizando;
@@ -250,6 +434,18 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       setConfig(cfg);
     })();
     cargarSaldo();
+    (async () => {
+      const [dirs, embs, recs, cajas] = await Promise.all([
+        window.api.skydropxDirecciones(),
+        window.api.skydropxEmbalajes(),
+        window.api.skydropxRecolecciones(codigo),
+        window.api.skydropxCajas(),
+      ]);
+      setDirecciones(dirs);
+      setEmbalajes(embs);
+      setCajasApi(cajas);
+      setRecolecciones(Object.fromEntries(recs.map(r => [r.shipment_id, r])));
+    })();
     // El CP es el único dato que siempre falta: ahí arranca el foco.
     setTimeout(() => primerCampo.current?.focus(), 60);
   }, []);
@@ -275,10 +471,10 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   const setD = (k, v) => setDestino(prev => ({ ...prev, [k]: v }));
   const setP = (k, v) => setPaquete(prev => ({ ...prev, [k]: v }));
 
-  const presetActivo = SKY_PRESETS.find(p =>
-    p.length === Number(paquete.length) && p.width === Number(paquete.width) &&
-    p.height === Number(paquete.height) && p.weight === Number(paquete.weight)
-  );
+  const cajas = sk_uM(() => window.skydropxLogica.cajasParaBotones(cajasApi, SKY_PRESETS), [cajasApi]);
+  const presetActivo = window.skydropxLogica.cajaActiva(cajas, paquete);
+  // Una dirección recién guardada entra a la libreta sin volver a consultarla.
+  const agregarALibreta = (d) => setDirecciones(prev => [d, ...(prev || []).filter(x => x.id !== d.id)]);
 
   const masBarata = sk_uM(() => {
     if (tarifas.length === 0) return null;
@@ -299,21 +495,8 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   { code: '52101508', label: '52101508 - Tapetes de Entrada' },
 ];
 
-  // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
-  // exactamente los mismos campos, o el rate_id de la cotización podría no
-  // coincidir con lo que se está empaquetando de verdad.
-  const construirParcela = () => ({
-    length: Number(paquete.length),
-    width: Number(paquete.width),
-    height: Number(paquete.height),
-    weight: Number(paquete.weight),
-    // consignment_note: viaja como string (código SAT sin la descripción)
-    // El formulario muestra label "53103200 - Ropa Desechable" pero payload envía solo "53103200"
-    consignment_note: paquete.consignment_note ? String(paquete.consignment_note).trim() : undefined,
-    package_type: (paquete.package_type || '').trim() || undefined,
-    package_protected: true,
-    declared_value: 2000.0,
-  });
+  // Cotizar y generar guía mandan exactamente el mismo paquete (ver skydropx-logica.js).
+  const construirParcela = () => window.skydropxLogica.construirParcela(paquete);
 
   const cotizar = async () => {
     setCotizando(true);
@@ -407,18 +590,12 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     nueva.estatus_texto = 'Guía creada';
     nueva.estatus_tono = 'info';
 
-    // Multipaquete: el backend ya arma `paquetes` con el detalle por bulto
-    // (tracking/etiqueta propios de cada uno). En el caso normal (1 bulto)
-    // trae un solo elemento con el mismo dato que `nueva` ya tiene.
-    const paquetesResp = Array.isArray(r.data?.paquetes) ? r.data.paquetes : [];
+    // Skydropx V2: el backend arma `paquetes` con una entrada por guía, cada
+    // una con su tracking/etiqueta y su shipment_id (2+ en multipaquete).
+    const paquetesResp = window.skydropxLogica.bultosDesdePaquetes(r.data?.paquetes);
     const nuevosBultos = paquetesResp.length > 0
-      ? paquetesResp.map((p, i) => ({
-          numero: p.package_number || (i + 1),
-          tracking: p.tracking_number || '',
-          etiqueta: p.etiqueta_url || '',
-          shipmentId: p.shipment_id || '',
-        }))
-      : [{ numero: 1, tracking: nueva.tracking, etiqueta: nueva.etiqueta, shipmentId: nueva.id }];
+      ? paquetesResp
+      : [{ numero: 1, tracking: nueva.tracking, etiqueta: nueva.etiqueta, shipmentId: nueva.id, packageId: '' }];
     // El shipment (nivel raíz del envío) no siempre trae tracking/etiqueta
     // propios en multipaquete -- viven en cada paquete. Se completa `nueva`
     // (la guía "principal" que usan rastreo/historial) con el primer bulto.
@@ -479,18 +656,9 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     };
     setGuia(actualizada);
 
-    // Multipaquete: cada bulto generado para esta cotización queda como su
-    // propio renglón en skydropx_envios (misma columna codigo_cotizacion), y
-    // `lista` ya trae todos. Se ordenan por id ascendente (orden en que se
-    // crearon) para numerarlos "Bulto 1, 2, 3..."; la tabla no guarda el
-    // package_number que asignó Skydropx.
-    const ordenAscendente = [...lista].reverse();
-    const nuevosBultos = ordenAscendente.map((e, i) => ({
-      numero: i + 1,
-      tracking: e.tracking_number || '',
-      etiqueta: e.etiqueta_url || '',
-      shipmentId: e.shipment_id || '',
-    }));
+    // Multipaquete: cada guía generada para esta cotización queda como su
+    // propio renglón en skydropx_envios, y `lista` ya trae todos.
+    const nuevosBultos = window.skydropxLogica.bultosDesdeEnviosGuardados(lista);
     setBultos(nuevosBultos);
     persistir({ guia: actualizada, bultos: nuevosBultos });
     cargarHistorial(actualizada.tracking);
@@ -498,6 +666,63 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       || nuevosBultos.length !== bultos.length;
     if (huboNovedad) toast.success('Actualizado', 'Se encontraron datos nuevos de Skydropx');
     else toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
+  };
+
+  // ---------- Recolección (dos pasos) ----------
+  // Paso 1: qué fechas/horarios ofrece el carrier para ESE shipment.
+  const consultarHorarios = async (shipmentId) => {
+    setRecForm({ shipmentId, cargando: true, horarios: [], fecha: '', inicio: '', fin: '' });
+    setError(null);
+    const r = await window.api.skydropxCoberturaRecoleccion(shipmentId);
+    if (!r.ok) {
+      setRecForm(null);
+      setError(r.error || 'No se pudo consultar la cobertura de recolección');
+      return;
+    }
+    if (r.data?.recoleccion) {
+      setRecolecciones(prev => ({ ...prev, [shipmentId]: r.data.recoleccion }));
+      setRecForm(null);
+      return;
+    }
+    const horarios = r.data?.horarios || [];
+    const primero = horarios[0];
+    setRecForm({
+      shipmentId,
+      cargando: false,
+      horarios,
+      fecha: primero?.fecha || '',
+      inicio: primero?.hora_inicio || '',
+      fin: primero?.hora_fin || '',
+    });
+  };
+
+  const shipments = sk_uM(() => window.skydropxLogica.shipmentsDeBultos(bultos), [bultos]);
+  const horarioElegido = recForm?.horarios.find(h => h.fecha === recForm.fecha) || null;
+  const ventanaOk = window.skydropxLogica.ventanaValida(horarioElegido, recForm?.inicio, recForm?.fin);
+
+  // Paso 2: agenda la recolección ligada al shipment.
+  const agendarRecoleccion = async (shipment) => {
+    const payload = window.skydropxLogica.armarRecoleccion({
+      shipment,
+      fecha: recForm.fecha,
+      inicio: recForm.inicio,
+      fin: recForm.fin,
+      pesoPorBulto: paquete.weight,
+      usuario: user,
+    });
+    setAgendando(true);
+    setError(null);
+    const r = await window.api.skydropxAgendarRecoleccion(payload, user);
+    setAgendando(false);
+    if (!r.ok) {
+      setError(r.error || 'No se pudo agendar la recolección');
+      toast.error('No se pudo agendar la recolección', r.error);
+      return;
+    }
+    const rec = r.data?.recoleccion || payload;
+    setRecolecciones(prev => ({ ...prev, [shipment.shipmentId]: rec }));
+    setRecForm(null);
+    toast.success('Recolección agendada', `${rec.fecha} · ${rec.hora_inicio}–${rec.hora_fin}`);
   };
 
   const copiar = (texto) => {
@@ -576,6 +801,21 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
               <span className={`sky-paso ${cpValido ? 'sky-paso-ok' : ''}`}>1</span> Destino
             </div>
 
+            {direcciones?.length > 0 && (
+              <SkyDireccionGuardada
+                id="sky-dir-destino"
+                direcciones={direcciones}
+                tipo="to"
+                disabled={!!guia}
+                onElegir={(d) => setDestino(prev => window.skydropxLogica.aplicarDireccion(prev, d.direccion))}
+              />
+            )}
+            {direcciones && direcciones.ok && direcciones.length === 0 && (
+              <div className="field-hint" style={{ marginBottom: 8 }}>
+                Tu cuenta de Skydropx no tiene direcciones guardadas; captura el destino a mano.
+              </div>
+            )}
+
             <div className="sky-grid-3">
               <div className="field">
                 <label className="field-label" htmlFor="sky-cp">Código postal *</label>
@@ -608,7 +848,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
               </div>
             </div>
 
-            <div className="sky-grid-2" style={{ marginTop: 10 }}>
+            <div className="sky-grid-3" style={{ marginTop: 10 }}>
               <div className="field">
                 <label className="field-label" htmlFor="sky-colonia">Colonia</label>
                 <input id="sky-colonia" className="input" value={destino.area_level3} onChange={e => setD('area_level3', e.target.value)} placeholder="Centro" />
@@ -616,6 +856,11 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
               <div className="field">
                 <label className="field-label" htmlFor="sky-calle">Calle y número</label>
                 <input id="sky-calle" className="input" value={destino.street1} onChange={e => setD('street1', e.target.value)} placeholder="Av. Juárez 100" />
+              </div>
+              {/* Las plantillas de la libreta suelen traer aquí el número. */}
+              <div className="field">
+                <label className="field-label" htmlFor="sky-interior">Núm. interior</label>
+                <input id="sky-interior" className="input" value={destino.apartment_number || ''} onChange={e => setD('apartment_number', e.target.value)} placeholder="4B" />
               </div>
             </div>
 
@@ -649,6 +894,10 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
             <div className="field-hint" style={{ marginTop: 8 }}>
               Para cotizar basta el código postal. El resto lo exige el carrier al generar la guía.
             </div>
+
+            {direcciones && (
+              <SkyGuardarDireccion tipo="to" direccion={destino} user={user} disabled={!!guia} onGuardada={agregarALibreta} />
+            )}
           </div>
 
           {/* ---------- Origen (plegado: casi nunca cambia) ---------- */}
@@ -661,6 +910,17 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                 {verOrigen ? 'Ocultar' : 'Cambiar'}
               </button>
             </div>
+            {verOrigen && direcciones?.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <SkyDireccionGuardada
+                  id="sky-dir-origen"
+                  direcciones={direcciones}
+                  tipo="from"
+                  disabled={!!guia}
+                  onElegir={(d) => setOrigen(prev => window.skydropxLogica.aplicarDireccion(prev, d.direccion))}
+                />
+              </div>
+            )}
             {verOrigen && (
               <div className="sky-grid-3" style={{ marginTop: 10 }}>
                 <div className="field">
@@ -685,6 +945,9 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                 </div>
               </div>
             )}
+            {verOrigen && direcciones && (
+              <SkyGuardarDireccion tipo="from" direccion={origen} user={user} disabled={!!guia} onGuardada={agregarALibreta} />
+            )}
           </div>
 
           {/* ---------- 2. Paquete ---------- */}
@@ -693,7 +956,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
               <span className={`sky-paso ${paqueteValido ? 'sky-paso-ok' : ''}`}>2</span> Paquete
             </div>
             <div className="sky-presets">
-              {SKY_PRESETS.map(p => (
+              {cajas.map(p => (
                 <button
                   key={p.id}
                   type="button"
@@ -703,13 +966,35 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                   // chica" coincide con SKY_PAQUETE_DEFAULT, así que quedaba
                   // activo sin que el usuario lo tocara, pero elegir cualquier
                   // OTRO preset borraba esos dos campos ya rellenados).
-                  onClick={() => setPaquete(prev => ({ ...prev, length: p.length, width: p.width, height: p.height, weight: p.weight }))}
+                  onClick={() => setPaquete(prev => window.skydropxLogica.aplicarCaja(prev, p))}
                   aria-pressed={presetActivo?.id === p.id}
+                  title={`${p.length}×${p.width}×${p.height} cm · ${p.weight} kg`}
                 >
                   {p.label}
                 </button>
               ))}
+              {cajasApi.ok && !nuevaCaja && (
+                <button type="button" className="sky-preset" onClick={() => setNuevaCaja(true)} disabled={!!guia}>
+                  <Icon name="plus" size={11} /> Nueva caja
+                </button>
+              )}
             </div>
+            {nuevaCaja && (
+              <SkyNuevaCaja
+                paquete={paquete}
+                user={user}
+                onCancelar={() => setNuevaCaja(false)}
+                onGuardada={(caja) => {
+                  setCajasApi(prev => {
+                    const lista = [...prev, caja];
+                    lista.ok = true;  // conserva la marca de "catálogo leído" de listaConError
+                    return lista;
+                  });
+                  setNuevaCaja(false);
+                  setPaquete(prev => window.skydropxLogica.aplicarCaja(prev, window.skydropxLogica.cajasParaBotones([caja])[0]));
+                }}
+              />
+            )}
             <div className="field" style={{ marginTop: 10, maxWidth: 220 }}>
               <label className="field-label" htmlFor="sky-bultos">Cantidad de bultos / guías</label>
               <input
@@ -759,17 +1044,32 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
 
             <div className="sky-grid-2" style={{ marginTop: 10 }}>
               <div className="field">
-                <label className="field-label" htmlFor="sky-package-type">Tipo de paquete</label>
-                <input
-                  id="sky-package-type"
-                  className="input mono"
-                  value={paquete.package_type}
-                  onChange={e => setP('package_type', e.target.value)}
-                  onBlur={e => { if (!e.target.value.trim()) setP('package_type', SKY_PAQUETE_DEFAULT.package_type); }}
-                />
+                <label className="field-label" htmlFor="sky-package-type">Tipo de embalaje</label>
+                {embalajes.length > 0 ? (
+                  <select
+                    id="sky-package-type"
+                    className="input"
+                    style={{ fontSize: 12 }}
+                    value={paquete.package_type || ''}
+                    onChange={e => setP('package_type', e.target.value)}
+                  >
+                    {window.skydropxLogica.opcionesEmbalaje(embalajes, paquete.package_type).map(o => (
+                      <option key={o.code} value={o.code}>{o.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="sky-package-type"
+                    className="input mono"
+                    value={paquete.package_type}
+                    onChange={e => setP('package_type', e.target.value)}
+                    onBlur={e => { if (!e.target.value.trim()) setP('package_type', SKY_PAQUETE_DEFAULT.package_type); }}
+                  />
+                )}
                 <span className="field-hint">
-                  Código de embalaje de Skydropx (default "4G" = caja, sin confirmar contra esta
-                  cuenta). Si el sandbox lo rechaza, el error suele listar los valores válidos.
+                  {embalajes.length > 0
+                    ? 'Catálogo de embalajes de tu cuenta Skydropx.'
+                    : 'No se pudo leer el catálogo de Skydropx: captura el código a mano ("4G" = caja de cartón).'}
                 </span>
               </div>
               <div className="field-select">
@@ -961,6 +1261,130 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                         {b.tracking && <span className="mono" style={{ marginLeft: 6, fontSize: 10 }}>{b.tracking}</span>}
                       </a>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recolección en dos pasos por shipment: consultar horarios
+                  (cobertura del carrier) y agendar. Con tarifa "multishipment"
+                  hay un shipment por bulto, y cada uno se agenda por separado. */}
+              {shipments.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="sky-seccion-titulo" style={{ marginBottom: 8 }}>Recolección</div>
+                  <div className="sky-recolecciones">
+                    {shipments.map((s, i) => {
+                      const rec = recolecciones[s.shipmentId];
+                      const abierto = recForm?.shipmentId === s.shipmentId;
+                      const etiqueta = shipments.length > 1
+                        ? `Envío ${i + 1} (bulto${s.bultos.length > 1 ? 's' : ''} ${s.bultos.map(b => b.numero).join(', ')})`
+                        : `${s.bultos.length} bulto${s.bultos.length > 1 ? 's' : ''}`;
+                      return (
+                        <div className="sky-recoleccion" key={s.shipmentId}>
+                          <div className="sky-recoleccion-row">
+                            <span style={{ fontSize: 12 }}>{etiqueta}</span>
+                            {rec ? (
+                              <span className="badge badge-success">
+                                <span className="badge-dot" />
+                                Agendada {rec.fecha} · {rec.hora_inicio}–{rec.hora_fin}
+                                {rec.confirmacion ? ` · Folio ${rec.confirmacion}` : ''}
+                              </span>
+                            ) : (
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => consultarHorarios(s.shipmentId)}
+                                disabled={!s.listo || (abierto && recForm.cargando) || agendando}
+                                title={!s.listo ? 'Disponible cuando la guía tenga número de rastreo' : undefined}
+                              >
+                                {abierto && recForm.cargando
+                                  ? <><span className="spinner" /> Consultando…</>
+                                  : <><Icon name="clock" size={12} /> Consultar horarios</>}
+                              </button>
+                            )}
+                          </div>
+                          {!rec && !s.listo && (
+                            <div className="field-hint">
+                              Skydropx solo acepta la recolección cuando el carrier terminó de crear
+                              la guía (con número de rastreo). Usa "Actualizar" para revisar.
+                            </div>
+                          )}
+
+                          {abierto && !recForm.cargando && (
+                            recForm.horarios.length === 0 ? (
+                              <div className="field-hint">El carrier no ofrece recolección para este envío.</div>
+                            ) : (
+                              <div className="sky-grid-3" style={{ marginTop: 8 }}>
+                                <div className="field">
+                                  <label className="field-label" htmlFor={`sky-rec-fecha-${i}`}>Fecha</label>
+                                  <select
+                                    id={`sky-rec-fecha-${i}`}
+                                    className="input"
+                                    value={recForm.fecha}
+                                    onChange={e => {
+                                      const h = recForm.horarios.find(x => x.fecha === e.target.value);
+                                      setRecForm(f => ({ ...f, fecha: e.target.value, inicio: h?.hora_inicio || '', fin: h?.hora_fin || '' }));
+                                    }}
+                                  >
+                                    {recForm.horarios.map(h => (
+                                      <option key={h.fecha} value={h.fecha}>{h.fecha} ({h.hora_inicio}–{h.hora_fin})</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="field">
+                                  <label className="field-label" htmlFor={`sky-rec-ini-${i}`}>Desde</label>
+                                  <input
+                                    id={`sky-rec-ini-${i}`}
+                                    className="input mono"
+                                    type="time"
+                                    min={horarioElegido?.hora_inicio}
+                                    max={horarioElegido?.hora_fin}
+                                    value={recForm.inicio}
+                                    onChange={e => setRecForm(f => ({ ...f, inicio: e.target.value }))}
+                                  />
+                                </div>
+                                <div className="field">
+                                  <label className="field-label" htmlFor={`sky-rec-fin-${i}`}>Hasta</label>
+                                  <input
+                                    id={`sky-rec-fin-${i}`}
+                                    className="input mono"
+                                    type="time"
+                                    min={horarioElegido?.hora_inicio}
+                                    max={horarioElegido?.hora_fin}
+                                    value={recForm.fin}
+                                    onChange={e => setRecForm(f => ({ ...f, fin: e.target.value }))}
+                                  />
+                                </div>
+                              </div>
+                            )
+                          )}
+
+                          {abierto && !recForm.cargando && recForm.horarios.length > 0 && (
+                            <div className="sky-guia-acciones" style={{ marginTop: 8 }}>
+                              {!ventanaOk && (
+                                <span className="field-hint" style={{ color: 'var(--danger)' }} role="alert">
+                                  El horario debe quedar dentro de {horarioElegido?.hora_inicio}–{horarioElegido?.hora_fin}.
+                                </span>
+                              )}
+                              <button className="btn btn-ghost btn-sm" onClick={() => setRecForm(null)} disabled={agendando}>
+                                Cancelar
+                              </button>
+                              <button
+                                className="btn btn-primary btn-sm"
+                                disabled={!ventanaOk || agendando}
+                                onClick={() => askConfirm(
+                                  `¿Agendar recolección el ${recForm.fecha} de ${recForm.inicio} a ${recForm.fin}` +
+                                  ` para ${s.bultos.length} bulto(s)?`,
+                                  () => agendarRecoleccion(s)
+                                )}
+                              >
+                                {agendando
+                                  ? <><span className="spinner" /> Agendando…</>
+                                  : <><Icon name="check" size={12} /> Agendar recolección</>}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

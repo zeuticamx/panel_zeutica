@@ -501,6 +501,12 @@ const api = {
   async registrarVenta(payload) {
     return tryFetch('/zeutica/producto/venta', { method: 'POST', body: JSON.stringify(payload) });
   },
+  // Venta completa del portal en una sola transacción:
+  // { id_venta, fecha, nombreComprador, otros, plataforma, usuario, condicion_pago,
+  //   items: [{ sku, producto, cantidad, precio }] }. 409 si id_venta ya existe.
+  async registrarVentaCompleta(payload) {
+    return tryFetch('/zeutica/ventas/registrar', { method: 'POST', body: JSON.stringify(payload) });
+  },
   // Devolución de producto. sku en path; body schema { sku, producto, cantidad, plataforma, reingreso }.
   async registrarDevolucion(sku, payload, usuario) {
     return tryFetch(`/zeutica/producto/devolucion/${encodeURIComponent(sku)}`, { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
@@ -675,7 +681,9 @@ const api = {
     return tryFetch(`/zeutica/skydropx/cotizaciones/${encodeURIComponent(id)}`, { timeout: 30000 });
   },
   // payload: { rate_id, address_from, address_to, parcels, cantidad_bultos, referencia, usuario }
-  // Con cantidad_bultos > 1, la respuesta trae { envio, guardado, paquetes: [{package_number, tracking_number, etiqueta_url, shipment_id}] }.
+  // Va contra Skydropx V2: la respuesta trae { envio, guardado, shipment_ids,
+  // paquetes: [{package_number, tracking_number, etiqueta_url, shipment_id, package_id}] },
+  // una entrada por guía (2+ cuando cantidad_bultos > 1).
   // OJO: en ambiente producción esto contrata el envío y se cobra. No es reversible.
   async skydropxGenerarGuia(payload, usuario) {
     return tryFetch('/zeutica/skydropx/envios', {
@@ -706,6 +714,55 @@ const api = {
       await tryFetch(`/zeutica/skydropx/envios/${encodeURIComponent(trackingNumber)}/eventos`, { timeout: 15000 }),
       d => d?.eventos
     );
+  },
+  // Libreta de direcciones guardada en la cuenta de Skydropx. Cada elemento:
+  // { id, alias, tipo ('from'|'to'), default, direccion: { postal_code, area_level1, street1, ... } }.
+  async skydropxDirecciones() {
+    return listaConError(await tryFetch('/zeutica/skydropx/direcciones', { timeout: 20000 }), d => d?.direcciones);
+  },
+  // payload: { alias_name, address_type: 'from'|'to', default, address: {...} }.
+  // Guarda en la libreta de la cuenta de Skydropx; devuelve { direccion } normalizada.
+  async skydropxGuardarDireccion(payload, usuario) {
+    return tryFetch('/zeutica/skydropx/direcciones', {
+      method: 'POST',
+      timeout: 20000,
+      body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }),
+    });
+  },
+  // Medidas de caja predefinidas (catálogo propio): [{ id, nombre, length, width, height, weight, package_type }].
+  async skydropxCajas() {
+    return listaConError(await tryFetch('/zeutica/skydropx/cajas', { timeout: 15000 }), d => d?.cajas);
+  },
+  // payload: { nombre, length, width, height, weight, package_type }. 409 si el nombre ya existe.
+  async skydropxGuardarCaja(payload, usuario) {
+    return tryFetch('/zeutica/skydropx/cajas', {
+      method: 'POST',
+      timeout: 15000,
+      body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }),
+    });
+  },
+  // Catálogo de embalajes estándar para package_type: [{ code, name }].
+  async skydropxEmbalajes() {
+    return listaConError(await tryFetch('/zeutica/skydropx/embalajes', { timeout: 20000 }), d => d?.embalajes);
+  },
+  // Recolección, paso 1: fechas/horarios que ofrece el carrier para un shipment.
+  // Devuelve { horarios: [{fecha, hora_inicio, hora_fin}], carrier, recoleccion }.
+  async skydropxCoberturaRecoleccion(shipmentId) {
+    const q = `?shipment_id=${encodeURIComponent(shipmentId)}`;
+    return tryFetch(`/zeutica/skydropx/recolecciones/cobertura${q}`, { timeout: 20000 });
+  },
+  // Recolección, paso 2: payload { shipment_id, fecha, hora_inicio, hora_fin, paquetes, peso_total }.
+  async skydropxAgendarRecoleccion(payload, usuario) {
+    return tryFetch('/zeutica/skydropx/recolecciones', {
+      method: 'POST',
+      timeout: 30000,
+      body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }),
+    });
+  },
+  // Recolecciones ya agendadas para los envíos de una cotización.
+  async skydropxRecolecciones(codigoCotizacion) {
+    const q = `?codigo_cotizacion=${encodeURIComponent(codigoCotizacion)}`;
+    return listaConError(await tryFetch(`/zeutica/skydropx/recolecciones${q}`, { timeout: 15000 }), d => d?.recolecciones);
   },
 
   // ---- Rastreo de Importaciones (embarques) ----
