@@ -3,6 +3,9 @@ const { useState: rp_uS, useEffect: rp_uE } = React;
 
 function PageGastos({ user }) {
   const toast = window.useToast();
+  const [askConfirm, ConfirmModal] = window.useConfirm();
+  // Solo oculta los botones: el permiso real lo valida el backend (403).
+  const esGerencia = window.AppShell.GERENCIA_USERS.includes(user);
 
   const [gastos, setGastos] = rp_uS([]);
 
@@ -19,6 +22,10 @@ function PageGastos({ user }) {
   const [consultaData, setConsultaData] = rp_uS([]);
   const [loadingConsulta, setLoadingConsulta] = rp_uS(false);
   const [consultaRealizada, setConsultaRealizada] = rp_uS(false);
+
+  const [editForm, setEditForm] = rp_uS(null);
+  const [savingEdit, setSavingEdit] = rp_uS(false);
+  const [errorEdit, setErrorEdit] = rp_uS('');
 
   rp_uE(() => {
     (async () => {
@@ -93,7 +100,7 @@ function PageGastos({ user }) {
     }
   };
 
-  const consultarGastos = async () => {
+  const consultarGastos = async ({ silencioso = false } = {}) => {
     setLoadingConsulta(true);
     const r = await window.api.consultarGastos(user);
     setLoadingConsulta(false);
@@ -101,11 +108,53 @@ function PageGastos({ user }) {
     if (r.ok) {
       const data = Array.isArray(r.data) ? r.data : [];
       setConsultaData(data);
-      toast.success('Consulta realizada', `${data.length} registros`);
+      if (!silencioso) toast.success('Consulta realizada', `${data.length} registros`);
     } else {
       toast.error('No se pudo consultar gastos', r.error);
     }
   };
+
+  const abrirEditar = (row) => {
+    setErrorEdit('');
+    setEditForm(window.gastosLogica.formDesdeGasto(row));
+  };
+
+  const guardarEdicion = async () => {
+    const invalido = window.gastosLogica.validarGasto(editForm);
+    if (invalido) { setErrorEdit(invalido); return; }
+    setErrorEdit('');
+    setSavingEdit(true);
+    const r = await window.api.editarGasto(editForm.id, window.gastosLogica.armarPayloadGasto(editForm));
+    setSavingEdit(false);
+    if (r.ok) {
+      toast.success('Gasto actualizado', editForm.descripcion.trim());
+      setEditForm(null);
+      await consultarGastos({ silencioso: true });
+    } else {
+      // El formulario sigue abierto con lo capturado; 403/404/422 llegan en r.error
+      setErrorEdit(r.error);
+      toast.error(`No se pudo actualizar el gasto #${editForm.id}`, r.error);
+    }
+  };
+
+  const eliminarGasto = async (row) => {
+    const r = await window.api.eliminarGasto(row.id);
+    if (r.ok) {
+      toast.success('Gasto eliminado', row.descripcion);
+    } else {
+      toast.error(`No se pudo eliminar el gasto #${row.id}`, r.error);
+    }
+    // También tras un error (p. ej. 404 porque ya no existía) para reflejar el estado real
+    await consultarGastos({ silencioso: true });
+  };
+
+  // Columnas de la consulta: solo el dinero lleva formato de moneda (id y cantidad no).
+  const fmtCelda = (k, v) => {
+    if (k === 'id') return `#${v}`;
+    if ((k === 'costo' || k === 'total') && v !== null && v !== '' && !Number.isNaN(Number(v))) return window.fmt.mxn(Number(v));
+    return String(v ?? '');
+  };
+  const claseCelda = (k) => (['id', 'costo', 'cantidad', 'total'].includes(k) ? 'mono td-right' : '');
 
   const total = gastos.reduce((s, g) => s + g.monto, 0);
   const byCat = {};
@@ -115,6 +164,7 @@ function PageGastos({ user }) {
 
   return (
     <div className="page">
+      {ConfirmModal}
       <div className="section-header">
         <div><h2 className="section-title">Gastos operativos</h2><p className="section-subtitle">Registro y control de egresos operativos.</p></div>
       </div>
@@ -226,7 +276,7 @@ function PageGastos({ user }) {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header">
           <h3 className="card-title">Consulta de gastos registrados</h3>
-          <button className="btn btn-secondary btn-sm" onClick={consultarGastos} disabled={loadingConsulta}>
+          <button className="btn btn-secondary btn-sm" onClick={() => consultarGastos()} disabled={loadingConsulta}>
             {loadingConsulta ? <><span className="spinner"/> Consultando...</> : <><Icon name="search" size={13}/> Consultar gastos</>}
           </button>
         </div>
@@ -238,18 +288,28 @@ function PageGastos({ user }) {
                   {consultaData.length > 0
                     ? Object.keys(consultaData[0]).map(k => <th key={k}>{k}</th>)
                     : <th>Sin resultados</th>}
+                  {esGerencia && consultaData.length > 0 && <th></th>}
                 </tr>
               </thead>
               <tbody>
                 {consultaData.length === 0 ? (
                   <tr><td colSpan={99}><div className="empty" style={{ padding: 32 }}>Sin gastos registrados</div></td></tr>
                 ) : consultaData.map((row, i) => (
-                  <tr key={i}>
+                  <tr key={row.id ?? i}>
                     {Object.entries(row).map(([k, v], j) => (
-                      <td key={j} className={typeof v === 'number' ? 'mono td-right' : ''}>
-                        {typeof v === 'number' ? window.fmt.mxn(v) : String(v ?? '')}
-                      </td>
+                      <td key={j} className={claseCelda(k)}>{fmtCelda(k, v)}</td>
                     ))}
+                    {esGerencia && (
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button className="btn btn-secondary btn-sm" title="Editar gasto" onClick={() => abrirEditar(row)}>
+                          <Icon name="edit" size={12}/>
+                        </button>{' '}
+                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} title="Eliminar gasto"
+                          onClick={() => askConfirm(`¿Eliminar el gasto "${row.descripcion}" por ${window.fmt.mxn(Number(row.total ?? row.costo * row.cantidad) || 0)}? Dejará de contar en los totales.`, () => eliminarGasto(row))}>
+                          <Icon name="trash" size={12}/>
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -277,6 +337,40 @@ function PageGastos({ user }) {
           </table>
         </div>
       </div>
+
+      {editForm && (
+        <div className="modal-backdrop" onClick={() => { if (!savingEdit) setEditForm(null); }}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+              <h3 className="card-title">Editar gasto #{editForm.id}</h3>
+              <button className="btn btn-ghost btn-icon btn-sm" disabled={savingEdit} onClick={() => setEditForm(null)}><Icon name="x" size={14}/></button>
+            </div>
+            <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label className="field-label">Descripción del gasto</label>
+                <input className="input" value={editForm.descripcion} onChange={e => setEditForm(f => ({ ...f, descripcion: e.target.value }))}/>
+              </div>
+              <div className="field">
+                <label className="field-label">Monto ($)</label>
+                <input className="input mono" type="number" step="0.01" min="0" value={editForm.costo} onChange={e => setEditForm(f => ({ ...f, costo: e.target.value }))}/>
+              </div>
+              <div className="field">
+                <label className="field-label">Cantidad de piezas</label>
+                <input className="input mono" type="number" min="1" step="1" value={editForm.cantidad} onChange={e => setEditForm(f => ({ ...f, cantidad: e.target.value }))}/>
+              </div>
+              {errorEdit && (
+                <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--danger)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--danger)' }}>{errorEdit}</div>
+              )}
+            </div>
+            <div className="card-footer">
+              <button className="btn btn-secondary btn-sm" disabled={savingEdit} onClick={() => setEditForm(null)}>Cancelar</button>
+              <button className="btn btn-primary btn-sm" disabled={savingEdit} onClick={guardarEdicion}>
+                {savingEdit ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar cambios</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

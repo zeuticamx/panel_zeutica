@@ -2,8 +2,8 @@
 // Primary: real backend. Mock data sólo se conserva para el login demo
 // (cuando no hay servidor). Los datos de negocio vienen SIEMPRE de la API.
 
-//const API_BASE = 'http://127.0.0.1:8000'; // para desarrollo local
-const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';
+const API_BASE = 'http://127.0.0.1:8000'; // para desarrollo local
+//const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';
 
 const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
 const REQUEST_TIMEOUT = 4000;
@@ -531,6 +531,13 @@ const api = {
   },
   async registrarGasto(payload) {
     return tryFetch('/zeutica/gastos', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // Solo gerencia (el backend responde 403 a cualquier otro usuario). Eliminar es un borrado lógico.
+  async editarGasto(id, payload) {
+    return tryFetch(`/zeutica/gastos/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async eliminarGasto(id) {
+    return tryFetch(`/zeutica/gastos/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
   async consultarGastos(usuario) {
     return tryFetch(`/zeutica/consultagastos?usuario=${encodeURIComponent(usuario || '')}`, { method: 'GET' });

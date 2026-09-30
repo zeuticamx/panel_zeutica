@@ -1,7 +1,15 @@
 // ===== Zeutica — Clientes =====
 const { useState: rp_uS, useEffect: rp_uE } = React;
 
-const CLIENTE_BLANK = { nombre: '', empresa: '', contacto: '', email: '', telefono: 0, direccion: '', rfc: '', cp: 0, regimen: '', uso_cfdi: '', frecuencia: '', credito: false, monto_credito: 0 };
+const CLIENTE_BLANK = window.clienteAlta.CLIENTE_BLANK;
+
+// Alta de cliente compartida por la página de Clientes y el modal de Cotizaciones:
+// valida, arma el payload y llama a la API. Devuelve { ok, data, error }.
+async function guardarClienteNuevo(form) {
+  const invalido = window.clienteAlta.validarCliente(form);
+  if (invalido) return { ok: false, error: invalido, validacion: true };
+  return window.api.crearCliente(window.clienteAlta.armarPayloadCliente(form, window.api.usuario));
+}
 
 
 
@@ -62,6 +70,61 @@ function ClienteFormFields({ form, set }) {
   );
 }
 
+// Modal de alta rápida (se usa desde Cotizaciones). No navega ni toca el estado del
+// llamador: al crear devuelve el cliente por onCreated y el llamador decide qué hacer.
+function ClienteNuevoModal({ onCreated, onClose }) {
+  const toast = window.useToast();
+  const [form, setForm] = rp_uS(CLIENTE_BLANK);
+  const [saving, setSaving] = rp_uS(false);
+  const [error, setError] = rp_uS('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  rp_uE(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !saving) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [saving, onClose]);
+
+  const guardar = async () => {
+    setError('');
+    setSaving(true);
+    const r = await guardarClienteNuevo(form);
+    setSaving(false);
+    if (r.ok) {
+      toast.success('Cliente creado', form.nombre.trim());
+      window.fireConfetti();
+      onCreated(r.data || {}, form.nombre.trim());
+    } else {
+      // El modal sigue abierto con lo capturado: solo se muestra el motivo.
+      setError(r.error);
+      toast.error('No se pudo crear el cliente', r.error);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={() => { if (!saving) onClose(); }}>
+      <div className="modal" style={{ maxWidth: 720, width: '100%', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+          <h3 className="card-title">Nuevo cliente</h3>
+          <button className="btn btn-ghost btn-icon btn-sm" disabled={saving} onClick={onClose}><Icon name="x" size={14}/></button>
+        </div>
+        <ClienteFormFields form={form} set={set}/>
+        {error && (
+          <div style={{ margin: '0 20px 12px', fontSize: 12, color: 'var(--danger)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--danger)' }}>
+            {error}
+          </div>
+        )}
+        <div className="card-footer">
+          <button className="btn btn-secondary btn-sm" disabled={saving} onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary btn-sm" disabled={!form.nombre.trim() || saving} onClick={guardar}>
+            {saving ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar cliente</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PageClientes() {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
@@ -113,26 +176,8 @@ function PageClientes() {
   };
 
   const guardar = async () => {
-    if (!form.nombre.trim()) { toast.error('Campo requerido', 'El nombre del cliente es obligatorio'); return; }
     setSaving(true);
-    const payload = {
-      nombre: form.nombre,
-      email: form.email,
-      empresa: form.empresa,
-      contacto: form.contacto,
-      telefono: Number(form.telefono) || 0,
-      direccion: form.direccion,
-      rfc: form.rfc,
-      cp: Number(form.cp) || 0,
-      regimen: form.regimen,
-      uso_cfdi: form.uso_cfdi,
-      frecuencia: form.frecuencia,
-      usuario: window.api.usuario || '',
-      credito: form.credito,
-      monto_credito: Number(form.monto_credito) || 0,
-      dias_credito: Number(form.dias_credito) || 0,
-    };
-    const r = await window.api.crearCliente(payload);
+    const r = await guardarClienteNuevo(form);
     setSaving(false);
     if (r.ok) {
       toast.success('Cliente creado', form.nombre);
@@ -140,6 +185,8 @@ function PageClientes() {
       setCli(await window.api.clientes());
       setForm(CLIENTE_BLANK);
       setShowForm(false);
+    } else if (r.validacion) {
+      toast.error('Campo requerido', r.error);
     } else {
       toast.error('No se pudo crear el cliente', r.error);
     }
@@ -223,3 +270,4 @@ function PageClientes() {
 }
 
 window.PageClientes = PageClientes;
+window.ClienteNuevoModal = ClienteNuevoModal;

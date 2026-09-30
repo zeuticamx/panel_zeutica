@@ -348,6 +348,7 @@ function PageCotizaciones({ user }) {
   const [productos, setProductos] = rp_uS([]);
   const [nuevoCodigo, setNuevoCodigo] = rp_uS('');
   const [selectedCliente, setSelectedCliente] = rp_uS('');
+  const [showClienteNuevo, setShowClienteNuevo] = rp_uS(false);
   const [selectedSku, setSelectedSku] = rp_uS('');
   const [listaPrecio, setListaPrecio] = rp_uS('precio');
   const [cantidad, setCantidad] = rp_uS(1);
@@ -496,6 +497,17 @@ function PageCotizaciones({ user }) {
     setSelectedCliente(''); setFormaPago(COT_FORMAS_PAGO[0]); setMetodoPago(METODO_PAGO[0]);
     setComentario(COT_COMENTARIOS[0]); setComentarioCustom('');
     setTipoEnvio('base');
+  };
+
+  // Alta rápida de cliente desde el selector: se recarga la lista, se selecciona el
+  // recién creado y se cierra el modal. No se toca showForm ni nada del formulario
+  // (su efecto reiniciaría producto y precio).
+  const clienteCreado = async (respuesta, nombreEnviado) => {
+    const lista = await window.api.clientes();
+    const nombre = window.clienteAlta.seleccionarClienteCreado(lista, respuesta, nombreEnviado);
+    setClientes(lista);
+    setSelectedCliente(nombre);
+    setShowClienteNuevo(false);
   };
 
   const guardar = async () => {
@@ -777,10 +789,15 @@ function PageCotizaciones({ user }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="field">
                   <label className="field-label">Cliente / Empresa</label>
-                  <select className="select" value={selectedCliente} onChange={e => setSelectedCliente(e.target.value)}>
-                    <option value="">Selecciona cliente...</option>
-                    {clientes.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                  </select>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select className="select" style={{ flex: 1 }} value={selectedCliente} onChange={e => setSelectedCliente(e.target.value)}>
+                      <option value="">Selecciona cliente...</option>
+                      {clientes.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowClienteNuevo(true)}>
+                      <Icon name="plus" size={13}/> Nuevo cliente
+                    </button>
+                  </div>
                 </div>
                 {selectedCliente && (() => {
                   const c = clientes.find(x => x.nombre === selectedCliente);
@@ -1066,6 +1083,10 @@ function PageCotizaciones({ user }) {
             </button>
           </div>
         </div>
+      )}
+
+      {showClienteNuevo && window.ClienteNuevoModal && (
+        <window.ClienteNuevoModal onCreated={clienteCreado} onClose={() => setShowClienteNuevo(false)}/>
       )}
 
       {firmaModal && (

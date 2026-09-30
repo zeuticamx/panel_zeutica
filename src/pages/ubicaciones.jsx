@@ -205,6 +205,9 @@ function PageUbicaciones() {
                     <div style={{ fontWeight: 500, fontSize: 14 }}>{prodSelObj?.nombre || ''}</div>
                   </div>
                   <span className="badge">{ubicaciones.length} ubicación{ubicaciones.length !== 1 ? 'es' : ''}</span>
+                  <span className="badge" title={`Múltiplo: ${window.ubicacionesLogica.obtenerMultiplo(selSku)} pzas/unidad`}>
+                    Total: {window.ubicacionesLogica.sumarTotalPiezas(ubicaciones, selSku).toLocaleString('es-MX')} pzas
+                  </span>
                 </div>
               </div>
 
@@ -337,6 +340,19 @@ function PageUbicaciones() {
                             <div className="mono" style={{ fontSize: 13, fontWeight: 500, color: v ? 'var(--fg-1)' : 'var(--fg-3)' }}>{v ?? '—'}</div>
                           </div>
                         ))}
+                        {(() => {
+                          const skuUb = ub.sku || selSku;
+                          const mult = window.ubicacionesLogica.obtenerMultiplo(skuUb);
+                          const total = window.ubicacionesLogica.calcularTotalPiezas(ub.cantidad, skuUb);
+                          return (
+                            <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border, rgba(128,128,128,.25))', paddingTop: 10 }}>
+                              <div className="field-label" style={{ marginBottom: 2 }}>Total de piezas</div>
+                              <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--brand)' }}>
+                                {total.toLocaleString('es-MX')} <span className="td-muted" style={{ fontSize: 12, fontWeight: 400 }}>({Number(ub.cantidad) || 0} × {mult})</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="card-footer" style={{ justifyContent: 'flex-end' }}>
                         {ub.id != null && (
