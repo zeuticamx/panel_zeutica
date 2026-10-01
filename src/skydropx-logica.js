@@ -3,13 +3,29 @@
 // Node y reutilizarla en la página. En el navegador queda en window.skydropxLogica.
 
 (function (root) {
+  // Monto asegurado por bulto (MXN) con el que se precarga el modal. Mismo
+  // valor que VALOR_DECLARADO_DEFAULT en api_zeutica1/routers/skydropx.py.
+  const VALOR_DECLARADO_DEFAULT = 2500;
+
+  // Valor declarado capturado → número. Vacío o inválido usa el default (nunca
+  // sale una guía sin seguro por un input en blanco); 0 apaga el seguro.
+  function valorDeclarado(valor) {
+    if (valor === '' || valor === null || valor === undefined) return VALOR_DECLARADO_DEFAULT;
+    const n = Number(valor);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : VALOR_DECLARADO_DEFAULT;
+  }
+
   // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
   // exactamente los mismos campos, o el rate_id de la cotización podría no
   // coincidir con lo que se está empaquetando de verdad.
   //
   // consignment_note viaja como string con solo el código SAT: el formulario
   // muestra "53103200 - Ropa Desechable" pero el payload lleva "53103200".
+  //
+  // El seguro (package_protected + declared_value) sale del campo "Valor
+  // declarado" del modal; con 0 se manda package_protected: false.
   function construirParcela(paquete) {
+    const valor = valorDeclarado(paquete.declared_value);
     return {
       length: Number(paquete.length),
       width: Number(paquete.width),
@@ -17,8 +33,8 @@
       weight: Number(paquete.weight),
       consignment_note: paquete.consignment_note ? String(paquete.consignment_note).trim() : undefined,
       package_type: (paquete.package_type || '').trim() || undefined,
-      package_protected: true,
-      declared_value: 2000.0,
+      package_protected: valor > 0,
+      declared_value: valor,
     };
   }
 
@@ -187,6 +203,8 @@
   }
 
   const mod = {
+    VALOR_DECLARADO_DEFAULT,
+    valorDeclarado,
     construirParcela,
     bultosDesdePaquetes,
     bultosDesdeEnviosGuardados,

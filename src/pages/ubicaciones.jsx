@@ -342,8 +342,8 @@ function PageUbicaciones() {
                         ))}
                         {(() => {
                           const skuUb = ub.sku || selSku;
-                          const mult = window.ubicacionesLogica.obtenerMultiplo(skuUb);
-                          const total = window.ubicacionesLogica.calcularTotalPiezas(ub.cantidad, skuUb);
+                          const mult = window.ubicacionesLogica.obtenerMultiplo(skuUb, ub.warehouse_id);
+                          const total = window.ubicacionesLogica.calcularTotalPiezas(ub.cantidad, skuUb, ub.warehouse_id);
                           return (
                             <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border, rgba(128,128,128,.25))', paddingTop: 10 }}>
                               <div className="field-label" style={{ marginBottom: 2 }}>Total de piezas</div>

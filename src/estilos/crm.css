@@ -1,0 +1,106 @@
+/* ===== CRM: registro rápido, seguimientos y dashboard ===== */
+
+/* Modal */
+.crm-modal { max-width: 600px; }
+.crm-form { display: flex; flex-direction: column; gap: 14px; }
+.crm-error {
+  font-size: 12px; color: var(--danger); padding: 8px 12px;
+  border-radius: var(--r-md); border: 1px solid var(--danger); background: var(--danger-bg);
+}
+.crm-hint { margin-right: auto; font-size: 11px; }
+.crm-textarea { height: auto; min-height: 72px; padding: 8px 10px; resize: vertical; font-family: inherit; line-height: 1.4; }
+.crm-date { width: 150px; height: 28px; }
+
+/* Cliente seleccionado / buscador */
+.crm-cliente-sel {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--bg-2);
+}
+.crm-cliente-nombre { font-weight: 600; font-size: 14px; color: var(--fg-0); }
+.crm-cliente-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; margin-top: 4px; }
+.crm-resultados {
+  margin-top: 6px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--bg-2); max-height: 240px; overflow-y: auto;
+}
+.crm-resultado {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 8px 12px; background: none; border: none; border-bottom: 1px solid var(--line);
+  color: var(--fg-1); font-size: 13px; text-align: left; cursor: pointer;
+}
+.crm-resultado:last-child { border-bottom: none; }
+button.crm-resultado:hover { background: var(--bg-3); color: var(--fg-0); }
+.crm-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
+.crm-links a { color: var(--brand-hi); text-decoration: none; }
+.crm-links a:hover { text-decoration: underline; }
+.crm-ultimas { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.crm-ultima { display: flex; gap: 8px; align-items: center; min-width: 0; }
+
+/* Tipo (botones grandes) y chips */
+.crm-tipos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.crm-tipo-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 6px; border-radius: var(--r-md); border: 1px solid var(--line-strong);
+  background: var(--bg-2); color: var(--fg-1); font-size: 12px; cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+.crm-tipo-btn:hover { border-color: var(--brand); color: var(--fg-0); }
+.crm-tipo-btn.active { border-color: var(--brand); background: var(--brand-bg); color: var(--fg-0); box-shadow: 0 0 0 1px var(--brand-ring); }
+.crm-tipo-emoji { font-size: 20px; line-height: 1; }
+.crm-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.crm-chip {
+  height: 28px; padding: 0 10px; border-radius: var(--r-full); border: 1px solid var(--line-strong);
+  background: var(--bg-2); color: var(--fg-1); font-size: 12px; cursor: pointer; white-space: nowrap;
+  transition: all var(--dur-fast) var(--ease);
+}
+.crm-chip:hover { color: var(--fg-0); border-color: var(--fg-3); }
+.crm-chip.active { background: var(--brand-bg); border-color: var(--brand); color: var(--fg-0); }
+
+/* Acciones rápidas 📞 💬 ✉️ 🤝 */
+.crm-quick { display: inline-flex; gap: 2px; }
+.crm-quick-btn {
+  width: 30px; height: 28px; border-radius: var(--r-sm); border: 1px solid transparent;
+  background: none; font-size: 15px; cursor: pointer; line-height: 1;
+}
+.crm-quick-btn:hover { background: var(--bg-3); border-color: var(--line-strong); }
+
+/* Lista de seguimientos */
+.crm-seg-lista { display: flex; flex-direction: column; }
+.crm-seg {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line);
+}
+.crm-seg-vencido { box-shadow: inset 3px 0 0 var(--danger); }
+.crm-seg-main { flex: 1; min-width: 0; cursor: pointer; }
+.crm-seg-cliente { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.crm-seg-accion { display: flex; gap: 6px; font-size: 12px; color: var(--fg-1); margin-top: 3px; min-width: 0; }
+.crm-seg-cuando { font-size: 12px; color: var(--fg-2); white-space: nowrap; min-width: 120px; text-align: right; }
+.crm-seg-cuando.danger, .crm-txt-danger { color: var(--danger); }
+.crm-etapa-select { height: 28px; font-size: 12px; min-width: 150px; }
+.crm-notas-celda { max-width: 320px; white-space: normal; font-size: 12px; }
+
+/* Ficha */
+.crm-ficha-datos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px; }
+.crm-timeline { display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; }
+.crm-timeline-item { display: flex; gap: 10px; }
+.crm-timeline-emoji { font-size: 16px; line-height: 20px; }
+.crm-timeline-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.crm-timeline-notas { font-size: 13px; color: var(--fg-1); white-space: pre-wrap; margin-top: 2px; }
+
+/* Dashboard */
+.crm-filtros { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.crm-filtro-fila { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.crm-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.crm-embudo { display: flex; flex-direction: column; gap: 10px; }
+.crm-embudo-fila { display: grid; grid-template-columns: 130px 1fr 48px 40px; align-items: center; gap: 10px; font-size: 13px; }
+.crm-embudo-track { height: 18px; background: var(--bg-3); border-radius: var(--r-sm); overflow: hidden; }
+.crm-embudo-fill { height: 100%; border-radius: var(--r-sm); min-width: 2px; transition: width var(--dur-slow) var(--ease); }
+.crm-embudo-num { text-align: right; font-weight: 600; }
+.crm-embudo-entradas { font-size: 11px; }
+
+@media (max-width: 760px) {
+  .crm-grid-2 { grid-template-columns: 1fr; }
+  .crm-tipos { grid-template-columns: repeat(2, 1fr); }
+  .crm-seg { flex-wrap: wrap; }
+  .crm-seg-cuando { text-align: left; min-width: 0; }
+  .crm-ficha-datos { grid-template-columns: 1fr; }
+  .crm-embudo-fila { grid-template-columns: 100px 1fr 40px 32px; }
+}

@@ -344,8 +344,8 @@ const api = {
   async clientes() {
     return listaConError(await tryFetch('/zeutica/clientes'));
   },
-  async clientesPotenciales() {
-    const r = await tryFetch('/zeutica/clientes-potenciales');
+  async clientesPotenciales({ descartados = false } = {}) {
+    const r = await tryFetch(`/zeutica/clientes-potenciales${descartados ? '?descartados=true' : ''}`);
     if (!r.ok) return { ok: false, error: r.error, status: r.status, data: [] };
     const lista = Array.isArray(r.data) ? r.data : (r.data?.clientes ?? r.data?.items ?? []);
     return { ok: true, data: lista };
@@ -622,6 +622,46 @@ const api = {
   },
   async notificarPendienteTerminado(id, payload = {}) {
     return tryFetch(`/zeutica/pendientes-terminar/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // ---- CRM (bitácora, seguimientos, embudo) ----
+  // El vendedor sale del token en el backend: nunca se manda usuario.
+  // Las lecturas de objeto devuelven el resultado crudo de tryFetch para que la
+  // vista distinga 403 (cliente de otro vendedor) de un fallo de red.
+  async crmClientes(params = {}) {
+    return listaConError(await tryFetch(`/zeutica/crm/clientes${window.crmLogica.queryString(params)}`));
+  },
+  async crmCliente(id) {
+    return tryFetch(`/zeutica/crm/clientes/${encodeURIComponent(id)}`);
+  },
+  async crmRegistrarInteraccion(payload) {
+    return tryFetch('/zeutica/crm/interacciones', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async crmInteracciones(params = {}) {
+    return tryFetch(`/zeutica/crm/interacciones${window.crmLogica.queryString(params)}`);
+  },
+  async crmEditarInteraccion(id, payload) {
+    return tryFetch(`/zeutica/crm/interacciones/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  async crmEliminarInteraccion(id) {
+    return tryFetch(`/zeutica/crm/interacciones/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  async crmSeguimientos(vendedor) {
+    return tryFetch(`/zeutica/crm/seguimientos${window.crmLogica.queryString({ vendedor })}`);
+  },
+  async crmCambiarEtapa(id, etapa, motivo_perdida) {
+    return tryFetch(`/zeutica/crm/clientes/${encodeURIComponent(id)}/etapa`, { method: 'PATCH', body: JSON.stringify({ etapa, motivo_perdida }) });
+  },
+  async crmAsignarVendedor(id, vendedor) {
+    return tryFetch(`/zeutica/crm/clientes/${encodeURIComponent(id)}/vendedor`, { method: 'PUT', body: JSON.stringify({ vendedor }) });
+  },
+  async crmVendedores() {
+    return listaConError(await tryFetch('/zeutica/crm/vendedores'));
+  },
+  async crmMetricasResumen(params = {}) {
+    return tryFetch(`/zeutica/crm/metricas/resumen${window.crmLogica.queryString(params)}`, { timeout: 10000 });
+  },
+  async crmMetricasEmbudo(params = {}) {
+    return tryFetch(`/zeutica/crm/metricas/embudo${window.crmLogica.queryString(params)}`, { timeout: 10000 });
   },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });

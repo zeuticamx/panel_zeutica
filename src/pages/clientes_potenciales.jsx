@@ -76,6 +76,7 @@ function PageClientesPotenciales() {
   const [error, setError]     = cp_uS(null);
   const [busqueda, setBusqueda] = cp_uS('');
   const [filtroRevisado, setFiltroRevisado] = cp_uS('todos'); // 'todos' | 'true' | 'false'
+  const [verDescartados, setVerDescartados] = cp_uS(false); // false: activos · true: solo descartados
   const [sincronizando, setSincronizando] = cp_uS(false);
   const [version, setVersion] = cp_uS(0); // sube en cada recarga: remonta los inputs
 
@@ -157,7 +158,7 @@ function PageClientesPotenciales() {
   const cargar = async () => {
     setLoading(true);
     setError(null);
-    const r = await window.api.clientesPotenciales();
+    const r = await window.api.clientesPotenciales({ descartados: verDescartados });
     setLoading(false);
     if (!r.ok) {
       setError(r.error);
@@ -172,7 +173,8 @@ function PageClientesPotenciales() {
     setLista(r.data);
   };
 
-  cp_uE(() => { cargar(); }, []);
+  // Al alternar activos/descartados se recarga (descarta lo tecleado sin sincronizar).
+  cp_uE(() => { cargar(); }, [verDescartados]);
 
   // Firma = llaves presentes, no los valores: marcar un checkbox no debe recalcular
   // las columnas. NOTAS se reubica siempre justo antes de CORREO ENCONTRADO,
@@ -244,6 +246,14 @@ function PageClientesPotenciales() {
                 onChange={(e) => setBusqueda(e.target.value)}
               />
             </div>
+            <button
+              className={`btn btn-sm ${verDescartados ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setVerDescartados((v) => !v)}
+              disabled={loading || sincronizando}
+              title={verDescartados ? 'Volver a los clientes activos' : 'Mostrar solo los clientes marcados como descartados'}
+            >
+              {verDescartados ? 'Viendo descartados · Volver' : 'Ver descartados'}
+            </button>
             {colRevisado && (
               <div className="field" style={{ minWidth: 160 }}>
                 <select
@@ -278,7 +288,7 @@ function PageClientesPotenciales() {
               ) : error ? (
                 <tr><td colSpan={columnasVisibles.length || 1} className="empty" style={{ color: 'var(--danger)' }}>{error}</td></tr>
               ) : filtrados.length === 0 ? (
-                <tr><td colSpan={columnasVisibles.length || 1} className="empty">{busqueda ? `Sin resultados para "${busqueda}"` : 'Sin clientes potenciales registrados'}</td></tr>
+                <tr><td colSpan={columnasVisibles.length || 1} className="empty">{busqueda ? `Sin resultados para "${busqueda}"` : verDescartados ? 'No hay clientes descartados' : 'Sin clientes potenciales registrados'}</td></tr>
               ) : filtrados.map((row, i) => (
                 <tr key={`${version}:${row.id ?? i}`}>
                   {columnasVisibles.map((c) => {

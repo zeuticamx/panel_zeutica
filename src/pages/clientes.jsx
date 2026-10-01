@@ -134,6 +134,7 @@ function PageClientes() {
   const [form, setForm] = rp_uS(CLIENTE_BLANK);
   const [saving, setSaving] = rp_uS(false);
   const [editingCliente, setEditingCliente] = rp_uS(null);
+  const [crmCliente, setCrmCliente] = rp_uS(null); // cliente con el modal de registro CRM abierto
 
   rp_uE(() => { (async () => setCli(await window.api.clientes()))(); }, []);
 
@@ -258,13 +259,17 @@ function PageClientes() {
                   <td className="td-muted">{c.frecuencia}</td>
                   <td>{c.credito ? <span className="badge badge-success"><span className="badge-dot"/>Activo</span> : <span className="badge">No</span>}</td>
                   <td className="td-right mono" style={{ fontWeight: c.monto_credito > 0 ? 500 : 400, color: c.monto_credito > 0 ? 'var(--warn)' : 'var(--fg-2)' }}>{window.fmt.mxn(c.monto_credito)}</td>
-                  <td><button className="btn btn-sm btn-secondary" onClick={() => abrirEditar(c)}><Icon name="edit" size={12}/></button></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm btn-secondary" title="Registrar interacción (CRM)" onClick={() => setCrmCliente({ id: c.id, nombre: c.nombre })} style={{ marginRight: 4 }}><Icon name="chat" size={12}/></button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => abrirEditar(c)}><Icon name="edit" size={12}/></button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+      {crmCliente && <window.CrmRegistroModal cliente={crmCliente} onClose={() => setCrmCliente(null)}/>}
     </div>
   );
 }

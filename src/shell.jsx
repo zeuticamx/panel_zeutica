@@ -29,6 +29,9 @@ const NAV = [
   { key: 'registro_ingresos',  label: 'Registro de ingresos',       icon: 'login', gerencia: true },
   { key: 'registro_movimientos',  label: 'Registro de movimientos',       icon: 'login', gerencia: true },
   { key: 'gerencia',             label: 'Monitor Gerencia',             icon: 'chart', gerencia: true },
+  // CRM: van al final para no mover los índices de slice() del Sidebar; se pintan por `seccion`.
+  { key: 'crm_seguimientos', label: 'Mis Seguimientos', icon: 'clock', seccion: 'comercial' },
+  { key: 'crm_gerencia',     label: 'CRM Gerencia',     icon: 'trend', gerencia: true, seccion: 'comercial' },
 ];
 
 const GERENCIA_USERS = ['gerencia', 'fparra'];
@@ -51,6 +54,10 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
       <nav className="sidebar-nav">
         <div className="sidebar-section">General</div>
         {NAV.slice(0, 6).map((n) => (
+          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
+        ))}
+        <div className="sidebar-section">Comercial</div>
+        {NAV.filter(n => n.seccion === 'comercial').map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Operación</div>

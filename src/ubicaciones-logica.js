@@ -9,22 +9,28 @@
     BOLECO38: 5,
   };
 
-  function obtenerMultiplo(sku) {
+  // Regla: en la ubicación "Oficina" (sin importar mayúsculas) la cantidad se multiplica por 1.
+  function esOficina(warehouseId) {
+    return String(warehouseId ?? '').trim().toLowerCase() === 'oficina';
+  }
+
+  function obtenerMultiplo(sku, warehouseId) {
+    if (esOficina(warehouseId)) return 1;
     const clave = String(sku ?? '').trim().toUpperCase();
     return Object.prototype.hasOwnProperty.call(MULTIPLOS_POR_SKU, clave)
       ? MULTIPLOS_POR_SKU[clave]
       : MULTIPLO_DEFAULT;
   }
 
-  function calcularTotalPiezas(cantidad, sku) {
+  function calcularTotalPiezas(cantidad, sku, warehouseId) {
     const n = Number(cantidad);
     if (!Number.isFinite(n) || n < 0) return 0;
-    return n * obtenerMultiplo(sku);
+    return n * obtenerMultiplo(sku, warehouseId);
   }
 
   function sumarTotalPiezas(ubicaciones, sku) {
     return (ubicaciones || []).reduce(
-      (acc, ub) => acc + calcularTotalPiezas(ub?.cantidad, ub?.sku || sku), 0);
+      (acc, ub) => acc + calcularTotalPiezas(ub?.cantidad, ub?.sku || sku, ub?.warehouse_id), 0);
   }
 
   const mod = { MULTIPLO_DEFAULT, MULTIPLOS_POR_SKU, obtenerMultiplo, calcularTotalPiezas, sumarTotalPiezas };

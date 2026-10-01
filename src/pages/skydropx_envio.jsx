@@ -45,7 +45,11 @@ const SKY_PRESETS = [
 // de Skydropx, pero no está confirmado contra esta cuenta — si el sandbox lo
 // rechaza, el mensaje de error normalmente lista los códigos válidos; ajusta
 // el campo "Tipo de paquete" con ese valor.
-const SKY_PAQUETE_DEFAULT = { length: 25, width: 20, height: 15, weight: 2, package_type: '4G', consignment_note: 'Mercancía general' };
+// declared_value = monto asegurado por bulto (MXN); el usuario lo puede cambiar.
+const SKY_PAQUETE_DEFAULT = {
+  length: 25, width: 20, height: 15, weight: 2, package_type: '4G', consignment_note: 'Mercancía general',
+  declared_value: window.skydropxLogica.VALOR_DECLARADO_DEFAULT,
+};
 
 // Código SAT por defecto para carta porte. Skydropx espera un string con el código.
 // El formulario muestra "53103200 - Ropa Desechable" (label amigable) pero el
@@ -1095,8 +1099,27 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                         {item.label}
                       </option>
                     ))}
-                  </select>                
+                  </select>
               </div>
+            </div>
+
+            <div className="field" style={{ marginTop: 10 }}>
+              <label className="field-label" htmlFor="sky-declared-value">Valor declarado / seguro (MXN por bulto)</label>
+              <input
+                id="sky-declared-value"
+                className="input mono"
+                type="number"
+                min="0"
+                step="100"
+                value={paquete.declared_value ?? ''}
+                onChange={e => setP('declared_value', e.target.value)}
+                onBlur={e => setP('declared_value', window.skydropxLogica.valorDeclarado(e.target.value))}
+              />
+              <span className="field-hint">
+                {window.skydropxLogica.valorDeclarado(paquete.declared_value) > 0
+                  ? `La guía se genera con seguro por ${window.fmt.mxn(window.skydropxLogica.valorDeclarado(paquete.declared_value))} por bulto. Cotiza de nuevo si lo cambias.`
+                  : 'Sin seguro: la guía se generará sin protección.'}
+              </span>
             </div>
           </div>
 
@@ -1479,9 +1502,14 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                       : ` Saldo Skydropx: ${window.fmt.mxn(saldo.saldo)} → faltan ${window.fmt.mxn(-restante)}.` +
                         ' El saldo NO alcanza: Skydropx puede rechazar la guía.';
                   const lineaBultos = cantidadBultos > 1 ? ` Se generarán ${cantidadBultos} bultos/guías en este envío.` : '';
+                  const valorSeguro = window.skydropxLogica.valorDeclarado(paquete.declared_value);
+                  const lineaSeguro = valorSeguro > 0
+                    ? ` Seguro: ${window.fmt.mxn(valorSeguro)} por bulto.`
+                    : ' SIN seguro.';
                   askConfirm(
                     `¿Generar la guía de ${codigo} con ${t.carrier} por ${window.fmt.mxn(t.total)}?` +
                     lineaBultos +
+                    lineaSeguro +
                     lineaSaldo +
                     (esProduccion ? ' El envío se contrata en producción y se cobra. No se puede cancelar desde el panel.' : ''),
                     generarGuia

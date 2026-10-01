@@ -130,7 +130,7 @@ function useLiveNotifs(user) {
 }
 
 // Command Palette
-function CommandPalette({ open, onClose, setCurrent, user }) {
+function CommandPalette({ open, onClose, setCurrent, user, onRegistrarCrm }) {
   const [q, setQ] = a_uS('');
   const inputRef = a_uR(null);
   a_uE(() => { if (open && inputRef.current) inputRef.current.focus(); }, [open]);
@@ -149,11 +149,14 @@ function CommandPalette({ open, onClose, setCurrent, user }) {
     { type: 'action', key: 'new-venta', label: 'Nueva venta', icon: 'plus', nav: 'ventas' },
     { type: 'action', key: 'new-cot',   label: 'Nueva cotización', icon: 'doc', nav: 'cotizaciones' },
     { type: 'action', key: 'new-cli',   label: 'Nuevo cliente', icon: 'users', nav: 'clientes' },
+    { type: 'action', key: 'new-crm',   label: 'Registrar interacción (llamada, WhatsApp…)', icon: 'chat', modal: 'crm' },
   ];
   const all = [...actions, ...items];
   const filtered = q ? all.filter(i => i.label.toLowerCase().includes(q.toLowerCase())) : all;
 
   const go = (item) => {
+    // Registro CRM: abre el modal encima de la página actual, sin navegar.
+    if (item.modal === 'crm') { onRegistrarCrm(); onClose(); setQ(''); return; }
     const target = item.nav || item.key;
     setCurrent(target);
     onClose();
@@ -251,6 +254,7 @@ function App() {
   const [cmdOpen, setCmdOpen] = a_uS(false);
   const [notifOpen, setNotifOpen] = a_uS(false);
   const [mobileMenuOpen, setMobileMenuOpen] = a_uS(false);
+  const [crmRegistroOpen, setCrmRegistroOpen] = a_uS(false); // registro CRM desde Ctrl+K
   const toast = window.useToast();
 
   a_uE(() => { if (auth) localStorage.setItem('zeutica-auth', JSON.stringify(auth)); }, [auth]);
@@ -371,6 +375,8 @@ function App() {
     registro_ingresos: window.PageRegistroIngresos,
     registro_movimientos: window.PageRegistroMovimientos,
     gerencia:             window.PageGerencia,
+    crm_seguimientos:     window.PageCrmSeguimientos,
+    crm_gerencia:         window.PageCrmGerencia,
   };
   const PageComp = pages[current] || window.PageDashboard;
 
@@ -402,7 +408,8 @@ function App() {
         )}
         <PageComp key={current} user={auth.user}/>
       </main>
-      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} setCurrent={setCurrent} user={auth.user}/>
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} setCurrent={setCurrent} user={auth.user} onRegistrarCrm={() => setCrmRegistroOpen(true)}/>
+      {crmRegistroOpen && <window.CrmRegistroModal onClose={() => setCrmRegistroOpen(false)}/>}
     </div>
   );
 }
