@@ -10,7 +10,7 @@
 const { useState: sk_uS, useEffect: sk_uE, useMemo: sk_uM, useRef: sk_uR } = React;
 
 // Origen fijo: la bodega. Es el mismo domicilio que ya sale impreso en el PDF de
-// la cotización (ver generarPDFCotizacion en cotizaciones.jsx).
+// la cotización (ver EMPRESA_DOMICILIO en api_zeutica1/pdf_cotizacion.py).
 //
 // `reference` es obligatorio para Skydropx al generar la guía (confirmado en
 // sandbox: sin él, 422 "reference: no puede estar en blanco" en address_from Y

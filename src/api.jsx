@@ -7,6 +7,8 @@ const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';
 
 const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
 const REQUEST_TIMEOUT = 4000;
+// Generar el PDF y guardar la cotización tarda más que una consulta normal.
+const GENERA_COTIZACION_TIMEOUT = 30000;
 
 // Mismo host que la API, cambiando el esquema: http -> ws, https -> wss.
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
@@ -464,8 +466,51 @@ const api = {
     // alcanzaba a guardar. La vista debe frenar y mostrar el motivo.
     return valorConError(await tryFetch('/zeutica/cotizaciones/nuevo-codigo'), d => d?.nuevo_codigo ?? null);
   },
-  async guardarCotizacion(payload) {
-    return tryFetch('/zeutica/cotizaciones/guardar', { method: 'POST', body: JSON.stringify(payload) });
+  // El backend asigna el folio, genera el PDF, lo guarda en BD y lo devuelve binario.
+  // Éxito: { ok, blob, codigo, id }; fallo: mismo shape de error que tryFetch.
+  async generaCotizacion(payload) {
+    const ruta = '/zeutica/genera-cotizacion';
+    const segundos = GENERA_COTIZACION_TIMEOUT / 1000;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), GENERA_COTIZACION_TIMEOUT);
+    try {
+      const authHeader = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+      const res = await fetch(`${API_BASE}${ruta}`, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        let texto = '';
+        try { texto = await res.text(); } catch {}
+        let cuerpo = null;
+        try { cuerpo = JSON.parse(texto); } catch {}
+        const delServidor = recortar(mensajeDelCuerpo(cuerpo) || texto.trim());
+        return registrarError({
+          ok: false, status: res.status,
+          error: delServidor ? `HTTP ${res.status}: ${delServidor}` : `HTTP ${res.status} ${res.statusText || ''}`.trim(),
+          detalle: delServidor, cuerpo, texto: recortar(texto), metodo: 'POST', ruta, live: true,
+        });
+      }
+      const blob = await res.blob();
+      return {
+        ok: true, status: res.status, live: true, blob,
+        codigo: res.headers.get('X-Codigo-Cotizacion') || null,
+        id: res.headers.get('X-Cotizacion-Id') || null,
+      };
+    } catch (err) {
+      const abortado = err.name === 'AbortError';
+      return registrarError({
+        ok: false, status: 0,
+        error: abortado
+          ? `Sin respuesta en ${segundos}s (timeout). La cotización pudo haberse guardado; revisa la lista antes de reintentar.`
+          : `Sin conexión con el servidor: ${err.message}`,
+        detalle: err.message, cuerpo: null, texto: '', metodo: 'POST', ruta, live: false,
+      });
+    } finally {
+      clearTimeout(t);
+    }
   },
   async marcarCotizacionVendida(codigo) {
     return tryFetch('/zeutica/cotizaciones/vendido', {

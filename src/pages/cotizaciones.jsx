@@ -1,191 +1,6 @@
 // ===== Zeutica — Cotizaciones =====
 const { useState: rp_uS, useEffect: rp_uE, useMemo: rp_uM, useRef: rp_uR } = React;
 
-async function generarPDFCotizacion({ codigo, clienteObj, clienteNombre, items, descuentoPct, descuentoMonto, subtotalOriginal, subtotalDesc, costoEnvio, iva, totalFinal, formaPago, metodoPago, comentario }) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const PW = 210, M = 10;
-  const fmt = v => `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  // -- Logo --
-  try {
-    const resp = await fetch('imagenes/logo.webp');
-    if (resp.ok) {
-      const blob = await resp.blob();
-      const b64 = await new Promise(res => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width; canvas.height = img.height;
-          canvas.getContext('2d').drawImage(img, 0, 0);
-          res(canvas.toDataURL('image/png'));
-          URL.revokeObjectURL(img.src);
-        };
-        img.src = URL.createObjectURL(blob);
-      });
-      doc.addImage(b64, 'PNG', M, 8, 40, 15);
-    }
-  } catch(_) {}
-
-  // -- Company info --
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text([
-    'Domicilio: Blvd De los Charros 1629 Belenes Norte Cp 45145, Zapopan, Jalisco.',
-    'www.zeutica.com',
-    'Teléfono: 33-1299-5688',
-    'E-mail: ventas1@zeutica.com',
-    'Asesor: Cecilia Parra',
-  ], M, 28, { lineHeightFactor: 1.6 });
-
-  // -- Cotizacion title + date boxes --
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text(`COTIZACION ${codigo}`, PW - M, 15, { align: 'right' });
-
-  const fecha = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  doc.setFontSize(9);
-  [['Fecha:', fecha], ['Válido Hasta:', '7 Días']].forEach(([label, val], idx) => {
-    const yy = 24 + idx * 6;
-    doc.rect(140, yy, 30, 6);
-    doc.rect(170, yy, 30, 6);
-    doc.setFont('helvetica', 'bold'); doc.text(label, 142, yy + 4.5);
-    doc.setFont('helvetica', 'normal'); doc.text(val, 199, yy + 4.5, { align: 'right' });
-  });
-
-  // -- Client section --
-  let y = 55;
-  doc.setFillColor(0, 74, 153);
-  doc.rect(M, y, PW - 2 * M, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('   CLIENTE', M, y + 5.5);
-  doc.setTextColor(0, 0, 0);
-  y += 12;
-
-  const filaCliente = (label, valor) => {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text(label, M, y);
-    doc.setFont('helvetica', 'normal'); doc.text(String(valor || 'N/A'), M + 26, y);
-    y += 6;
-  };
-  filaCliente('NOMBRE:', clienteNombre);
-  filaCliente('EMPRESA:', clienteObj.empresa || clienteNombre);
-  filaCliente('EMAIL:', clienteObj.email || '');
-  filaCliente('DOMICILIO:', clienteObj.direccion || clienteObj.domicilio || '');
-  filaCliente('TELÉFONO:', clienteObj.telefono || '');
-  y += 5;
-
-  // -- Products table header --
-  const colW = [30, 80, 20, 30, 30];
-  const heads = ['CÓDIGO / SKU', 'DESCRIPCIÓN', 'CANTIDAD', 'PRECIO UNITARIO', 'TOTAL'];
-  doc.setFillColor(0, 74, 153);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-  let x = M;
-  heads.forEach((h, i) => { doc.rect(x, y, colW[i], 8, 'FD'); x += colW[i]; });
-  doc.setTextColor(255, 255, 255);
-  x = M;
-  heads.forEach((h, i) => {
-    doc.text(h, x + colW[i] / 2, y + 5.5, { align: 'center' });
-    x += colW[i];
-  });
-  doc.setTextColor(0, 0, 0);
-  y += 8;
-
-  // -- Rows --
-  const disc = 1 - descuentoPct / 100;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-  items.forEach(item => {
-    const rowH = 8;
-    x = M;
-    const pUnit = item.precio * disc;
-    const pTot  = item.cantidad * pUnit;
-    const cells = [
-      { v: item.sku,                    align: 'center', w: colW[0] },
-      { v: item.nombre.slice(0, 50),    align: 'left',   w: colW[1], offsetX: 2 },
-      { v: String(item.cantidad),       align: 'center', w: colW[2] },
-      { v: fmt(pUnit),                  align: 'right',  w: colW[3], offsetX: -2 },
-      { v: fmt(pTot),                   align: 'right',  w: colW[4], offsetX: -2 },
-    ];
-    cells.forEach(c => {
-      doc.rect(x, y, c.w, rowH, 'S');
-      const tx = c.align === 'center' ? x + c.w / 2 : c.align === 'right' ? x + c.w + (c.offsetX || 0) : x + (c.offsetX || 0);
-      doc.text(c.v, tx, y + 5, { align: c.align });
-      x += c.w;
-    });
-    y += rowH;
-  });
-  y += 4;
-
-  // -- Totals --
-  const xT = 140;
-  const filaTotal = (label, valor, bold = false) => {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(9);
-    if (bold) doc.setFillColor(220, 220, 220);
-    doc.rect(xT, y, 30, 6, bold ? 'FD' : 'S');
-    doc.rect(xT + 30, y, 30, 6, bold ? 'FD' : 'S');
-    doc.text(label, xT + 28, y + 4.5, { align: 'right' });
-    doc.text(valor, xT + 59, y + 4.5, { align: 'right' });
-    y += 6;
-  };
-  filaTotal('Sub-Total:', fmt(subtotalOriginal));
-  if (descuentoPct > 0) filaTotal(`Descuento (${descuentoPct}%):`, `-${fmt(descuentoMonto)}`);
-  filaTotal('Costo del Envío:', fmt(costoEnvio));
-  filaTotal('IVA (16%):', fmt(iva));
-  filaTotal('TOTAL:', fmt(totalFinal), true);
-  y += 8;
-
-  // -- Terms --
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-  doc.text('TÉRMINOS Y CONDICIONES', M, y); y += 7;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-  const terms = [
-    `1. FORMA DE PAGO: ${formaPago.toUpperCase()}`,
-    `2. MÉTODO DE PAGO: ${metodoPago.toUpperCase()}`,
-    '3. COTIZACIÓN EN: PESO MEXICANO (MXN)',
-    '4. PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.',
-  ];
-  terms.forEach(t => { doc.text(t, M, y); y += 5; });
-  const coment4 = doc.splitTextToSize(`5. COMENTARIOS: ${comentario}`, PW - 2 * M);
-  doc.text(coment4, M, y);
-  y += coment4.length * 5 + 6;
-
-  // -- Datos bancarios (cuadro) --
-  const datosBanco = [
-    'Clabe Interbancaria: 002320702110604152',
-    'Banco: Banamex',
-    'Nombre: Felipe Osvaldo Ruvalcaba Ayala',
-  ];
-  const boxW = 100;
-  const boxH = 8 + datosBanco.length * 5 + 3;
-  // El pie de página vive en y=272: si no cabe, el cuadro pasa a una hoja nueva.
-  if (y + boxH > 262) { doc.addPage(); y = 20; }
-  doc.setDrawColor(0, 74, 153);
-  doc.setLineWidth(0.4);
-  doc.rect(M, y, boxW, boxH, 'S');
-  doc.setLineWidth(0.2);
-  doc.setDrawColor(0, 0, 0);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-  doc.text('DATOS BANCARIOS:', M + 3, y + 6);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-  datosBanco.forEach((linea, i) => doc.text(linea, M + 3, y + 12 + i * 5));
-  y += boxH;
-
-  // -- Footer (all pages) --
-  const total_pages = doc.getNumberOfPages();
-  for (let p = 1; p <= total_pages; p++) {
-    doc.setPage(p);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text('Si tienes alguna pregunta por favor contáctanos', PW / 2, 272, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.text('Tel: 33-1299-5688 / E-mail: ventas1@zeutica.com', PW / 2, 277, { align: 'center' });
-    doc.text(`Página ${p}`, PW - M, 282, { align: 'right' });
-  }
-
-  return doc.output('arraybuffer');
-}
-
 const COT_FORMAS_PAGO = [
   ['01', 'Efectivo'],
   ['02', 'Cheque nominativo'],
@@ -518,70 +333,36 @@ function PageCotizaciones({ user }) {
     setSubmitting(true);
     const clienteObj = clientes.find(c => c.nombre === selectedCliente) || {};
     const comentarioFinal = comentario === 'OTROS...' ? comentarioCustom : comentario;
-    const disc = descuento / 100;
+    // El backend asigna el folio definitivo, genera el PDF y lo guarda en BD
+    // (de ahí lo lee "Ver" vía /cotizaciones/base64). nuevoCodigo es solo la vista previa.
+    const payload = window.cotizacionLogica.armarPayloadCotizacion({
+      clienteNombre: selectedCliente,
+      clienteObj,
+      items,
+      descuentoPct: descuento,
+      descuentoMonto,
+      subtotalDesc,
+      costoEnvio,
+      iva,
+      totalFinal,
+      formaPago,
+      metodoPago,
+      comentario: comentarioFinal,
+      usuario: user,
+    });
 
-    let pdfBase64 = '';
-    try {
-      const buf = await generarPDFCotizacion({
-        codigo: nuevoCodigo,
-        clienteObj,
-        clienteNombre: selectedCliente,
-        items,
-        descuentoPct: descuento,
-        descuentoMonto,
-        subtotalOriginal,
-        subtotalDesc,
-        costoEnvio,
-        iva,
-        totalFinal,
-        formaPago,
-        metodoPago,
-        comentario: comentarioFinal,
-      });
-      const bytes = new Uint8Array(buf);
-      let bin = '';
-      bytes.forEach(b => bin += String.fromCharCode(b));
-      pdfBase64 = btoa(bin);
-    } catch(e) {
-      toast.warn('PDF no generado', 'Se guardará sin archivo adjunto');
-    }
-
-    const payload = {
-      codigo_cotizacion: nuevoCodigo,
-      empresa: selectedCliente,
-      atencion: clienteObj.atencion || '',
-      email: clienteObj.email || '',
-      domicilio: clienteObj.direccion || clienteObj.domicilio || '',
-      telefono: clienteObj.telefono || '',
-      subtotal: Math.round(subtotalDesc * 100) / 100,
-      iva: Math.round(iva * 100) / 100,
-      total: Math.round(totalFinal * 100) / 100,
-      costo_envio: Math.round(costoEnvio * 100) / 100,
-      forma_pago: formaPago,
-      metodo_pago: metodoPago,
-      comentarios: comentarioFinal,
-      usuario: user || '',
-      pdf: pdfBase64,
-      items: items.map(i => ({
-        sku: i.sku,
-        nombre_producto: i.nombre,
-        cantidad: i.cantidad,
-        precio_unitario: Math.round(i.precio * (1 - disc) * 100) / 100,
-        total_linea: Math.round(i.cantidad * i.precio * (1 - disc) * 100) / 100,
-      })),
-    };
-
-    const r = await window.api.guardarCotizacion(payload);
+    const r = await window.api.generaCotizacion(payload);
     setSubmitting(false);
     if (r.ok) {
-      toast.success('Cotización guardada', `${nuevoCodigo} · ${selectedCliente}`);
+      const codigo = r.codigo || nuevoCodigo;
+      toast.success('Cotización guardada', `${codigo} · ${selectedCliente}`);
       window.fireConfetti();
-      if (pdfBase64) {
-        const a = document.createElement('a');
-        a.href = `data:application/pdf;base64,${pdfBase64}`;
-        a.download = `Cotizacion_${nuevoCodigo}_${selectedCliente}.pdf`;
-        a.click();
-      }
+      const url = URL.createObjectURL(r.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = window.cotizacionLogica.nombreArchivoCotizacion(codigo, selectedCliente);
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setCots(await window.api.cotizaciones());
       resetForm();
     } else {
