@@ -207,6 +207,7 @@ function PageVentas({ user }) {
       plataforma,
       usuario: user,
       condicion_pago: metPago,
+      cotizacion: cotCargada || undefined,
       items: cart.map(item => {
         // Number() explícito: el precio de la línea se edita a mano y viaja como texto.
         const precio = Math.round(Number(item.precio) * (1 - descuento / 100) * 100) / 100;

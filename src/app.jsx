@@ -377,6 +377,7 @@ function App() {
     gerencia:             window.PageGerencia,
     crm_seguimientos:     window.PageCrmSeguimientos,
     crm_gerencia:         window.PageCrmGerencia,
+    comisiones:           window.PageComisiones,
   };
   const PageComp = pages[current] || window.PageDashboard;
 

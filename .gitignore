@@ -7,4 +7,4 @@ venv/
 *.pyc
 documents/
 workflowsn8n/
-tests/
+.env

@@ -2,8 +2,20 @@
 // Primary: real backend. Mock data sólo se conserva para el login demo
 // (cuando no hay servidor). Los datos de negocio vienen SIEMPRE de la API.
 
-//const API_BASE = 'http://127.0.0.1:8000'; // para desarrollo local
-const API_BASE = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';
+// Detecta dinámicamente la URL del API según el entorno
+const getApiBase = () => {
+  // 1. Si se inyectó explícitamente desde el servidor (via config.js o script en HTML), úsala
+  if (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL) {
+    return window.API_BASE_URL;
+  }
+  // 2. En desarrollo local (localhost), usa localhost:8000
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://127.0.0.1:8000';
+  }
+  // 3. Fallback para producción: asume que el API está en el mismo host en puerto 8000
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
+};
+const API_BASE = getApiBase();
 
 const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
 const REQUEST_TIMEOUT = 4000;
@@ -707,6 +719,30 @@ const api = {
   },
   async crmMetricasEmbudo(params = {}) {
     return tryFetch(`/zeutica/crm/metricas/embudo${window.crmLogica.queryString(params)}`, { timeout: 10000 });
+  },
+  // ---- Comisiones por SKU ----
+  // Solo gerencia edita la matriz (el backend responde 403 a los demás). El vendedor sale del token.
+  async comisionesConfig(vendedor) {
+    return listaConError(await tryFetch(`/zeutica/comisiones/config${window.crmLogica.queryString({ vendedor })}`));
+  },
+  async comisionesGuardar(vendedor, items) {
+    return tryFetch('/zeutica/comisiones/config', { method: 'PUT', body: JSON.stringify({ vendedor, items }) });
+  },
+  async comisionesReporte(params = {}) {
+    return tryFetch(`/zeutica/comisiones/reporte${window.crmLogica.queryString(params)}`, { timeout: 15000 });
+  },
+  async comisionesCandidatos(idVentas) {
+    return tryFetch(`/zeutica/comisiones/candidatos/${encodeURIComponent(idVentas)}`);
+  },
+  // seguimiento_id y/o cotizacion (folio): al menos uno.
+  async comisionesVincular(id_ventas, { seguimiento_id, cotizacion } = {}) {
+    return tryFetch('/zeutica/comisiones/vinculos', { method: 'POST', body: JSON.stringify({ id_ventas, seguimiento_id: seguimiento_id || undefined, cotizacion: cotizacion || undefined }) });
+  },
+  async comisionesDesvincular(idVentas) {
+    return tryFetch(`/zeutica/comisiones/vinculos/${encodeURIComponent(idVentas)}`, { method: 'DELETE' });
+  },
+  async comisionesRecalcular(desde, hasta) {
+    return tryFetch('/zeutica/comisiones/recalcular', { method: 'POST', body: JSON.stringify({ desde, hasta }), timeout: 60000 });
   },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });

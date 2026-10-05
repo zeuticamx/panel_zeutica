@@ -49,28 +49,36 @@ window.fireConfetti = function() {
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
+<!-- API_BASE_URL: Inyectar desde .env durante despliegue -->
+<script>
+  // En despliegue, ejecutar: ./inject-api-base.sh (Linux/Mac) o .\inject-api-base.ps1 (Windows)
+  // Esto reemplazará la línea siguiente con el valor de .env
+  // window.API_BASE_URL = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';
+</script>
+
 <!-- Foundations -->
 <script type="text/babel" src="src/icons.jsx?v=20260730"></script>
-<script type="text/babel" src="src/api.jsx?v=20261002"></script>
+<script type="text/babel" src="src/api.jsx?v=20261006"></script>
 <script src="src/cleanest-venta.js?v=20260612"></script>
 <script src="src/skydropx-logica.js?v=20261001"></script>
 <script src="src/cliente-alta.js?v=20261002b"></script>
 <script src="src/cotizacion-logica.js?v=20261002"></script>
 <script src="src/gastos-logica.js?v=20260930"></script>
 <script src="src/crm-logica.js?v=20261001"></script>
+<script src="src/comisiones-logica.js?v=20261005"></script>
 <script type="text/babel" src="src/toast.jsx?v=20260824"></script>
 <script type="text/babel" src="src/confirm.jsx?v=20260512"></script>
 <script type="text/babel" src="src/charts.jsx?v=20260506"></script>
 
 <!-- Shell & Login -->
 <script type="text/babel" src="src/login.jsx?v=20260812"></script>
-<script type="text/babel" src="src/shell.jsx?v=20261001"></script>
+<script type="text/babel" src="src/shell.jsx?v=20261005"></script>
 
 <!-- Pages -->
 <script type="text/babel" src="src/pages/dashboard.jsx?v=20260824"></script>
 <script type="text/babel" src="src/pages/inventario.jsx?v=20260824"></script>
 <script type="text/babel" src="src/pages/conteo.jsx?v=20260824"></script>
-<script type="text/babel" src="src/pages/ventas.jsx?v=20260929"></script>
+<script type="text/babel" src="src/pages/ventas.jsx?v=20261006"></script>
 <script type="text/babel" src="src/pages/constants.jsx?v=20260607"></script>
 <script type="text/babel" src="src/pages/skydropx_envio.jsx?v=20261001"></script>
 <script type="text/babel" src="src/pages/cotizaciones.jsx?v=20261002"></script>
@@ -104,10 +112,11 @@ window.fireConfetti = function() {
 <script type="text/babel" src="src/pages/crm_registro.jsx?v=20261001"></script>
 <script type="text/babel" src="src/pages/crm_seguimientos.jsx?v=20261001"></script>
 <script type="text/babel" src="src/pages/crm_gerencia.jsx?v=20261001"></script>
+<script type="text/babel" src="src/pages/comisiones.jsx?v=20261006"></script>
 
 <!-- App bootstrap (LAST) -->
 
-<script type="text/babel" src="src/app.jsx?v=20261001"></script>
+<script type="text/babel" src="src/app.jsx?v=20261005"></script>
 
 <script>
   // Hide loader once React mounts
