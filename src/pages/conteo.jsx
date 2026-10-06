@@ -124,7 +124,7 @@ function PageConteo({ user }) {
                 const val = conteos[p.sku];
                 const hasConteo = val !== '' && val !== null && val !== undefined;
                 return (
-                  <tr key={p.sku} style={hasConteo ? { background: 'oklch(0.22 0.012 240 / 0.3)' } : undefined}>
+                  <tr key={p.sku} style={hasConteo ? { background: 'var(--row-hi)' } : undefined}>
                     <td className="mono" style={{ fontSize: 12 }}>{p.sku}</td>
                     <td>{p.nombre}</td>
                     <td><span className="badge">{p.categoria}</span></td>

@@ -228,7 +228,7 @@ function NotifPanel({ notifs, markAllRead, onClose }) {
         ) : notifs.map(n => {
           const c = iconBg[n.type] || iconBg.info;
           return (
-          <div key={n.id} className="notif-item" style={{ background: n.unread ? 'oklch(0.22 0.012 240 / 0.4)' : undefined }}>
+          <div key={n.id} className="notif-item" style={{ background: n.unread ? 'var(--row-hi)' : undefined }}>
             <div className="notif-icon" style={{ background: c.bg, color: c.color }}>
               <Icon name={n.icon} size={14}/>
             </div>

@@ -2,7 +2,7 @@
 .cmdk-backdrop {
   position: fixed;
   inset: 0;
-  background: oklch(0.08 0.005 240 / 0.7);
+  background: var(--scrim);
   backdrop-filter: blur(8px);
   z-index: 950;
   display: flex;

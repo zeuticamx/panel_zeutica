@@ -1,6 +1,20 @@
 // ===== Zeutica — App Shell (Sidebar + Topbar + Routing) =====
 const { useState: uS, useEffect: uE, useMemo: uM, useCallback: uC, useRef: uR } = React;
 
+// Botón de tema claro/oscuro: guarda la elección (window.AppTheme viene del script del <head>)
+function ThemeToggleBtn() {
+  const [tema, setTema] = uS(window.AppTheme.get());
+  const alternar = () => setTema(window.AppTheme.set(tema === 'light' ? 'dark' : 'light'));
+  const aClaro = tema !== 'light';
+  return (
+    <button className="btn btn-ghost btn-icon topbar-icon-btn theme-toggle" onClick={alternar}
+      aria-label={aClaro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+      title={aClaro ? 'Modo claro' : 'Modo oscuro'}>
+      <Icon key={tema} name={aClaro ? 'sun' : 'moon'} size={16}/>
+    </button>
+  );
+}
+
 const NAV = [
   { key: 'dashboard',    label: 'Dashboard',        icon: 'dashboard', gerencia: true },
   { key: 'acciones_pendientes', label: 'Pendientes', icon: 'clock' },
@@ -142,6 +156,7 @@ function Topbar({ current, user, onOpenNotifs, notifCount, onCmd, onMenuToggle, 
         <button className="btn btn-ghost btn-icon topbar-icon-btn" onClick={onCmd} aria-label="Buscar" title="Buscar (móvil)">
           <Icon name="search" size={16}/>
         </button>
+        <ThemeToggleBtn/>
         <button className="btn btn-ghost btn-icon topbar-icon-btn" onClick={onOpenNotifs}>
           <Icon name="bell" size={16}/>
           {notifCount > 0 && <span className="topbar-badge">{notifCount}</span>}

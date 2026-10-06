@@ -386,6 +386,16 @@ const api = {
     const u = encodeURIComponent(usuario || api.usuario || '');
     return tryFetch(`/zeutica/editcliente/${u}`, { method: 'POST', body: JSON.stringify(payload) });
   },
+  // Baja lógica de clientes (solo gerencia; el usuario sale del token)
+  async eliminarCliente(id) {
+    return tryFetch(`/zeutica/clientes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  async restaurarCliente(id) {
+    return tryFetch(`/zeutica/clientes/${encodeURIComponent(id)}/restaurar`, { method: 'POST' });
+  },
+  async clientesEliminados() {
+    return listaConError(await tryFetch('/zeutica/clientes-eliminados'));
+  },
   async ventasMes(f1, f2) {
     return listaConError(await tryFetch(`/zeutica/ventas/${f1}/${f2}`));
   },

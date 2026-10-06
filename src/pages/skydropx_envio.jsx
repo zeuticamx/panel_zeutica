@@ -1087,7 +1087,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                     value={paquete.consignment_note || ''}
                     onChange={e => setP('consignment_note', e.target.value)}
                   >
-                    <option value="" disabled style={{ backgroundColor: '#090a0c', color: '#888' }}>
+                    <option value="" disabled style={{ backgroundColor: 'var(--bg-1)', color: 'var(--fg-2)' }}>
                       Selecciona un código SAT
                     </option>
                     {SAT_OPTIONS.map(item => (

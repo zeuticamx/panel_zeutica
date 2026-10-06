@@ -190,8 +190,11 @@ function PageClientes() {
   const [saving, setSaving] = rp_uS(false);
   const [editingCliente, setEditingCliente] = rp_uS(null);
   const [crmCliente, setCrmCliente] = rp_uS(null); // cliente con el modal de registro CRM abierto
+  const [verEliminados, setVerEliminados] = rp_uS(false); // solo gerencia: lista de bajas para restaurar
+  const esGerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
 
-  rp_uE(() => { (async () => setCli(await window.api.clientes()))(); }, []);
+  const cargar = async () => setCli(verEliminados ? await window.api.clientesEliminados() : await window.api.clientes());
+  rp_uE(() => { cargar(); }, [verEliminados]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -217,16 +220,37 @@ function PageClientes() {
     }
   };
 
+  const eliminar = async (c) => {
+    const r = await window.api.eliminarCliente(c.id);
+    if (r.ok) { toast.success('Cliente eliminado', c.nombre); await cargar(); }
+    else toast.error('No se pudo eliminar el cliente', r.error);
+  };
+
+  const restaurar = async (c) => {
+    const r = await window.api.restaurarCliente(c.id);
+    if (r.ok) { toast.success('Cliente restaurado', c.nombre); await cargar(); }
+    else toast.error('No se pudo restaurar el cliente', r.error);
+  };
+
   const filtered = cli.filter(c => !q || `${c.nombre} ${c.email} ${c.ciudad}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="page">
       <div className="section-header">
         {ConfirmModal}
-        <div><h2 className="section-title">Clientes</h2><p className="section-subtitle">Directorio completo con línea de crédito y saldos.</p></div>
-        <button className={`btn btn-sm ${showForm ? 'btn-secondary' : 'btn-primary'}`} onClick={() => { setShowForm(v => !v); setForm(CLIENTE_BLANK); }}>
-          <Icon name="plus" size={13}/> {showForm ? 'Cerrar' : 'Nuevo cliente'}
-        </button>
+        <div><h2 className="section-title">{verEliminados ? 'Clientes eliminados' : 'Clientes'}</h2><p className="section-subtitle">{verEliminados ? 'Clientes dados de baja. Puedes restaurarlos.' : 'Directorio completo con línea de crédito y saldos.'}</p></div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {esGerencia && (
+            <button className="btn btn-sm btn-secondary" onClick={() => { setShowForm(false); setVerEliminados(v => !v); }}>
+              <Icon name="trash" size={13}/> {verEliminados ? 'Ver activos' : 'Ver eliminados'}
+            </button>
+          )}
+          {!verEliminados && (
+            <button className={`btn btn-sm ${showForm ? 'btn-secondary' : 'btn-primary'}`} onClick={() => { setShowForm(v => !v); setForm(CLIENTE_BLANK); }}>
+              <Icon name="plus" size={13}/> {showForm ? 'Cerrar' : 'Nuevo cliente'}
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && (
@@ -243,7 +267,7 @@ function PageClientes() {
       )}
 
       <div className="dash-kpis">
-        <window.MiniStat label="Clientes activos" value={cli.length} icon="users"/>
+        <window.MiniStat label={verEliminados ? 'Clientes eliminados' : 'Clientes activos'} value={cli.length} icon="users"/>
         <window.MiniStat label="Con crédito" value={cli.filter(c => c.credito).length} icon="check" tone="success"/>
         <window.MiniStat label="Saldo total" value={window.fmt.mxn(cli.reduce((s,c) => s + c.saldo, 0))} icon="wallet"/>
         <window.MiniStat label="Ciudades" value={new Set(cli.map(c => c.ciudad)).size} icon="globe"/>
@@ -259,6 +283,7 @@ function PageClientes() {
           <table className="table">
             <thead><tr><th>ID</th><th>Cliente</th><th>Email</th><th>Teléfono</th><th>Empresa</th><th>Contacto</th><th>Frecuencia</th><th>Crédito</th><th className="td-right">Monto de Crédito</th><th></th></tr></thead>
             <tbody>
+              {filtered.length === 0 && <tr><td colSpan={10} className="td-muted" style={{ textAlign: 'center', padding: 24 }}>{verEliminados ? 'No hay clientes eliminados.' : 'Sin clientes que mostrar.'}</td></tr>}
               {filtered.map(c => (
                 <tr key={c.id}>
                   <td className="mono td-muted">#{c.id}</td>
@@ -271,8 +296,13 @@ function PageClientes() {
                   <td>{c.credito ? <span className="badge badge-success"><span className="badge-dot"/>Activo</span> : <span className="badge">No</span>}</td>
                   <td className="td-right mono" style={{ fontWeight: c.monto_credito > 0 ? 500 : 400, color: c.monto_credito > 0 ? 'var(--warn)' : 'var(--fg-2)' }}>{window.fmt.mxn(c.monto_credito)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-sm btn-secondary" title="Registrar interacción (CRM)" onClick={() => setCrmCliente({ id: c.id, nombre: c.nombre })} style={{ marginRight: 4 }}><Icon name="chat" size={12}/></button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => abrirEditar(c)}><Icon name="edit" size={12}/></button>
+                    {verEliminados ? (
+                      <button className="btn btn-sm btn-secondary" title="Restaurar cliente" onClick={() => askConfirm(`¿Restaurar al cliente "${c.nombre}"?`, () => restaurar(c))}><Icon name="refresh" size={12}/> Restaurar</button>
+                    ) : (<>
+                      <button className="btn btn-sm btn-secondary" title="Registrar interacción (CRM)" onClick={() => setCrmCliente({ id: c.id, nombre: c.nombre })} style={{ marginRight: 4 }}><Icon name="chat" size={12}/></button>
+                      <button className="btn btn-sm btn-secondary" title="Editar" onClick={() => abrirEditar(c)} style={{ marginRight: esGerencia ? 4 : 0 }}><Icon name="edit" size={12}/></button>
+                      {esGerencia && <button className="btn btn-sm btn-secondary" title="Eliminar cliente" onClick={() => askConfirm(`¿Eliminar al cliente "${c.nombre}"? Podrás restaurarlo desde "Ver eliminados".`, () => eliminar(c))}><Icon name="trash" size={12}/></button>}
+                    </>)}
                   </td>
                 </tr>
               ))}

@@ -22,7 +22,7 @@
 .btn-primary {
   background: var(--brand);
   color: white;
-  box-shadow: 0 1px 0 oklch(0.76 0.14 205 / 0.4) inset, var(--shadow-sm);
+  box-shadow: 0 1px 0 var(--btn-edge) inset, var(--shadow-sm);
 }
 .btn-primary:hover:not(:disabled) { background: var(--brand-hi); }
 .btn-primary:active:not(:disabled) { background: var(--brand-lo); transform: translateY(1px); }
@@ -43,7 +43,7 @@
 .btn-danger {
   background: transparent;
   color: var(--danger);
-  border-color: oklch(0.4 0.14 25 / 0.4);
+  border-color: var(--danger-edge);
 }
 .btn-danger:hover:not(:disabled) { background: var(--danger-bg); border-color: var(--danger); }
 
@@ -167,11 +167,11 @@
   border-radius: 50%;
   background: currentColor;
 }
-.badge-success { color: var(--success); background: var(--success-bg); border-color: oklch(0.4 0.09 155 / 0.4); }
-.badge-warn    { color: var(--warn); background: var(--warn-bg); border-color: oklch(0.42 0.09 80 / 0.4); }
-.badge-danger  { color: var(--danger); background: var(--danger-bg); border-color: oklch(0.38 0.11 25 / 0.4); }
-.badge-info    { color: var(--info); background: var(--info-bg); border-color: oklch(0.36 0.08 220 / 0.4); }
-.badge-brand   { color: var(--brand-hi); background: var(--brand-bg); border-color: oklch(0.4 0.09 205 / 0.4); }
+.badge-success { color: var(--success); background: var(--success-bg); border-color: var(--success-edge); }
+.badge-warn    { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-edge); }
+.badge-danger  { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-edge); }
+.badge-info    { color: var(--info); background: var(--info-bg); border-color: var(--info-edge); }
+.badge-brand   { color: var(--brand-hi); background: var(--brand-bg); border-color: var(--brand-edge); }
 
 /* ---------- Table ---------- */
 .table-wrap {
@@ -386,7 +386,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: oklch(0.10 0.008 240 / 0.7);
+  background: var(--scrim);
   backdrop-filter: blur(6px);
   z-index: 900;
   display: flex;
@@ -510,13 +510,13 @@
 /* Estilo del contenedor expandido */
 .expanded-cell {
   padding: 0 !important;
-  background-color: #1a1d21; /* Asegura un contraste claro con el fondo */
+  background-color: var(--bg-2);
 }
 
 .ubic-panel-wrapper {
   padding: 20px; /* Aquí le das el "aire" que le falta */
-  border-top: 2px solid #333;
-  box-shadow: inset 0 10px 10px -10px rgba(0,0,0,0.5); /* Sombra interna para dar profundidad */
+  border-top: 2px solid var(--line-strong);
+  box-shadow: var(--shadow-inset); /* Sombra interna para dar profundidad */
 }
 
 /* ===== Conversaciones Sofi ===== */

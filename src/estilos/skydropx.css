@@ -47,9 +47,9 @@
   border-radius: var(--r-xs);
   background: var(--bg-3);
 }
-.sky-aviso-danger { color: var(--danger); background: var(--danger-bg); border-color: oklch(0.38 0.11 25 / 0.5); }
-.sky-aviso-warn   { color: var(--warn);   background: var(--warn-bg);   border-color: oklch(0.42 0.09 80 / 0.5); }
-.sky-aviso-info   { color: var(--fg-1);   background: var(--info-bg);   border-color: oklch(0.36 0.08 220 / 0.45); }
+.sky-aviso-danger { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-edge); }
+.sky-aviso-warn   { color: var(--warn);   background: var(--warn-bg);   border-color: var(--warn-edge); }
+.sky-aviso-info   { color: var(--fg-1);   background: var(--info-bg);   border-color: var(--info-edge); }
 
 /* ---------- Secciones numeradas (mismo tono que el generador de cotizaciones) ---------- */
 .sky-seccion-titulo {
