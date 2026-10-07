@@ -3,6 +3,13 @@
 (function (root) {
   const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
+  // Textos de relleno que el equipo captura cuando no hay dato real en contacto/empresa.
+  const PLACEHOLDERS = ['NO REQUERIDO', 'NO PROPORCIONO', 'NO APLICA', 'N/A', 'NA', 'S/N', '-'];
+  const dato = v => {
+    const t = String(v == null ? '' : v).trim();
+    return PLACEHOLDERS.includes(t.toUpperCase()) ? '' : t;
+  };
+
   // Arma el body de POST /genera-cotizacion. El backend genera el PDF con estos
   // datos, así que lo que aquí se mande es lo que sale impreso.
   // - empresa es el nombre del cliente: Skydropx cruza la cotización con el cliente por ahí.
@@ -15,8 +22,12 @@
     const factor = 1 - (Number(descuentoPct) || 0) / 100;
     return {
       empresa: clienteNombre,
-      // NOMBRE en el PDF: el contacto del cliente; si no hay, el propio nombre.
-      atencion: c.atencion || c.contacto || clienteNombre || '',
+      // NOMBRE en el PDF: el contacto del cliente; si no hay (o es relleno tipo
+      // "NO REQUERIDO"), el propio nombre del cliente.
+      atencion: dato(c.atencion) || dato(c.contacto) || clienteNombre || '',
+      // EMPRESA en el PDF: la empresa registrada del cliente (solo impresión; en BD
+      // `empresa` sigue siendo el nombre). Vacío si el cliente no tiene empresa.
+      empresa_pdf: dato(c.empresa),
       email: c.email || '',
       domicilio: c.direccion || c.domicilio || '',
       // El esquema exige texto y la BD de clientes guarda el teléfono como número.

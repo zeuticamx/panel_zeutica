@@ -29,6 +29,18 @@ test('arma los datos del cliente; empresa es el nombre (Skydropx cruza por ahí)
   assert.equal(p.usuario, 'tester');
 });
 
+test('contacto de relleno cae al nombre del cliente y empresa_pdf trae la empresa registrada', () => {
+  const p = logica.armarPayloadCotizacion({
+    ...base,
+    clienteNombre: 'MIRIAM CARBAJAL',
+    clienteObj: { nombre: 'MIRIAM CARBAJAL', empresa: 'TOSTADAS GUADALUPE', contacto: 'NO REQUERIDO' },
+  });
+  assert.equal(p.empresa, 'MIRIAM CARBAJAL');
+  assert.equal(p.atencion, 'MIRIAM CARBAJAL');
+  assert.equal(p.empresa_pdf, 'TOSTADAS GUADALUPE');
+  assert.equal(logica.armarPayloadCotizacion({ ...base, clienteObj: { empresa: 'no aplica' } }).empresa_pdf, '');
+});
+
 test('el teléfono se manda como texto (el esquema del backend exige str)', () => {
   assert.equal(logica.armarPayloadCotizacion(base).telefono, '3312345678');
   const sinTel = logica.armarPayloadCotizacion({ ...base, clienteObj: { telefono: 0 } });
