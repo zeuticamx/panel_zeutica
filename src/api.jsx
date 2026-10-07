@@ -715,6 +715,18 @@ const api = {
   async crmSeguimientos(vendedor) {
     return tryFetch(`/zeutica/crm/seguimientos${window.crmLogica.queryString({ vendedor })}`);
   },
+  async crmAgenda(params = {}) {
+    return tryFetch(`/zeutica/crm/agenda${window.crmLogica.queryString(params)}`);
+  },
+  async crmCrearEvento(payload) {
+    return tryFetch('/zeutica/crm/eventos', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async crmEditarEvento(id, payload) {
+    return tryFetch(`/zeutica/crm/eventos/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  async crmEliminarEvento(id) {
+    return tryFetch(`/zeutica/crm/eventos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
   async crmCambiarEtapa(id, etapa, motivo_perdida) {
     return tryFetch(`/zeutica/crm/clientes/${encodeURIComponent(id)}/etapa`, { method: 'PATCH', body: JSON.stringify({ etapa, motivo_perdida }) });
   },

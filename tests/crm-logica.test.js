@@ -97,3 +97,37 @@ test('etiquetas con valores desconocidos no truenan', () => {
   assert.equal(crm.etiquetaTipo('whatsapp'), 'WhatsApp');
   assert.equal(crm.etiquetaResultado('x'), '');
 });
+
+test('validarEvento: interna sin cliente es válida, con cliente exige id', () => {
+  assert.equal(crm.validarEvento({ tipo: 'tarea', titulo: 'Preparar lista', inicio: '2026-10-05T09:00' }), null);
+  assert.equal(crm.validarEvento({ tipo: 'cita', titulo: 'Visita', inicio: '2026-10-05T10:00', cliente_id: 3 }), null);
+  assert.match(crm.validarEvento({ tipo: 'fax', titulo: 'Visita', inicio: '2026-10-05T10:00' }), /tipo/);
+  assert.match(crm.validarEvento({ tipo: 'cita', titulo: 'ab', inicio: '2026-10-05T10:00' }), /3 caracteres/);
+  assert.match(crm.validarEvento({ tipo: 'cita', titulo: 'Visita' }), /inicio/i);
+  assert.match(crm.validarEvento({ tipo: 'cita', titulo: 'Visita', inicio: '2026-10-05T11:00', fin: '2026-10-05T10:00' }), /anterior/);
+  assert.match(crm.validarEvento({ tipo: 'cita', titulo: 'Visita', inicio: '2026-10-05T10:00', cliente_id: 0 }), /Cliente/);
+});
+
+test('armarPayloadEvento recorta, agrega segundos y omite vacíos', () => {
+  assert.deepEqual(
+    crm.armarPayloadEvento({ tipo: 'tarea', titulo: '  Lista  ', descripcion: '   ', inicio: '2026-10-05T09:00', todo_dia: true }),
+    { tipo: 'tarea', titulo: 'Lista', inicio: '2026-10-05T09:00:00', todo_dia: true },
+  );
+  const p = crm.armarPayloadEvento({ tipo: 'cita', titulo: 'Visita', descripcion: ' llevar muestras ', inicio: '2026-10-05T10:00:00', fin: '2026-10-05T11:00:00', cliente_id: '3', origen_seguimiento_id: 9 });
+  assert.equal(p.cliente_id, 3);
+  assert.equal(p.fin, '2026-10-05T11:00:00');
+  assert.equal(p.origen_seguimiento_id, 9);
+});
+
+test('calendario: grilla del mes en lunes y rango por vista', () => {
+  const dias = crm.diasGrillaMes('2026-10-15');
+  assert.equal(dias.length, 42);
+  assert.equal(crm.fechaISO(dias[0]), '2026-09-28'); // lunes previo al 1-oct (jueves)
+  assert.deepEqual(crm.rangoVista('dia', '2026-10-05'), { desde: '2026-10-05', hasta: '2026-10-05' });
+  assert.deepEqual(crm.rangoVista('semana', '2026-10-01'), { desde: '2026-09-28', hasta: '2026-10-04' });
+  assert.deepEqual(crm.rangoVista('mes', '2026-10-15'), { desde: '2026-10-01', hasta: '2026-10-31' });
+  assert.equal(crm.moverAncla('mes', '2026-10-15', 1), '2026-11-15');
+  assert.equal(crm.moverAncla('dia', '2026-10-15', -1), '2026-10-14');
+  assert.equal(crm.claveDia(new Date(2026, 9, 5, 23, 59)), '2026-10-05');
+  assert.equal(crm.aInputLocal(new Date(2026, 9, 5, 9, 7)), '2026-10-05T09:07');
+});

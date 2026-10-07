@@ -233,7 +233,7 @@ function PageCrmSeguimientos() {
       </div>
 
       <div className="tabs" style={{ marginTop: 16 }}>
-        {[['seguimientos', 'Seguimientos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', gerencia ? 'Bitácora' : 'Mi bitácora']].map(([k, l]) => (
+        {[['seguimientos', 'Seguimientos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', gerencia ? 'Bitácora' : 'Mi bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -250,7 +250,11 @@ function PageCrmSeguimientos() {
       )}
       {tab === 'cartera' && <CrmCartera gerencia={gerencia} vendedor={vendedor || undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId}/>}
       {tab === 'bitacora' && <CrmBitacoraPropia vendedor={vendedor || undefined} version={version} onFicha={setFichaId}/>}
-
+      {tab === 'calendario' && (
+        window.CrmCalendario
+          ? <window.CrmCalendario vendedor={vendedor || undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId} onChanged={refrescar}/>
+          : <div className="empty" style={{ padding: 40 }}>Calendario no disponible (revisa la versión del archivo).</div>
+      )}
       {registro && (
         <window.CrmRegistroModal cliente={registro.cliente} tipo={registro.tipo}
           onClose={() => setRegistro(null)} onSaved={refrescar}/>
