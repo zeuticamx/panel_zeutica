@@ -742,6 +742,33 @@ const api = {
   async crmMetricasEmbudo(params = {}) {
     return tryFetch(`/zeutica/crm/metricas/embudo${window.crmLogica.queryString(params)}`, { timeout: 10000 });
   },
+  // ---- Prospectos (alta con datos de cliente + seguimiento + conversión) ----
+  // Vendedor sale del token: el backend filtra por dueño. Convertidos ocultos
+  // salvo ver_convertidos=true.
+  async prospectos(params = {}) {
+    return listaConError(await tryFetch(`/zeutica/prospectos${window.crmLogica.queryString(params)}`));
+  },
+  async prospectoFicha(id) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}`);
+  },
+  async crearProspecto(payload) {
+    return tryFetch('/zeutica/prospectos', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async editarProspecto(id, payload) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  async cambiarEtapaProspecto(id, etapa, medio_contacto) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}/etapa`, { method: 'PATCH', body: JSON.stringify({ etapa, medio_contacto }) });
+  },
+  async eliminarProspecto(id) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  async registrarSeguimientoProspecto(id, payload) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}/seguimientos`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async convertirProspecto(id) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}/convertir`, { method: 'POST' });
+  },
   // ---- Comisiones por SKU ----
   // Solo gerencia edita la matriz (el backend responde 403 a los demás). El vendedor sale del token.
   async comisionesConfig(vendedor) {

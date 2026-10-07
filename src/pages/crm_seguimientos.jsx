@@ -233,7 +233,7 @@ function PageCrmSeguimientos() {
       </div>
 
       <div className="tabs" style={{ marginTop: 16 }}>
-        {[['seguimientos', 'Seguimientos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', gerencia ? 'Bitácora' : 'Mi bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
+        {[['seguimientos', 'Seguimientos'], ['prospectos', 'Prospectos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', gerencia ? 'Bitácora' : 'Mi bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -247,6 +247,11 @@ function PageCrmSeguimientos() {
             <CrmSeccionSeguimientos titulo="Hoy" tono="var(--warn)" items={seg.hoy} vacio="Sin seguimientos para hoy." {...filaProps}/>
             <CrmSeccionSeguimientos titulo="Próximos 7 días" items={seg.proximos} vacio="Sin seguimientos programados." {...filaProps}/>
           </>
+      )}
+      {tab === 'prospectos' && (
+        window.PageProspectos
+          ? <window.PageProspectos embedded onConverted={refrescar}/>
+          : <div className="empty" style={{ padding: 40 }}>Prospectos no disponible (revisa la versión del archivo).</div>
       )}
       {tab === 'cartera' && <CrmCartera gerencia={gerencia} vendedor={vendedor || undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId}/>}
       {tab === 'bitacora' && <CrmBitacoraPropia vendedor={vendedor || undefined} version={version} onFicha={setFichaId}/>}
