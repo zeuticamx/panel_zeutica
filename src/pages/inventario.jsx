@@ -35,6 +35,7 @@ function PageInventario({ user }) {
   const [editSaving, setEditSaving] = inv_uS(false);
   const [expandedSkus, setExpandedSkus] = inv_uS({});
   const [ubicCache, setUbicCache] = inv_uS({});
+  const [vista, setVista] = inv_uS('inventario');
 
   inv_uE(() => { (async () => {
     setLoading(true);
@@ -81,11 +82,18 @@ function PageInventario({ user }) {
           <p className="section-subtitle">Gestiona productos, niveles de stock y precios.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button className={`btn btn-sm ${vista === 'movimientos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setVista(v => v === 'movimientos' ? 'inventario' : 'movimientos')}>
+            <Icon name="clock" size={13}/> Movimientos
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={() => exportarInventarioCSV(filtered)}><Icon name="download" size={13}/> Exportar</button>
           {window.AppShell.GERENCIA_USERS?.includes(user) && <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Icon name="plus" size={13}/> Nuevo producto</button>}
         </div>
       </div>
 
+      {vista === 'movimientos' ? (
+        <window.PageMovimientosInventario user={user} />
+      ) : (
+      <>
       <div className="dash-kpis" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <MiniStat label="SKUs totales" value={window.fmt.int(stats.total)} icon="box"/>
         <MiniStat label="Stock bajo" value={stats.bajo} icon="alert" tone="warn"/>
@@ -299,6 +307,8 @@ function PageInventario({ user }) {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

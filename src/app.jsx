@@ -86,6 +86,26 @@ function useLiveNotifs(user) {
             mensaje: msg.motivo || `WhatsApp ${msg.wa_id} requiere atención humana`,
           }, 0);
           setNotifs(prev => [nueva, ...prev]);
+          return;
+        }
+        if (msg.tipo === 'job') {
+          // Aviso efímero de jobs de marketplaces: llega a todos los conectados.
+          const prov = msg.job === 'meli' ? 'MeLi' : 'Amazon';
+          const ok = msg.estado === 'ok';
+          const st = msg.stats || {};
+          const det = ok
+            ? `${st.nuevas ?? 0} nuevas · ${st.descontadas ?? 0} descontadas${msg.dry_run ? ' (prueba)' : ''}`
+            : (msg.estado || 'terminó');
+          const nueva = mapNotif({
+            id: `job-${msg.job}-${msg.fin || Date.now()}`,
+            tipo: ok ? 'success' : 'error',
+            icono: 'refresh',
+            titulo: ok ? `Ventas ${prov} actualizadas` : `Job ${prov} ${msg.estado}`,
+            mensaje: det,
+          }, 0);
+          setNotifs(prev => prev.some(n => n.id === nueva.id) ? prev : [nueva, ...prev]);
+          try { window.dispatchEvent(new CustomEvent('zeutica-job', { detail: msg })); } catch {}
+          return;
         }
       };
 

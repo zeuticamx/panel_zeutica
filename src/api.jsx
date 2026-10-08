@@ -586,12 +586,43 @@ const api = {
   async registroIngresos() {
     return listaConError(await tryFetch('/zeutica/registro-login'), d => Array.isArray(d) ? d : d?.data);
   },
-  // Traer registro de movimientos del sistema (usuario, movimiento, seccion, fecha).
-  async consultaRegistros() {
-    return listaConError(await tryFetch('/zeutica/consulta-registros'), d => Array.isArray(d) ? d : d?.data);
+  // Auditoría visible para todos los usuarios autenticados (filtros server-side).
+  async consultaRegistros(filtros = {}) {
+    const qs = new URLSearchParams();
+    if (filtros.seccion) qs.set('seccion', filtros.seccion);
+    if (filtros.q) qs.set('q', filtros.q);
+    if (filtros.desde) qs.set('desde', filtros.desde);
+    if (filtros.hasta) qs.set('hasta', filtros.hasta);
+    if (filtros.limite) qs.set('limite', String(filtros.limite));
+    const suf = qs.toString() ? `?${qs.toString()}` : '';
+    return listaConError(await tryFetch(`/zeutica/consulta-registros${suf}`), d => Array.isArray(d) ? d : d?.data);
   },
   async registrarVentaCleanest(cleanestPayload) {
     return tryFetch('/zeutica/cleanest/venta', { method: 'POST', body: JSON.stringify(cleanestPayload) }); 
+  },
+  // Jobs de marketplaces (permiso general: cualquier usuario autenticado).
+  async traerVentasMeli() {
+    return tryFetch('/zeutica/jobs/meli/run', { method: 'POST', body: JSON.stringify({ motivo: 'panel-ventas' }) });
+  },
+  async traerVentasAmazon() {
+    return tryFetch('/zeutica/jobs/amazon/run', { method: 'POST', body: JSON.stringify({ motivo: 'panel-ventas' }) });
+  },
+  async estadoJobMeli() {
+    return tryFetch('/zeutica/jobs/meli/status', { method: 'GET' });
+  },
+  async estadoJobAmazon() {
+    return tryFetch('/zeutica/jobs/amazon/status', { method: 'GET' });
+  },
+  // Auditoría de descuentos/entradas de inventario (solo fecha, tipo, SKU, cantidad, folio, usuario).
+  async inventarioMovimientos(filtros = {}) {
+    const qs = new URLSearchParams();
+    if (filtros.sku) qs.set('sku', filtros.sku);
+    if (filtros.tipo) qs.set('tipo', filtros.tipo);
+    if (filtros.desde) qs.set('desde', filtros.desde);
+    if (filtros.hasta) qs.set('hasta', filtros.hasta);
+    if (filtros.limite) qs.set('limite', String(filtros.limite));
+    const suf = qs.toString() ? `?${qs.toString()}` : '';
+    return listaConError(await tryFetch(`/zeutica/inventario/movimientos${suf}`), d => Array.isArray(d) ? d : d?.data);
   },
   async registrarGastoSku(payload) {
     return tryFetch('/zeutica/producto/venta', { method: 'POST', body: JSON.stringify(payload) });

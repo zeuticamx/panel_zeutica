@@ -8,3 +8,4 @@ venv/
 documents/
 workflowsn8n/
 .env
+DEPLOY.md

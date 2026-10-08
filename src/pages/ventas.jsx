@@ -105,6 +105,79 @@ function PageVentas({ user }) {
   const [loadingCot, setLoadingCot] = vt_uS(false);
   const [submitting, setSubmitting] = vt_uS(false);
   const [lastTicket, setLastTicket] = vt_uS(null);
+  const [trayendoMeli, setTrayendoMeli] = vt_uS(false);
+  const [trayendoAmazon, setTrayendoAmazon] = vt_uS(false);
+  const [traidoHoy, setTraidoHoy] = vt_uS({ meli: false, amazon: false });
+
+  // Si el job ya corrió con éxito hoy (manual o scheduler), no se permite reaccionar.
+  const revisarJobsHoy = async () => {
+    const hoyMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const exitoHoy = (ultimo) => !!ultimo && ultimo.estado === 'ok' && !ultimo.dry_run
+      && typeof ultimo.fin === 'string' && ultimo.fin.slice(0, 10) === hoyMx;
+    try {
+      const [sm, sa] = await Promise.all([window.api.estadoJobMeli(), window.api.estadoJobAmazon()]);
+      setTraidoHoy({
+        meli: exitoHoy(sm.data?.ultimo || sm.ultimo),
+        amazon: exitoHoy(sa.data?.ultimo || sa.ultimo),
+      });
+    } catch {}
+  };
+
+  vt_uE(() => {
+    revisarJobsHoy();
+    const alAvisar = () => revisarJobsHoy();
+    window.addEventListener('zeutica-job', alAvisar);
+    return () => window.removeEventListener('zeutica-job', alAvisar);
+  }, []);
+
+  const traerVentas = async (canal) => {
+    const esMeli = canal === 'meli';
+    const setCargando = esMeli ? setTrayendoMeli : setTrayendoAmazon;
+    const nombre = esMeli ? 'MeLi' : 'Amazon';
+    const estadoJob = esMeli ? window.api.estadoJobMeli : window.api.estadoJobAmazon;
+    setCargando(true);
+    const espera = (ms) => new Promise(res => setTimeout(res, ms));
+    const avisaFinal = (ultimo) => {
+      const estado = ultimo?.estado;
+      if (estado === 'ok') {
+        const stats = ultimo.stats || {};
+        const nuevas = stats.nuevas ?? (ultimo.ordenes_nuevas || []).length ?? 0;
+        toast.success(`Ventas ${nombre} actualizadas`, `${nuevas} nuevas · ${stats.descontadas ?? 0} descontadas${stats.sin_stock ? ` · ${stats.sin_stock} sin stock` : ''}${stats.regresadas ? ` · ${stats.regresadas} regresadas` : ''}`);
+        revisarJobsHoy();
+      } else if (estado === 'sin_ventas') {
+        toast.info(`Ventas ${nombre}`, 'Sin ventas nuevas en la ventana revisada');
+      } else {
+        toast.error(`Job ${nombre} falló`, ultimo?.error || 'Revisa el status del job');
+      }
+    };
+    try {
+      const r = esMeli ? await window.api.traerVentasMeli() : await window.api.traerVentasAmazon();
+      if (!r.ok) {
+        if (String(r.error || '').includes('ya en curso') || r.status === 409) {
+          toast.warn(`Job ${nombre} ya en curso`, 'Espera a que termine y revisa el resultado en Telegram');
+        } else {
+          toast.error(`No se pudo traer ventas ${nombre}`, r.error);
+        }
+        return;
+      }
+      // 202: el servidor sigue en segundo plano; se sondea el status (5s, máx ~25 min).
+      for (let i = 0; i < 300; i++) {
+        await espera(5000);
+        const s = await estadoJob();
+        const ultimo = s.data?.ultimo || s.ultimo;
+        if (!s.ok || !ultimo) continue;
+        if (ultimo.estado && ultimo.estado !== 'running') {
+          avisaFinal(ultimo);
+          return;
+        }
+      }
+      toast.warn(`Job ${nombre} sigue en curso`, 'Sigue procesando en el servidor; el resultado llega por Telegram');
+    } catch (e) {
+      toast.error(`No se pudo traer ventas ${nombre}`, String(e?.message || e));
+    } finally {
+      setCargando(false);
+    }
+  };
 
   vt_uE(() => { (async () => {
     setProductos(await window.api.productos());
@@ -253,9 +326,17 @@ function PageVentas({ user }) {
           <h2 className="section-title">Registrar venta</h2>
           <p className="section-subtitle">Agrega productos al carrito y confirma el cobro. Atajo: ↵ para añadir.</p>
         </div>
-        <button className={`btn ${loadCotMode ? 'btn-primary' : 'btn-secondary'} btn-sm`} onClick={() => setLoadCotMode(v => !v)}>
-          <Icon name="doc" size={13}/> Cargar cotización
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost btn-sm" disabled={trayendoMeli || traidoHoy.meli} title={traidoHoy.meli ? 'Ya se trajo hoy' : 'Traer ventas de MeLi'} onClick={() => traerVentas('meli')}>
+            <Icon name="refresh" size={13}/> {trayendoMeli ? 'Trayendo...' : (traidoHoy.meli ? 'MeLi traído hoy' : 'Traer ventas MeLi')}
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={trayendoAmazon || traidoHoy.amazon} title={traidoHoy.amazon ? 'Ya se trajo hoy' : 'Traer ventas de Amazon'} onClick={() => traerVentas('amazon')}>
+            <Icon name="refresh" size={13}/> {trayendoAmazon ? 'Trayendo...' : (traidoHoy.amazon ? 'Amazon traído hoy' : 'Traer ventas Amazon')}
+          </button>
+          <button className={`btn ${loadCotMode ? 'btn-primary' : 'btn-secondary'} btn-sm`} onClick={() => setLoadCotMode(v => !v)}>
+            <Icon name="doc" size={13}/> Cargar cotización
+          </button>
+        </div>
       </div>
 
       {loadCotMode && (
