@@ -15,6 +15,6 @@ if [ -z "$API_BASE" ]; then
 fi
 
 # Reemplaza el placeholder en index.html
-sed -i.bak "s|// window.API_BASE_URL = 'https://postgresqldb-server_zeutica.i4mjht.easypanel.host';|window.API_BASE_URL = '$API_BASE';|" index.html
+sed -i.bak "s|// window.API_BASE_URL = 'https://postgresqldb-server-zeutica.i4mjht.easypanel.host';|window.API_BASE_URL = '$API_BASE';|" index.html
 
 echo "✓ API_BASE inyectada en index.html: $API_BASE"
