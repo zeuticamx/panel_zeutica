@@ -1,7 +1,5 @@
 // ===== Zeutica — Shared Constants =====
 
-const N8N_PROMOS_MELI_HOOK = "https://n8n-n8n.i4mjht.easypanel.host/webhook/8876b38f-4a35-40c6-aff8-4baba75bb452";
-
 const REGIMENES_FISCALES = [
   { "code": "601", "name": "601 - General de Ley Personas Morales" },
   { "code": "603", "name": "603 - Personas Morales con Fines no Lucrativos" },
@@ -51,6 +49,5 @@ const USOS_CFDI = [
   { "code": "CN01", "name": "CN01 - Nómina" }
 ];
 
-window.N8N_PROMOS_MELI_HOOK = N8N_PROMOS_MELI_HOOK;
 window.REGIMENES_FISCALES = REGIMENES_FISCALES;
 window.USOS_CFDI          = USOS_CFDI;

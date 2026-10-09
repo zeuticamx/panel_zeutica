@@ -1,4 +1,4 @@
-// ===== Zeutica — Promociones Meli (solo lectura: consulta webhook n8n) =====
+// ===== Zeutica — Promociones Meli (solo lectura: endpoint del backend) =====
 const { useState: pm_uS, useEffect: pm_uE, useMemo: pm_uM } = React;
 
 // Shape del webhook: { message: string, ofertas_meli: [ {...} ] }
@@ -75,25 +75,11 @@ function pmDescargarCsv(lista) {
 
 async function pmFetchPromociones() {
   try {
-    const res = await fetch(window.N8N_PROMOS_MELI_HOOK, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    const texto = await res.text();
-    let cuerpo = null;
-    try { cuerpo = texto ? JSON.parse(texto) : null; } catch { cuerpo = texto; }
-    if (!res.ok) {
-      // Mismo criterio que el resto del panel: el cuerpo del webhook se muestra
-      // tal cual, no un "HTTP 500" pelón que no dice qué pasó en n8n.
-      const r = await window.api.interpretarRespuesta(
-        { ok: false, status: res.status, statusText: res.statusText, url: res.url, text: async () => texto },
-        { metodo: 'GET', ruta: 'webhook promociones MELI' }
-      );
-      return { ok: false, error: r.error, raw: cuerpo };
-    }
-    return { ok: true, raw: cuerpo };
+    const r = await window.api.promocionesMeli();
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, raw: r.data ?? null };
   } catch (e) {
-    return { ok: false, error: `No se pudo consultar el webhook de promociones — ${e.message}` };
+    return { ok: false, error: `No se pudieron cargar las promociones — ${e.message}` };
   }
 }
 
@@ -159,7 +145,7 @@ function PagePromocionesMeli() {
       <div className="section-header">
         <div>
           <h2 className="section-title">Promociones Meli</h2>
-          <p className="section-subtitle">Ofertas disponibles en Mercado Libre. Datos en vivo desde n8n.</p>
+          <p className="section-subtitle">Ofertas disponibles en Mercado Libre. Datos en vivo desde MeLi.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setVerJson((v) => !v)} disabled={raw == null}>

@@ -613,6 +613,17 @@ const api = {
   async estadoJobAmazon() {
     return tryFetch('/zeutica/jobs/amazon/status', { method: 'GET' });
   },
+  // Job stock MeLi (permiso general).
+  async publicarStockMeli() {
+    return tryFetch('/zeutica/jobs/meli-stock/run', { method: 'POST', body: JSON.stringify({ motivo: 'panel-inventario' }) });
+  },
+  async estadoJobMeliStock() {
+    return tryFetch('/zeutica/jobs/meli-stock/status', { method: 'GET' });
+  },
+  // Promociones MeLi en vivo (reemplaza al webhook n8n; con sesión).
+  async promocionesMeli(forzar = false) {
+    return tryFetch(`/zeutica/meli/promociones${forzar ? '?forzar=true' : ''}`, { method: 'GET' });
+  },
   // Auditoría de descuentos/entradas de inventario (solo fecha, tipo, SKU, cantidad, folio, usuario).
   async inventarioMovimientos(filtros = {}) {
     const qs = new URLSearchParams();

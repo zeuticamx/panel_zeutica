@@ -36,6 +36,62 @@ function PageInventario({ user }) {
   const [expandedSkus, setExpandedSkus] = inv_uS({});
   const [ubicCache, setUbicCache] = inv_uS({});
   const [vista, setVista] = inv_uS('inventario');
+  const [subiendoStock, setSubiendoStock] = inv_uS(false);
+  const [stockSubidoHoy, setStockSubidoHoy] = inv_uS(false);
+
+  const revisarStockHoy = async () => {
+    const hoyMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    try {
+      const s = await window.api.estadoJobMeliStock();
+      const u = s.data?.ultimo || s.ultimo;
+      setStockSubidoHoy(!!u && u.estado === 'ok' && !u.dry_run
+        && typeof u.fin === 'string' && u.fin.slice(0, 10) === hoyMx);
+    } catch {}
+  };
+
+  inv_uE(() => {
+    revisarStockHoy();
+    const alAvisar = (e) => { if (e.detail?.job === 'meli-stock') revisarStockHoy(); };
+    window.addEventListener('zeutica-job', alAvisar);
+    return () => window.removeEventListener('zeutica-job', alAvisar);
+  }, []);
+
+  const publicarStock = async () => {
+    setSubiendoStock(true);
+    const espera = (ms) => new Promise(res => setTimeout(res, ms));
+    try {
+      const r = await window.api.publicarStockMeli();
+      if (!r.ok) {
+        if (String(r.error || '').includes('ya en curso') || r.status === 409) {
+          toast.warn('Stock MeLi ya en curso', 'Espera a que termine');
+        } else {
+          toast.error('No se pudo publicar stock', r.error);
+        }
+        return;
+      }
+      for (let i = 0; i < 120; i++) {
+        await espera(5000);
+        const s = await window.api.estadoJobMeliStock();
+        const u = s.data?.ultimo || s.ultimo;
+        if (!s.ok || !u) continue;
+        if (u.estado && u.estado !== 'running') {
+          const st = u.stats || {};
+          if (u.estado === 'ok' || u.estado === 'ok_con_errores') {
+            toast.success('Stock MeLi publicado', `${st.exitosos ?? 0} actualizados · ${st.errores ?? 0} errores · ${st.sin_match ?? 0} sin match`);
+            revisarStockHoy();
+          } else {
+            toast.error('Stock MeLi falló', u.error || 'Revisa el status');
+          }
+          return;
+        }
+      }
+      toast.warn('Stock MeLi sigue en curso', 'El resultado llega por notificaciones');
+    } catch (e) {
+      toast.error('No se pudo publicar stock', String(e?.message || e));
+    } finally {
+      setSubiendoStock(false);
+    }
+  };
 
   inv_uE(() => { (async () => {
     setLoading(true);
@@ -82,6 +138,9 @@ function PageInventario({ user }) {
           <p className="section-subtitle">Gestiona productos, niveles de stock y precios.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" disabled={subiendoStock || stockSubidoHoy} title={stockSubidoHoy ? 'Ya se publicó hoy' : 'Publicar stock a MeLi'} onClick={publicarStock}>
+            <Icon name="refresh" size={13}/> {subiendoStock ? 'Publicando...' : (stockSubidoHoy ? 'Stock MeLi al día' : 'Stock Meli')}
+          </button>
           <button className={`btn btn-sm ${vista === 'movimientos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setVista(v => v === 'movimientos' ? 'inventario' : 'movimientos')}>
             <Icon name="clock" size={13}/> Movimientos
           </button>
