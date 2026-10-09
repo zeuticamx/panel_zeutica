@@ -4,11 +4,17 @@ const { useState: mi_uS, useEffect: mi_uE, useMemo: mi_uM } = React;
 const TIPOS_MOV_INV = ['', 'venta', 'baja', 'traspaso', 'compra', 'devolucion'];
 
 function PageMovimientosInventario({ user }) {
+  const hace30dias = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  };
   const [rows, setRows] = mi_uS([]);
   const [loading, setLoading] = mi_uS(true);
   const [sku, setSku] = mi_uS('');
   const [tipo, setTipo] = mi_uS('');
-  const [desde, setDesde] = mi_uS('');
+  // Primera carga acotada a 30 días para respuesta rápida; se amplía limpiando.
+  const [desde, setDesde] = mi_uS(hace30dias);
   const [hasta, setHasta] = mi_uS('');
 
   const cargar = async () => {
