@@ -109,16 +109,17 @@ function PageVentas({ user }) {
   const [trayendoAmazon, setTrayendoAmazon] = vt_uS(false);
   const [traidoHoy, setTraidoHoy] = vt_uS({ meli: false, amazon: false });
 
-  // Si el job ya corrió con éxito hoy (manual o scheduler), no se permite reaccionar.
+  // Si el job ya terminó hoy (manual o scheduler), no se permite reaccionar.
+  // Bloquean ok/sin_ventas/sin_datos reales; error/dry/running permiten reintentar.
   const revisarJobsHoy = async () => {
     const hoyMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-    const exitoHoy = (ultimo) => !!ultimo && ultimo.estado === 'ok' && !ultimo.dry_run
-      && typeof ultimo.fin === 'string' && ultimo.fin.slice(0, 10) === hoyMx;
+    const terminalHoy = (ultimo) => !!ultimo && ['ok', 'sin_ventas', 'sin_datos'].includes(ultimo.estado)
+      && !ultimo.dry_run && typeof ultimo.fin === 'string' && ultimo.fin.slice(0, 10) === hoyMx;
     try {
       const [sm, sa] = await Promise.all([window.api.estadoJobMeli(), window.api.estadoJobAmazon()]);
       setTraidoHoy({
-        meli: exitoHoy(sm.data?.ultimo || sm.ultimo),
-        amazon: exitoHoy(sa.data?.ultimo || sa.ultimo),
+        meli: terminalHoy(sm.data?.ultimo || sm.ultimo),
+        amazon: terminalHoy(sa.data?.ultimo || sa.ultimo),
       });
     } catch {}
   };
@@ -143,12 +144,12 @@ function PageVentas({ user }) {
         const stats = ultimo.stats || {};
         const nuevas = stats.nuevas ?? (ultimo.ordenes_nuevas || []).length ?? 0;
         toast.success(`Ventas ${nombre} actualizadas`, `${nuevas} nuevas · ${stats.descontadas ?? 0} descontadas${stats.sin_stock ? ` · ${stats.sin_stock} sin stock` : ''}${stats.regresadas ? ` · ${stats.regresadas} regresadas` : ''}`);
-        revisarJobsHoy();
-      } else if (estado === 'sin_ventas') {
+      } else if (estado === 'sin_ventas' || estado === 'sin_datos') {
         toast.info(`Ventas ${nombre}`, 'Sin ventas nuevas en la ventana revisada');
       } else {
         toast.error(`Job ${nombre} falló`, ultimo?.error || 'Revisa el status del job');
       }
+      if (['ok', 'sin_ventas', 'sin_datos'].includes(estado)) revisarJobsHoy();
     };
     try {
       const r = esMeli ? await window.api.traerVentasMeli() : await window.api.traerVentasAmazon();
