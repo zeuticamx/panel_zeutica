@@ -43,21 +43,25 @@ function PageReportes() {
     );
   }, [ventas, q]);
 
+  const esActiva = (v) => (v.estatus || 'activa') !== 'cancelada';
+  const activas = rp_uM(() => filtered.filter(esActiva), [filtered]);
+  const canceladas = filtered.length - activas.length;
+
   const byUser = rp_uM(() => {
     const m = {};
-    filtered.forEach(v => { m[v.usuario] = (m[v.usuario] || 0) + (Number(v.total) || 0); });
+    activas.forEach(v => { m[v.usuario] = (m[v.usuario] || 0) + (Number(v.total) || 0); });
     return Object.entries(m).map(([label, value]) => ({ label, value, color: 'var(--c1)' }));
-  }, [filtered]);
+  }, [activas]);
 
-  const totalMonto = rp_uM(() => filtered.reduce((s, v) => s + (Number(v.total) || 0), 0), [filtered]);
-  const plataformas  = rp_uM(() => new Set(filtered.map(v => v.plataforma)).size, [filtered]);
+  const totalMonto = rp_uM(() => activas.reduce((s, v) => s + (Number(v.total) || 0), 0), [activas]);
+  const plataformas  = rp_uM(() => new Set(activas.map(v => v.plataforma)).size, [activas]);
 
   const descargarCSV = () => {
-    const header = ['ID','SKU','Fecha de registro','Producto','Cliente','Plataforma','Pago','Vendedor','Cantidad','Precio','Total'];
+    const header = ['ID','SKU','Fecha de registro','Producto','Cliente','Plataforma','Pago','Vendedor','Cantidad','Precio','Total','Estatus'];
     const rows = filtered.map(v => [
       v.id_ventas, v.sku, v.fecha_registro, v.producto, v.nombreComprador,
       v.plataforma, v.condicion_pago, v.usuario,
-      v.cantidad, v.precio, v.total
+      v.cantidad, v.precio, v.total, v.estatus || 'activa'
     ]);
     const csv = [header, ...rows].map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
@@ -132,7 +136,7 @@ function PageReportes() {
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--fg-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Transacciones</div>
-              <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>{filtered.length}{ventas.length !== filtered.length && <span style={{ fontSize: 12, color: 'var(--fg-2)', fontWeight: 400, marginLeft: 6 }}>de {ventas.length}</span>}</div>
+              <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>{activas.length}{filtered.length !== activas.length && <span style={{ fontSize: 12, color: 'var(--fg-2)', fontWeight: 400, marginLeft: 6 }}>+ {canceladas} canceladas</span>}{ventas.length !== filtered.length && <span style={{ fontSize: 12, color: 'var(--fg-2)', fontWeight: 400, marginLeft: 6 }}>de {ventas.length}</span>}</div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--fg-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Plataformas</div>
@@ -166,7 +170,7 @@ function PageReportes() {
                 </td></tr>
               ) : filtered.map(v => (
                 <tr key={v.id ?? `${v.id_ventas}-${v.sku}`}>
-                  <td className="mono td-muted" style={{ fontSize: 11 }}>#{String(v.id_ventas)}</td>
+                  <td className="mono td-muted" style={{ fontSize: 11 }}>#{String(v.id_ventas)}{v.estatus === 'cancelada' && <span className="badge badge-danger" style={{ marginLeft: 6 }}>Cancelada</span>}</td>
                   <td className="mono td-muted" style={{ fontSize: 11 }}>{v.sku}</td>
                   <td className="td-muted">{window.fmt.datetime(v.fecha_registro)}</td>
                   <td>{v.producto}</td>

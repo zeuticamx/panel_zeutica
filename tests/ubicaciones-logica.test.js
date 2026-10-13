@@ -60,3 +60,18 @@ test('sumarTotalPiezas respeta Oficina por ubicación', () => {
   const ubs = [{ cantidad: 2, warehouse_id: 'OFICINA' }, { cantidad: 2, warehouse_id: 'CEDIS-E5' }];
   assert.equal(ubi.sumarTotalPiezas(ubs, 'SKU-X'), 2 + 20);
 });
+
+test('validarTraspaso exige origen, destino distinto y stock suficiente', () => {
+  const base = { origenId: 1, destinoId: 2, cantidad: 3, stockOrigen: 10 };
+  assert.equal(ubi.validarTraspaso(base), null);
+  assert.match(ubi.validarTraspaso({ ...base, origenId: '' }), /origen/);
+  assert.match(ubi.validarTraspaso({ ...base, destinoId: null }), /destino/);
+  assert.match(ubi.validarTraspaso({ ...base, destinoId: 1 }), /diferentes/);
+  assert.match(ubi.validarTraspaso({ ...base, destinoId: '1' }), /diferentes/);
+  assert.match(ubi.validarTraspaso({ ...base, cantidad: 0 }), /entero mayor/);
+  assert.match(ubi.validarTraspaso({ ...base, cantidad: 2.5 }), /entero mayor/);
+  assert.match(ubi.validarTraspaso({ ...base, cantidad: 'abc' }), /entero mayor/);
+  assert.match(ubi.validarTraspaso({ ...base, cantidad: 11 }), /insuficiente/);
+  assert.match(ubi.validarTraspaso({ ...base, cantidad: 11 }), /disponible: 10/);
+  assert.equal(ubi.validarTraspaso({ ...base, cantidad: '10' }), null);
+});

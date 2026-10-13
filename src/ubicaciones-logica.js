@@ -33,7 +33,20 @@
       (acc, ub) => acc + calcularTotalPiezas(ub?.cantidad, ub?.sku || sku, ub?.warehouse_id), 0);
   }
 
-  const mod = { MULTIPLO_DEFAULT, MULTIPLOS_POR_SKU, obtenerMultiplo, calcularTotalPiezas, sumarTotalPiezas };
+  // Valida un traspaso entre tarjetas del mismo SKU. null = válido.
+  // stockOrigen es la cantidad actual de la tarjeta origen.
+  function validarTraspaso({ origenId, destinoId, cantidad, stockOrigen }) {
+    if (origenId == null || origenId === '') return 'Selecciona la ubicación origen';
+    if (destinoId == null || destinoId === '') return 'Selecciona la ubicación destino';
+    if (String(origenId) === String(destinoId)) return 'El origen y el destino deben ser diferentes';
+    const n = Number(cantidad);
+    if (!Number.isInteger(n) || n <= 0) return 'La cantidad debe ser un entero mayor a 0';
+    const disp = Number(stockOrigen);
+    if (!Number.isFinite(disp) || disp < n) return `Stock insuficiente en origen (disponible: ${Number.isFinite(disp) ? disp : 0})`;
+    return null;
+  }
+
+  const mod = { MULTIPLO_DEFAULT, MULTIPLOS_POR_SKU, obtenerMultiplo, calcularTotalPiezas, sumarTotalPiezas, validarTraspaso };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.ubicacionesLogica = mod;

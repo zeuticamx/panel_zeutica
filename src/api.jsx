@@ -670,6 +670,15 @@ const api = {
   async registroUbicaciones(sku) {
     return tryFetch(`/zeutica/ubicaciones/registro/${encodeURIComponent(sku)}`);
   },
+  // Traspaso informativo entre tarjetas del mismo SKU (origen -N, destino +N).
+  // No toca productos ni traspasos FULL; el usuario sale del token en lecturas
+  // pero aquí va en el body, igual que editar/crear ubicación.
+  async traspasarUbicacion(payload, usuario) {
+    return tryFetch('/zeutica/ubicaciones/traspaso', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  },
+  async traspasosUbicaciones(sku) {
+    return tryFetch(`/zeutica/ubicaciones/traspasos/${encodeURIComponent(sku)}`);
+  },
   async editarProducto(payload, usuario) {
     return tryFetch('/zeutica/productos/editados', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
   },

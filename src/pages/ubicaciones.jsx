@@ -20,6 +20,11 @@ function PageUbicaciones() {
   const [registro, setRegistro] = rp_uS([]);
   const [loadingReg, setLoadingReg] = rp_uS(false);
   const [showRegistro, setShowRegistro] = rp_uS(false);
+  const [trasOrigen, setTrasOrigen] = rp_uS('');
+  const [trasDestino, setTrasDestino] = rp_uS('');
+  const [trasCantidad, setTrasCantidad] = rp_uS('');
+  const [trasSaving, setTrasSaving] = rp_uS(false);
+  const [traspasos, setTraspasos] = rp_uS([]);
 
   rp_uE(() => { (async () => setProductos(await window.api.productos()))(); }, []);
 
@@ -65,6 +70,10 @@ function PageUbicaciones() {
     setSelSku(sku);
     setEditIdx(null);
     setShowNueva(false);
+    setTrasOrigen('');
+    setTrasDestino('');
+    setTrasCantidad('');
+    setTraspasos([]);
     setLoading(true);
     const r = await window.api.ubicacionesSku(sku);
     setLoading(false);
@@ -76,6 +85,7 @@ function PageUbicaciones() {
       toast.error(`No se pudieron cargar las ubicaciones de ${sku}`, r.error);
     }
     cargarRegistro(sku);
+    cargarTraspasos(sku);
   };
 
   const cargarRegistro = async (sku) => {
@@ -88,6 +98,46 @@ function PageUbicaciones() {
       setRegistro([]);
       toast.error(`No se pudo cargar el historial de ${sku}`, r.error);
     }
+  };
+
+  const cargarTraspasos = async (sku) => {
+    const r = await window.api.traspasosUbicaciones(sku);
+    setTraspasos(r.ok && Array.isArray(r.data) ? r.data : []);
+  };
+
+  const ubOrigenSel = rp_uM(() => ubicaciones.find(u => String(u.id) === String(trasOrigen)), [ubicaciones, trasOrigen]);
+  const ubDestinoSel = rp_uM(() => ubicaciones.find(u => String(u.id) === String(trasDestino)), [ubicaciones, trasDestino]);
+  const trasError = window.ubicacionesLogica.validarTraspaso({
+    origenId: trasOrigen, destinoId: trasDestino, cantidad: trasCantidad, stockOrigen: ubOrigenSel?.cantidad,
+  });
+  const trasN = Number(trasCantidad);
+
+  const ejecutarTraspaso = async () => {
+    setTrasSaving(true);
+    const r = await window.api.traspasarUbicacion({
+      sku: selSku,
+      origen_id: Number(trasOrigen),
+      destino_id: Number(trasDestino),
+      cantidad: Number(trasCantidad),
+    });
+    setTrasSaving(false);
+    if (r.ok) {
+      toast.success('Traspaso registrado', `${r.data?.cantidad ?? trasCantidad} de ${selSku}: ${r.data?.origen?.warehouse_id} → ${r.data?.destino?.warehouse_id}`);
+      setTrasOrigen('');
+      setTrasDestino('');
+      setTrasCantidad('');
+      await cargarUbicaciones(selSku);
+    } else {
+      toast.error(`No se pudo registrar el traspaso de ${selSku}`, r.error);
+    }
+  };
+
+  const confirmarTraspaso = () => {
+    if (trasError) { toast.error('Revisa el traspaso', trasError); return; }
+    askConfirm(
+      `¿Traspasar ${trasN} de ${selSku} de ${ubOrigenSel?.warehouse_id} (quedan ${(Number(ubOrigenSel?.cantidad) || 0) - trasN}) a ${ubDestinoSel?.warehouse_id}? Solo mueve tarjetas, no toca el stock de productos.`,
+      ejecutarTraspaso
+    );
   };
 
   const abrirEditar = (idx) => {
@@ -210,6 +260,96 @@ function PageUbicaciones() {
                   </span>
                 </div>
               </div>
+
+              {ubicaciones.length >= 2 ? (
+                <div className="card">
+                  <div className="card-header"><h3 className="card-title">Traspasar entre ubicaciones — {selSku}</h3></div>
+                  <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    <div className="field"><label className="field-label">Origen *</label>
+                      <select className="select" value={trasOrigen} onChange={e => setTrasOrigen(e.target.value)}>
+                        <option value="">Seleccionar…</option>
+                        {ubicaciones.filter(u => u.id != null).map(u => (
+                          <option key={u.id} value={u.id}>{u.warehouse_id} — disp: {u.cantidad ?? 0}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field"><label className="field-label">Destino *</label>
+                      <select className="select" value={trasDestino} onChange={e => setTrasDestino(e.target.value)}>
+                        <option value="">Seleccionar…</option>
+                        {ubicaciones.filter(u => u.id != null).map(u => (
+                          <option key={u.id} value={u.id}>{u.warehouse_id} — disp: {u.cantidad ?? 0}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field"><label className="field-label">Cantidad *</label>
+                      <input
+                        className="input mono"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={trasCantidad}
+                        onChange={e => setTrasCantidad(e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  {!trasError && ubOrigenSel && ubDestinoSel && (
+                    <div className="card-body td-muted" style={{ fontSize: 12, paddingTop: 0 }}>
+                      {ubOrigenSel.warehouse_id}: {(Number(ubOrigenSel.cantidad) || 0)} → {(Number(ubOrigenSel.cantidad) || 0) - trasN}
+                      {' · '}
+                      {ubDestinoSel.warehouse_id}: {(Number(ubDestinoSel.cantidad) || 0)} → {(Number(ubDestinoSel.cantidad) || 0) + trasN}
+                      {' · '}
+                      Total sin cambio. Solo mueve tarjetas, no toca el stock de productos.
+                    </div>
+                  )}
+                  {trasError && (trasOrigen || trasDestino || trasCantidad) && (
+                    <div className="card-body" style={{ paddingTop: 0 }}><div className="crm-error">{trasError}</div></div>
+                  )}
+                  <div className="card-footer">
+                    <button className="btn btn-primary btn-sm" disabled={trasSaving || !!trasError} onClick={confirmarTraspaso}>
+                      {trasSaving ? <><span className="spinner"/> Registrando...</> : <><Icon name="transfer" size={13}/> Traspasar</>}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="card">
+                  <div className="card-body td-muted" style={{ fontSize: 12 }}>
+                    Para traspasar entre ubicaciones este SKU necesita al menos 2 tarjetas.
+                  </div>
+                </div>
+              )}
+
+              {traspasos.length > 0 && (
+                <div className="card">
+                  <div className="card-header">
+                    <h3 className="card-title">Traspasos registrados — {selSku} <span className="td-muted">({traspasos.length})</span></h3>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Origen</th>
+                          <th>Destino</th>
+                          <th>Cantidad</th>
+                          <th>Usuario</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {traspasos.map(t => (
+                          <tr key={t.id}>
+                            <td className="mono td-muted" style={{ whiteSpace: 'nowrap' }}>{t.fecha ?? '—'}</td>
+                            <td className="mono">{t.origen_warehouse_id ?? '—'}</td>
+                            <td className="mono">{t.destino_warehouse_id ?? '—'}</td>
+                            <td className="mono">{t.cantidad ?? '—'}</td>
+                            <td className="td-muted">{t.usuario ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {showNueva && (
                 <div className="card">
