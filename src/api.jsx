@@ -679,6 +679,45 @@ const api = {
   async traspasosUbicaciones(sku) {
     return tryFetch(`/zeutica/ubicaciones/traspasos/${encodeURIComponent(sku)}`);
   },
+  // Descarga binaria del Excel de conteo cíclico (mismo patrón que generaCotizacion:
+  // tryFetch solo sirve JSON). Éxito: { ok, blob, nombre }.
+  async ubicacionesReporteConteo(sku) {
+    const ruta = `/zeutica/ubicaciones/reporte-conteo${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`;
+    const segundos = 30;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), segundos * 1000);
+    try {
+      const authHeader = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+      const res = await fetch(`${API_BASE}${ruta}`, { signal: ctrl.signal, headers: { ...authHeader } });
+      if (!res.ok) {
+        let texto = '';
+        try { texto = await res.text(); } catch {}
+        let cuerpo = null;
+        try { cuerpo = JSON.parse(texto); } catch {}
+        const delServidor = recortar(mensajeDelCuerpo(cuerpo) || texto.trim());
+        return registrarError({
+          ok: false, status: res.status,
+          error: delServidor ? `HTTP ${res.status}: ${delServidor}` : `HTTP ${res.status} ${res.statusText || ''}`.trim(),
+          detalle: delServidor, cuerpo, texto: recortar(texto), metodo: 'GET', ruta, live: true,
+        });
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const nombre = (disp.match(/filename=([^;]+)/) || [])[1] || `conteo-ciclico-${sku || 'todos'}.xlsx`;
+      return { ok: true, status: res.status, live: true, blob, nombre: nombre.replace(/["']/g, '') };
+    } catch (err) {
+      const abortado = err.name === 'AbortError';
+      return registrarError({
+        ok: false, status: 0,
+        error: abortado
+          ? `Sin respuesta en ${segundos}s (timeout).`
+          : `Sin conexión con el servidor: ${err.message}`,
+        detalle: err.message, cuerpo: null, texto: '', metodo: 'GET', ruta, live: false,
+      });
+    } finally {
+      clearTimeout(t);
+    }
+  },
   async editarProducto(payload, usuario) {
     return tryFetch('/zeutica/productos/editados', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
   },

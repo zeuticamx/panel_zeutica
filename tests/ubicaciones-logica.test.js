@@ -56,6 +56,12 @@ test('warehouse_id Oficina (cualquier capitalización) multiplica por 1', () => 
   assert.equal(ubi.calcularTotalPiezas(3, 'SKU-X', 'CEDIS-E5'), 30);
 });
 
+test('ESPFARBLA multiplica por 1', () => {
+  assert.equal(ubi.obtenerMultiplo('ESPFARBLA'), 1);
+  assert.equal(ubi.obtenerMultiplo('espfarbla', 'CEDIS-A1'), 1);
+  assert.equal(ubi.calcularTotalPiezas(5, 'ESPFARBLA'), 5);
+});
+
 test('sumarTotalPiezas respeta Oficina por ubicación', () => {
   const ubs = [{ cantidad: 2, warehouse_id: 'OFICINA' }, { cantidad: 2, warehouse_id: 'CEDIS-E5' }];
   assert.equal(ubi.sumarTotalPiezas(ubs, 'SKU-X'), 2 + 20);

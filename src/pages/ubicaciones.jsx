@@ -25,6 +25,8 @@ function PageUbicaciones() {
   const [trasCantidad, setTrasCantidad] = rp_uS('');
   const [trasSaving, setTrasSaving] = rp_uS(false);
   const [traspasos, setTraspasos] = rp_uS([]);
+  const [repSaving, setRepSaving] = rp_uS(false);
+  const [resaltarId, setResaltarId] = rp_uS(null);
 
   rp_uE(() => { (async () => setProductos(await window.api.productos()))(); }, []);
 
@@ -70,6 +72,7 @@ function PageUbicaciones() {
     setSelSku(sku);
     setEditIdx(null);
     setShowNueva(false);
+    setResaltarId(null);
     setTrasOrigen('');
     setTrasDestino('');
     setTrasCantidad('');
@@ -170,6 +173,30 @@ function PageUbicaciones() {
 
   const prodSelObj = rp_uM(() => productos.find(p => p.sku === selSku), [productos, selSku]);
 
+  // Clic en una celda del esquema: pulso + scroll a su tarjeta.
+  const resaltarUbicacion = (ub) => {
+    setResaltarId(ub.id);
+    const el = ub.id != null ? document.getElementById(`ubi-card-${ub.id}`) : null;
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  // Reporte Excel para conteo cíclico: respeta el SKU seleccionado, o todo si no hay.
+  const descargarReporte = async () => {
+    setRepSaving(true);
+    const r = await window.api.ubicacionesReporteConteo(selSku || undefined);
+    setRepSaving(false);
+    if (!r.ok) { toast.error('No se pudo generar el reporte', r.error); return; }
+    const url = URL.createObjectURL(r.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = r.nombre || 'conteo-ciclico.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast.success('Reporte generado', r.nombre || '');
+  };
+
   return (
     <div className="page">
       {ConfirmModal}
@@ -178,8 +205,17 @@ function PageUbicaciones() {
           <h2 className="section-title">Ubicaciones de Bodega</h2>
           <p className="section-subtitle">Consulta y edita las ubicaciones físicas por SKU.</p>
         </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-sm btn-secondary"
+            disabled={repSaving}
+            onClick={descargarReporte}
+            title={selSku ? `Reporte de ${selSku}` : 'Reporte de todos los SKUs con ubicación'}
+          >
+            {repSaving ? <><span className="spinner"/> Generando...</> : <><Icon name="download" size={13}/> Reporte conteo</>}
+          </button>
         {selSku && (
-          <div style={{ display: 'flex', gap: 8 }}>
+          <>
             <button
               className={`btn btn-sm ${showRegistro ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setShowRegistro(v => !v)}
@@ -192,8 +228,9 @@ function PageUbicaciones() {
             >
               <Icon name="plus" size={13}/> {showNueva ? 'Cancelar' : 'Nueva ubicación'}
             </button>
-          </div>
+          </>
         )}
+        </div>
       </div>
       <div className="dash-grid" style={{ marginTop: 0 }}>
 
@@ -258,6 +295,15 @@ function PageUbicaciones() {
                   <span className="badge" title={`Múltiplo: ${window.ubicacionesLogica.obtenerMultiplo(selSku)} pzas/unidad`}>
                     Total: {window.ubicacionesLogica.sumarTotalPiezas(ubicaciones, selSku).toLocaleString('es-MX')} pzas
                   </span>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-header"><h3 className="card-title">Esquema de Ubicaciones de Bodega</h3></div>
+                <div className="card-body">
+                  {window.EsquemaBodega
+                    ? <window.EsquemaBodega ubicaciones={ubicaciones} selSku={selSku} resaltarId={resaltarId} onCeldaClick={resaltarUbicacion}/>
+                    : <div className="empty" style={{ padding: 32 }}>Esquema no disponible (revisa la versión del archivo).</div>}
                 </div>
               </div>
 
@@ -447,7 +493,8 @@ function PageUbicaciones() {
                   </div>
                 </div>
               ) : ubicaciones.map((ub, idx) => (
-                <div className="card" key={idx}>
+                <div className={`card${ub.id != null && String(ub.id) === String(resaltarId) ? ' ubi-resaltada' : ''}`}
+                  key={idx} id={ub.id != null ? `ubi-card-${ub.id}` : undefined}>
                   {editIdx === idx ? (
                     <>
                       <div className="card-header"><h3 className="card-title">Editar ubicación {idx + 1}</h3></div>

@@ -7,6 +7,7 @@
     CUBBARBLA: 20,
     BOLECO17: 20,
     BOLECO38: 5,
+    ESPFARBLA: 1,
   };
 
   // Regla: en la ubicación "Oficina" (sin importar mayúsculas) la cantidad se multiplica por 1.

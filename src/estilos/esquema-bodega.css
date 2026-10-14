@@ -1,0 +1,37 @@
+/* ===== Esquema de Bodega: anaqueles isométricos ===== */
+.eb-wrap { width: 100%; }
+.eb-svg { width: 100%; height: auto; display: block; }
+
+.eb-celda polygon { fill: transparent; stroke: var(--line); stroke-width: 1; }
+.eb-celda.fantasma polygon { stroke-dasharray: 3 3; }
+.eb-celda.vacia polygon { fill: rgba(128, 128, 128, 0.07); stroke: var(--fg-3); }
+.eb-celda.llena polygon { fill: rgba(56, 150, 200, 0.30); stroke: var(--brand-hi); }
+.eb-celda.llena, .eb-celda.vacia { cursor: pointer; }
+.eb-celda.llena:hover polygon { fill: rgba(56, 150, 200, 0.48); }
+.eb-celda.vacia:hover polygon { fill: rgba(128, 128, 128, 0.16); }
+.eb-celda.sel polygon { stroke: var(--brand); stroke-width: 2; }
+
+.eb-tapa { fill: rgba(160, 200, 230, 0.10); stroke: var(--line-strong); stroke-width: 1; }
+.eb-poste { stroke: var(--fg-2); stroke-width: 3; stroke-linecap: round; }
+.eb-pata { fill: var(--fg-2); }
+.eb-texto {
+  fill: var(--fg-0); font-size: 10px; font-weight: 300; text-anchor: middle;
+  pointer-events: none; font-family: inherit;
+}
+.eb-cant {
+  fill: var(--brand-hi); font-size: 9px; font-weight: 600; text-anchor: middle;
+  pointer-events: none; font-family: inherit;
+}
+.eb-caption {
+  fill: var(--fg-2); font-size: 10px; letter-spacing: 4px;
+  pointer-events: none; font-family: inherit;
+}
+
+.eb-leyenda { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 8px 4px 0; font-size: 12px; color: var(--fg-1); }
+.eb-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: baseline; }
+.eb-dot.llena { background: rgba(56, 150, 200, 0.55); border: 1px solid var(--brand-hi); }
+.eb-dot.vacia { background: transparent; border: 1px solid var(--fg-3); }
+
+/* Resaltado de la tarjeta al hacer clic en su celda del esquema */
+.ubi-resaltada { outline: 2px solid var(--brand); outline-offset: 2px; animation: eb-pulso 1.2s ease-in-out 2; }
+@keyframes eb-pulso { 50% { outline-color: transparent; } }
