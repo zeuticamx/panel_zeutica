@@ -18,6 +18,7 @@
 }
 .ubi-col {
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -105,6 +106,17 @@
   grid-template-columns: 1fr;
   gap: 12px;
 }
+.ubi-col-acciones .card {
+  min-width: 0;
+}
+.ubi-col-acciones .select,
+.ubi-col-acciones .input {
+  min-width: 0;
+  width: 100%;
+}
+.ubi-col-mapa .card {
+  min-width: 0;
+}
 
 .eb-wrap {
   width: 100%;
@@ -115,6 +127,8 @@
 }
 .eb-svg {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   flex: 1;
   min-height: 220px;
   height: auto;

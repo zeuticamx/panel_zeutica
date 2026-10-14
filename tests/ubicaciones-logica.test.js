@@ -62,9 +62,41 @@ test('ESPFARBLA multiplica por 1', () => {
   assert.equal(ubi.calcularTotalPiezas(5, 'ESPFARBLA'), 5);
 });
 
+test('BOLECO30 multiplica por 5', () => {
+  assert.equal(ubi.obtenerMultiplo('BOLECO30'), 5);
+  assert.equal(ubi.calcularTotalPiezas(2, 'BOLECO30'), 10);
+});
+
 test('sumarTotalPiezas respeta Oficina por ubicación', () => {
   const ubs = [{ cantidad: 2, warehouse_id: 'OFICINA' }, { cantidad: 2, warehouse_id: 'CEDIS-E5' }];
   assert.equal(ubi.sumarTotalPiezas(ubs, 'SKU-X'), 2 + 20);
+});
+
+test('validarTraspaso exige múltiplo exacto al empaquetar desde Oficina', () => {
+  const base = { origenId: 1, destinoId: 2, cantidad: 40, stockOrigen: 100, multiplo: 20, destinoEsOficina: false, origenEsOficina: true };
+  assert.equal(ubi.validarTraspaso(base), null);
+  assert.match(ubi.validarTraspaso({ ...base, cantidad: 41 }), /múltiplo de 20/);
+  assert.equal(ubi.validarTraspaso({ ...base, origenEsOficina: false }), null); // sin Oficina no aplica
+});
+
+test('detalleTotalPiezas devuelve cantidad, múltiplo y total', () => {
+  assert.deepEqual(ubi.detalleTotalPiezas(3, 'BOLECO17', 'CEDIS-A1'), { cantidad: 3, multiplo: 20, total: 60 });
+  assert.deepEqual(ubi.detalleTotalPiezas(5, 'ESPFARBLA', 'Oficina'), { cantidad: 5, multiplo: 1, total: 5 });
+  assert.equal(ubi.detalleTotalPiezas('abc', 'X', 'Y'), null);
+  assert.equal(ubi.detalleTotalPiezas(-2, 'X', 'Y'), null);
+});
+
+test('convertirTraspaso desempaqueta a Oficina y empaqueta desde Oficina', () => {
+  assert.deepEqual(
+    ubi.convertirTraspaso({ cantidad: 3, multiplo: 20, destinoEsOficina: true, origenEsOficina: false }),
+    { restaOrigen: 3, sumaDestino: 60, factor: 20, modo: 'desempaquetar' });
+  assert.deepEqual(
+    ubi.convertirTraspaso({ cantidad: 40, multiplo: 20, destinoEsOficina: false, origenEsOficina: true }),
+    { restaOrigen: 40, sumaDestino: 2, factor: 20, modo: 'empaquetar' });
+  assert.deepEqual(
+    ubi.convertirTraspaso({ cantidad: 3, multiplo: 20, destinoEsOficina: false, origenEsOficina: false }),
+    { restaOrigen: 3, sumaDestino: 3, factor: 1, modo: 'directo' });
+  assert.equal(ubi.convertirTraspaso({ cantidad: 0, multiplo: 20 }), null);
 });
 
 test('validarTraspaso exige origen, destino distinto y stock suficiente', () => {

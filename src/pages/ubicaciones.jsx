@@ -110,10 +110,18 @@ function PageUbicaciones() {
 
   const ubOrigenSel = rp_uM(() => ubicaciones.find(u => String(u.id) === String(trasOrigen)), [ubicaciones, trasOrigen]);
   const ubDestinoSel = rp_uM(() => ubicaciones.find(u => String(u.id) === String(trasDestino)), [ubicaciones, trasDestino]);
+  const trasMult = window.ubicacionesLogica.obtenerMultiplo(selSku);
+  const trasOrigenEsOficina = window.ubicacionesLogica.esOficina(ubOrigenSel?.warehouse_id);
+  const trasDestinoEsOficina = window.ubicacionesLogica.esOficina(ubDestinoSel?.warehouse_id);
   const trasError = window.ubicacionesLogica.validarTraspaso({
     origenId: trasOrigen, destinoId: trasDestino, cantidad: trasCantidad, stockOrigen: ubOrigenSel?.cantidad,
+    multiplo: trasMult, destinoEsOficina: trasDestinoEsOficina, origenEsOficina: trasOrigenEsOficina,
   });
   const trasN = Number(trasCantidad);
+  const trasConv = !trasError ? window.ubicacionesLogica.convertirTraspaso({
+    cantidad: trasCantidad, multiplo: trasMult,
+    destinoEsOficina: trasDestinoEsOficina, origenEsOficina: trasOrigenEsOficina,
+  }) : null;
 
   const ejecutarTraspaso = async () => {
     setTrasSaving(true);
@@ -136,9 +144,14 @@ function PageUbicaciones() {
   };
 
   const confirmarTraspaso = () => {
-    if (trasError) { toast.error('Revisa el traspaso', trasError); return; }
+    if (trasError || !trasConv) { toast.error('Revisa el traspaso', trasError || 'Datos incompletos'); return; }
+    const convTxt = trasConv.modo === 'desempaquetar'
+      ? ` Se desempaquetan ${trasN}×${trasConv.factor}=${trasConv.sumaDestino} piezas.`
+      : trasConv.modo === 'empaquetar'
+        ? ` Se empaquetan ${trasN}÷${trasConv.factor}=${trasConv.sumaDestino} bultos.`
+        : '';
     askConfirm(
-      `¿Traspasar ${trasN} de ${selSku} de ${ubOrigenSel?.warehouse_id} (quedan ${(Number(ubOrigenSel?.cantidad) || 0) - trasN}) a ${ubDestinoSel?.warehouse_id}? Solo mueve tarjetas, no toca el stock de productos.`,
+      `¿Traspasar ${trasN} de ${selSku} de ${ubOrigenSel?.warehouse_id} (quedan ${(Number(ubOrigenSel?.cantidad) || 0) - trasConv.restaOrigen}) a ${ubDestinoSel?.warehouse_id}?${convTxt} Solo mueve tarjetas, no toca el stock de productos.`,
       ejecutarTraspaso
     );
   };
@@ -352,13 +365,15 @@ function PageUbicaciones() {
                       />
                     </div>
                   </div>
-                  {!trasError && ubOrigenSel && ubDestinoSel && (
+                  {!trasError && trasConv && ubOrigenSel && ubDestinoSel && (
                     <div className="card-body td-muted" style={{ fontSize: 12, paddingTop: 0 }}>
-                      {ubOrigenSel.warehouse_id}: {(Number(ubOrigenSel.cantidad) || 0)} → {(Number(ubOrigenSel.cantidad) || 0) - trasN}
+                      {ubOrigenSel.warehouse_id}: {(Number(ubOrigenSel.cantidad) || 0)} → {(Number(ubOrigenSel.cantidad) || 0) - trasConv.restaOrigen}
                       {' · '}
-                      {ubDestinoSel.warehouse_id}: {(Number(ubDestinoSel.cantidad) || 0)} → {(Number(ubDestinoSel.cantidad) || 0) + trasN}
+                      {ubDestinoSel.warehouse_id}: {(Number(ubDestinoSel.cantidad) || 0)} → {(Number(ubDestinoSel.cantidad) || 0) + trasConv.sumaDestino}
+                      {trasConv.modo === 'desempaquetar' && ` · Se desempaquetan ${trasN}×${trasConv.factor}=${trasConv.sumaDestino} piezas`}
+                      {trasConv.modo === 'empaquetar' && ` · Se empaquetan ${trasN}÷${trasConv.factor}=${trasConv.sumaDestino} bultos`}
                       {' · '}
-                      Total sin cambio. Solo mueve tarjetas, no toca el stock de productos.
+                      Total en piezas sin cambio. Solo mueve tarjetas, no toca el stock de productos.
                     </div>
                   )}
                   {trasError && (trasOrigen || trasDestino || trasCantidad) && (
@@ -541,14 +556,13 @@ function PageUbicaciones() {
                           </div>
                         ))}
                         {(() => {
-                          const skuUb = ub.sku || selSku;
-                          const mult = window.ubicacionesLogica.obtenerMultiplo(skuUb, ub.warehouse_id);
-                          const total = window.ubicacionesLogica.calcularTotalPiezas(ub.cantidad, skuUb, ub.warehouse_id);
+                          const d = window.ubicacionesLogica.detalleTotalPiezas(ub.cantidad, ub.sku || selSku, ub.warehouse_id);
+                          if (!d) return null;
                           return (
                             <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border, rgba(128,128,128,.25))', paddingTop: 10 }}>
                               <div className="field-label" style={{ marginBottom: 2 }}>Total de piezas</div>
                               <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--brand)' }}>
-                                {total.toLocaleString('es-MX')} <span className="td-muted" style={{ fontSize: 12, fontWeight: 400 }}>({Number(ub.cantidad) || 0} × {mult})</span>
+                                {d.total.toLocaleString('es-MX')} <span className="td-muted" style={{ fontSize: 12, fontWeight: 400 }}>({d.cantidad} × {d.multiplo})</span>
                               </div>
                             </div>
                           );
