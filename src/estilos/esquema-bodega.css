@@ -1,25 +1,23 @@
 /* ===== Ubicaciones: layout 3 columnas + anaqueles isométricos ===== */
+/* Scroll a nivel de página (como el resto del panel): las columnas crecen con
+   el contenido y nada queda en zona muerta. */
 .page-ubicaciones {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: block;
+  overflow-y: auto;
   min-height: 0;
 }
 .page-ubicaciones .section-header {
-  flex-shrink: 0;
   margin-bottom: var(--s-4);
 }
 .ubi-layout {
   display: grid;
   grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(280px, 360px);
   gap: 16px;
-  min-height: 0;
-  flex: 1;
+  align-items: start;
 }
 .ubi-col {
-  min-height: 0;
   min-width: 0;
-  overflow-y: auto;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -30,14 +28,13 @@
 .ubi-skus-card {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 .ubi-sku-list {
-  flex: 1;
   overflow-y: auto;
   min-height: 0;
+  max-height: 60vh;
 }
 .ubi-sku-item {
   display: flex;
@@ -70,15 +67,11 @@
   flex-wrap: wrap;
 }
 .ubi-mapa-card {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 .ubi-mapa-body {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: var(--s-3) var(--s-5) var(--s-4);
