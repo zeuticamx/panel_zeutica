@@ -197,8 +197,26 @@ function PageUbicaciones() {
     toast.success('Reporte generado', r.nombre || '');
   };
 
+  const mapaVacio = (
+    <div className="card ubi-mapa-card">
+      <div className="card-body">
+        <div className="empty" style={{ padding: 60 }}>
+          <div className="empty-icon"><Icon name="building"/></div>
+          <div>Selecciona un SKU para ver sus ubicaciones</div>
+        </div>
+      </div>
+    </div>
+  );
+  const mapaCarga = (
+    <div className="card ubi-mapa-card">
+      <div className="card-body">
+        <div className="empty" style={{ padding: 60 }}><span className="spinner"/></div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="page">
+    <div className="page page-ubicaciones">
       {ConfirmModal}
       <div className="section-header">
         <div>
@@ -232,62 +250,43 @@ function PageUbicaciones() {
         )}
         </div>
       </div>
-      <div className="dash-grid" style={{ marginTop: 0 }}>
 
-        <div className="card" style={{ maxWidth: 340 }}>
-          <div className="card-header">
-            <div className="input-group" style={{ flex: 1 }}>
-              <span className="input-group-icon"><Icon name="search" size={14}/></span>
-              <input className="input" placeholder="Buscar SKU o nombre..." value={q} onChange={e => setQ(e.target.value)}/>
-            </div>
-          </div>
-          <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-            {filteredProds.length === 0 ? (
-              <div className="empty" style={{ padding: 32 }}>
-                <div className="empty-icon"><Icon name="box"/></div>
-                <div>Sin resultados</div>
+      <div className="ubi-layout">
+        <aside className="ubi-col ubi-col-skus">
+          <div className="card ubi-skus-card">
+            <div className="card-header">
+              <div className="input-group" style={{ flex: 1 }}>
+                <span className="input-group-icon"><Icon name="search" size={14}/></span>
+                <input className="input" placeholder="Buscar SKU o nombre..." value={q} onChange={e => setQ(e.target.value)}/>
               </div>
-            ) : filteredProds.map(p => (
-              <button
-                key={p.sku}
-                onClick={() => cargarUbicaciones(p.sku)}
-                style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                  width: '100%', padding: '10px 16px', border: 'none', cursor: 'pointer',
-                  background: selSku === p.sku ? 'var(--bg-2)' : 'transparent',
-                  borderLeft: selSku === p.sku ? '3px solid var(--brand)' : '3px solid transparent',
-                  gap: 2, textAlign: 'left',
-                }}
-              >
-                <span className="mono" style={{ fontSize: 11, color: 'var(--brand)', fontWeight: 600 }}>{p.sku}</span>
-                <span style={{ fontSize: 13, color: 'var(--fg-1)' }}>{p.nombre}</span>
-                {p.ubicacion && <span className="mono td-muted" style={{ fontSize: 11 }}>{p.ubicacion}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {!selSku ? (
-            <div className="card">
-              <div className="card-body">
-                <div className="empty" style={{ padding: 60 }}>
-                  <div className="empty-icon"><Icon name="building"/></div>
-                  <div>Selecciona un SKU para ver sus ubicaciones</div>
+            </div>
+            <div className="ubi-sku-list">
+              {filteredProds.length === 0 ? (
+                <div className="empty" style={{ padding: 32 }}>
+                  <div className="empty-icon"><Icon name="box"/></div>
+                  <div>Sin resultados</div>
                 </div>
-              </div>
+              ) : filteredProds.map(p => (
+                <button
+                  key={p.sku}
+                  className={`ubi-sku-item${selSku === p.sku ? ' sel' : ''}`}
+                  onClick={() => cargarUbicaciones(p.sku)}
+                >
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--brand)', fontWeight: 600 }}>{p.sku}</span>
+                  <span style={{ fontSize: 13, color: 'var(--fg-1)' }}>{p.nombre}</span>
+                  {p.ubicacion && <span className="mono td-muted" style={{ fontSize: 11 }}>{p.ubicacion}</span>}
+                </button>
+              ))}
             </div>
-          ) : loading ? (
-            <div className="card">
-              <div className="card-body">
-                <div className="empty" style={{ padding: 60 }}><span className="spinner"/></div>
-              </div>
-            </div>
-          ) : (
+          </div>
+        </aside>
+
+        <section className="ubi-col ubi-col-mapa">
+          {!selSku ? mapaVacio : loading ? mapaCarga : (
             <>
-              <div className="card">
-                <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px' }}>
-                  <div style={{ flex: 1 }}>
+              <div className="card ubi-sku-head">
+                <div className="card-body ubi-sku-head-body">
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="mono" style={{ fontSize: 12, color: 'var(--brand)', fontWeight: 600 }}>{selSku}</div>
                     <div style={{ fontWeight: 500, fontSize: 14 }}>{prodSelObj?.nombre || ''}</div>
                   </div>
@@ -297,20 +296,34 @@ function PageUbicaciones() {
                   </span>
                 </div>
               </div>
-
-              <div className="card">
+              <div className="card ubi-mapa-card">
                 <div className="card-header"><h3 className="card-title">Esquema de Ubicaciones de Bodega</h3></div>
-                <div className="card-body">
+                <div className="card-body ubi-mapa-body">
                   {window.EsquemaBodega
                     ? <window.EsquemaBodega ubicaciones={ubicaciones} selSku={selSku} resaltarId={resaltarId} onCeldaClick={resaltarUbicacion}/>
                     : <div className="empty" style={{ padding: 32 }}>Esquema no disponible (revisa la versión del archivo).</div>}
                 </div>
               </div>
+            </>
+          )}
+        </section>
 
+        <aside className="ubi-col ubi-col-acciones">
+          {!selSku || loading ? (
+            <div className="card">
+              <div className="card-body">
+                <div className="empty" style={{ padding: 40 }}>
+                  <div className="empty-icon"><Icon name="building"/></div>
+                  <div>{loading ? <span className="spinner"/> : 'Elige un SKU para traspasar y editar tarjetas'}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
               {ubicaciones.length >= 2 ? (
                 <div className="card">
                   <div className="card-header"><h3 className="card-title">Traspasar entre ubicaciones — {selSku}</h3></div>
-                  <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div className="card-body ubi-tras-grid">
                     <div className="field"><label className="field-label">Origen *</label>
                       <select className="select" value={trasOrigen} onChange={e => setTrasOrigen(e.target.value)}>
                         <option value="">Seleccionar…</option>
@@ -400,7 +413,7 @@ function PageUbicaciones() {
               {showNueva && (
                 <div className="card">
                   <div className="card-header"><h3 className="card-title">Nueva ubicación — {selSku}</h3></div>
-                  <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="card-body ubi-tras-grid">
                     <div className="field"><label className="field-label">Ubicación *</label>
                       <input
                         className="input mono"
@@ -441,7 +454,7 @@ function PageUbicaciones() {
               )}
 
               {showRegistro && (
-              <div className="card" style={{ width: '100%', maxWidth: 640, alignSelf: 'center' }}>
+              <div className="card">
                 <div className="card-header">
                   <h3 className="card-title">Registro de movimientos — {selSku}</h3>
                 </div>
@@ -498,7 +511,7 @@ function PageUbicaciones() {
                   {editIdx === idx ? (
                     <>
                       <div className="card-header"><h3 className="card-title">Editar ubicación {idx + 1}</h3></div>
-                      <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div className="card-body ubi-tras-grid">
                         <div className="field"><label className="field-label">Ubicación</label>
                           <input className="input mono" value={form.warehouse_id} onChange={e => set('warehouse_id', e.target.value)} placeholder="CEDIS-E5"/></div>
                         <div className="field"><label className="field-label">Cantidad</label>
@@ -520,7 +533,7 @@ function PageUbicaciones() {
                           <span className="mono td-muted" style={{ fontSize: 12 }}>ID #{ub.id}</span>
                         </div>
                       )}
-                      <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 }}>
+                      <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 14 }}>
                         {Object.entries(ub).filter(([k]) => k !== 'sku' && k !== 'id').map(([k, v]) => (
                           <div key={k}>
                             <div className="field-label" style={{ textTransform: 'capitalize', marginBottom: 2 }}>{k.replace(/_/g, ' ')}</div>
@@ -558,7 +571,7 @@ function PageUbicaciones() {
               ))}
             </>
           )}
-        </div>
+        </aside>
       </div>
     </div>
   );

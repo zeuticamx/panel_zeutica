@@ -1,5 +1,5 @@
 // ===== Zeutica — Esquema de Bodega: anaqueles isométricos interactivos =====
-// Anaquel pequeño (4 espacios, abajo-derecha) + grande (8 x 3 niveles, derecha).
+// Anaquel pequeño (4 espacios, piso) + grande (8 x 3 niveles), centrados en el viewBox.
 // Las celdas muestran los warehouse_id reales del SKU seleccionado; clic en una
 // celda resalta su tarjeta vía onCeldaClick. Sin selección, wireframe tenue.
 const { useMemo: eb_uM } = React;
@@ -8,14 +8,39 @@ function EsquemaBodega({ ubicaciones, selSku, resaltarId, onCeldaClick }) {
   const L = window.esquemaBodegaLogica;
   const rep = eb_uM(() => L.repartirUbicaciones(ubicaciones), [ubicaciones]);
 
-  const BIG = { ox: 200, oy: 305, cols: 8, niveles: 3 };
-  const SMALL = { ox: 395, oy: 412, cols: 4, niveles: 1 };
+  const BIG = { ox: 60, oy: 290, cols: 8, niveles: 3 };
+  const SMALL = { ox: 255, oy: 397, cols: 4, niveles: 1 };
 
   const pts = (pol) => pol.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const centro = (pol) => ({
     x: pol.reduce((a, p) => a + p.x, 0) / pol.length,
     y: pol.reduce((a, p) => a + p.y, 0) / pol.length,
   });
+
+  const pisoGrid = () => {
+    const g = L.GEOM;
+    const ox = 48, oy = 420, cols = 8, filas = 3;
+    const lineas = [];
+    const iso = (c, f) => ({
+      x: ox + c * g.w + f * g.profX,
+      y: oy - c * g.tilt + f * g.profY,
+    });
+    for (let f = 0; f <= filas; f++) {
+      const a = iso(0, f), b = iso(cols, f);
+      lineas.push(<line key={`gf${f}`} className="eb-grid" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />);
+    }
+    for (let c = 0; c <= cols; c++) {
+      const a = iso(c, 0), b = iso(c, filas);
+      lineas.push(<line key={`gc${c}`} className="eb-grid" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />);
+    }
+    const suelo = [iso(0, 0), iso(cols, 0), iso(cols, filas), iso(0, filas)];
+    return (
+      <g className="eb-piso-g" aria-hidden="true">
+        <polygon className="eb-piso" points={pts(suelo)} />
+        {lineas}
+      </g>
+    );
+  };
 
   const celda = (shelf, col, nivel, ub, key) => {
     const frente = L.poligonoCelda(shelf.ox, shelf.oy, col, nivel);
@@ -51,12 +76,10 @@ function EsquemaBodega({ ubicaciones, selSku, resaltarId, onCeldaClick }) {
         partes.push(celda(shelf, c, l, ub, `${prefijo}-${l}-${c}`));
       }
     }
-    // Cara lateral derecha (última columna, toda la altura).
     partes.push(
-      <polygon key={`${prefijo}-lat`} className="eb-tapa"
+      <polygon key={`${prefijo}-lat`} className="eb-lateral"
         points={pts(L.poligonoLateral(shelf.ox, shelf.oy, shelf.cols - 1, shelf.niveles))} />
     );
-    // Postes frontales con patas.
     L.postesAnaquel(shelf.ox, shelf.oy, shelf.cols, shelf.niveles).forEach((p, i) => {
       partes.push(<line key={`${prefijo}-p${i}`} className="eb-poste" x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} />);
       partes.push(<circle key={`${prefijo}-f${i}`} className="eb-pata" cx={p.x1} cy={p.y1 + 3} r={2.5} />);
@@ -68,7 +91,8 @@ function EsquemaBodega({ ubicaciones, selSku, resaltarId, onCeldaClick }) {
 
   return (
     <div className="eb-wrap">
-      <svg className="eb-svg" viewBox="0 0 660 445" role="img" aria-label="Esquema de ubicaciones de bodega">
+      <svg className="eb-svg" viewBox="0 0 560 450" role="img" aria-label="Esquema de ubicaciones de bodega">
+        {pisoGrid()}
         {anaquel(BIG, rep.niveles, 'g')}
         {anaquel(SMALL, nivelesPequeno, 'p')}
         <text className="eb-caption" x={SMALL.ox + 2 * L.GEOM.w} y={SMALL.oy + 26} textAnchor="middle">PISO</text>

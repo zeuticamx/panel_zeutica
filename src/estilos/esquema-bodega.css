@@ -1,21 +1,145 @@
-/* ===== Esquema de Bodega: anaqueles isométricos ===== */
-.eb-wrap { width: 100%; }
-.eb-svg { width: 100%; height: auto; display: block; }
+/* ===== Ubicaciones: layout 3 columnas + anaqueles isométricos ===== */
+.page-ubicaciones {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.page-ubicaciones .section-header {
+  flex-shrink: 0;
+  margin-bottom: var(--s-4);
+}
+.ubi-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(280px, 360px);
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+.ubi-col {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ubi-col-skus {
+  overflow: hidden;
+}
+.ubi-skus-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.ubi-sku-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.ubi-sku-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  border-left: 3px solid transparent;
+  gap: 2px;
+  text-align: left;
+}
+.ubi-sku-item:hover { background: var(--bg-2); }
+.ubi-sku-item.sel {
+  background: var(--bg-2);
+  border-left-color: var(--brand);
+}
+
+.ubi-col-mapa {
+  overflow: hidden;
+}
+.ubi-sku-head { flex-shrink: 0; }
+.ubi-sku-head-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+}
+.ubi-mapa-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ubi-mapa-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-3) var(--s-5) var(--s-4);
+  background:
+    linear-gradient(180deg, transparent 0%, oklch(0.12 0.01 240 / 0.35) 100%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 23px,
+      oklch(0.67 0.16 205 / 0.06) 23px,
+      oklch(0.67 0.16 205 / 0.06) 24px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 23px,
+      oklch(0.67 0.16 205 / 0.05) 23px,
+      oklch(0.67 0.16 205 / 0.05) 24px
+    ),
+    var(--bg-0);
+}
+
+.ubi-tras-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.eb-wrap {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.eb-svg {
+  width: 100%;
+  flex: 1;
+  min-height: 220px;
+  height: auto;
+  display: block;
+}
+
+.eb-piso { fill: oklch(0.18 0.012 240 / 0.55); stroke: var(--line); stroke-width: 1; }
+.eb-grid { stroke: oklch(0.67 0.16 205 / 0.12); stroke-width: 0.8; fill: none; }
 
 .eb-celda polygon { fill: transparent; stroke: var(--line); stroke-width: 1; }
-.eb-celda.fantasma polygon { stroke-dasharray: 3 3; }
-.eb-celda.vacia polygon { fill: rgba(128, 128, 128, 0.07); stroke: var(--fg-3); }
-.eb-celda.llena polygon { fill: rgba(56, 150, 200, 0.30); stroke: var(--brand-hi); }
+.eb-celda.fantasma polygon { stroke-dasharray: 3 3; fill: oklch(0.22 0.01 240 / 0.18); }
+.eb-celda.vacia polygon { fill: oklch(0.30 0.01 240 / 0.28); stroke: var(--fg-3); }
+.eb-celda.llena polygon { fill: oklch(0.55 0.14 205 / 0.42); stroke: var(--brand-hi); }
 .eb-celda.llena, .eb-celda.vacia { cursor: pointer; }
-.eb-celda.llena:hover polygon { fill: rgba(56, 150, 200, 0.48); }
-.eb-celda.vacia:hover polygon { fill: rgba(128, 128, 128, 0.16); }
-.eb-celda.sel polygon { stroke: var(--brand); stroke-width: 2; }
+.eb-celda.llena:hover polygon { fill: oklch(0.62 0.15 205 / 0.58); }
+.eb-celda.vacia:hover polygon { fill: oklch(0.36 0.012 240 / 0.45); }
+.eb-celda.sel polygon { stroke: var(--brand); stroke-width: 2.2; filter: drop-shadow(0 0 4px var(--brand-ring)); }
 
-.eb-tapa { fill: rgba(160, 200, 230, 0.10); stroke: var(--line-strong); stroke-width: 1; }
+.eb-tapa { fill: oklch(0.72 0.08 205 / 0.22); stroke: var(--line-strong); stroke-width: 1; }
+.eb-celda.llena .eb-tapa { fill: oklch(0.70 0.12 205 / 0.38); }
+.eb-lateral { fill: oklch(0.28 0.02 240 / 0.55); stroke: var(--line-strong); stroke-width: 1; }
 .eb-poste { stroke: var(--fg-2); stroke-width: 3; stroke-linecap: round; }
 .eb-pata { fill: var(--fg-2); }
 .eb-texto {
-  fill: var(--fg-0); font-size: 10px; font-weight: 300; text-anchor: middle;
+  fill: var(--fg-0); font-size: 10px; font-weight: 500; text-anchor: middle;
   pointer-events: none; font-family: inherit;
 }
 .eb-cant {
@@ -27,11 +151,38 @@
   pointer-events: none; font-family: inherit;
 }
 
-.eb-leyenda { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 8px 4px 0; font-size: 12px; color: var(--fg-1); }
+.eb-leyenda {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 10px 4px 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--fg-1);
+}
 .eb-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: baseline; }
-.eb-dot.llena { background: rgba(56, 150, 200, 0.55); border: 1px solid var(--brand-hi); }
+.eb-dot.llena { background: oklch(0.62 0.15 205 / 0.7); border: 1px solid var(--brand-hi); }
 .eb-dot.vacia { background: transparent; border: 1px solid var(--fg-3); }
 
-/* Resaltado de la tarjeta al hacer clic en su celda del esquema */
 .ubi-resaltada { outline: 2px solid var(--brand); outline-offset: 2px; animation: eb-pulso 1.2s ease-in-out 2; }
 @keyframes eb-pulso { 50% { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  .ubi-resaltada { animation: none; }
+}
+
+@media (max-width: 1200px) {
+  .page-ubicaciones { overflow-y: auto; }
+  .ubi-layout {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+  .ubi-col, .ubi-col-skus, .ubi-col-mapa {
+    overflow: visible;
+    min-height: unset;
+  }
+  .ubi-skus-card { height: auto; max-height: 320px; }
+  .ubi-mapa-card { min-height: 360px; }
+}
