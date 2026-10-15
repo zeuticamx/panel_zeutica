@@ -27,8 +27,36 @@ function PageUbicaciones() {
   const [traspasos, setTraspasos] = rp_uS([]);
   const [repSaving, setRepSaving] = rp_uS(false);
   const [resaltarId, setResaltarId] = rp_uS(null);
+  // Plano de anaqueles (GET /anaqueles): compartido por todos los SKUs.
+  const [disposicion, setDisposicion] = rp_uS(null);
+  const [dispEstado, setDispEstado] = rp_uS('cargando'); // 'cargando' | 'ok' | 'error'
+  const [dispError, setDispError] = rp_uS('');
+  const [editandoBodega, setEditandoBodega] = rp_uS(false);
 
-  rp_uE(() => { (async () => setProductos(await window.api.productos()))(); }, []);
+  rp_uE(() => {
+    (async () => setProductos(await window.api.productos()))();
+    cargarDisposicion();
+  }, []);
+
+  const cargarDisposicion = async () => {
+    setDispEstado(e => (e === 'ok' ? 'ok' : 'cargando'));
+    const r = await window.api.disposicionBodega();
+    if (r.ok && r.data) {
+      setDisposicion(r.data);
+      setDispEstado('ok');
+      setDispError('');
+    } else {
+      setDispEstado('error');
+      setDispError(r.error || 'Sin respuesta del servidor');
+    }
+  };
+
+  // IDs de celda para autocompletar la ubicación en los formularios.
+  const codigosCeldas = rp_uM(() => {
+    const lista = [];
+    (disposicion?.anaqueles || []).forEach(a => (a.celdas || []).forEach(c => c.codigo && lista.push(c.codigo)));
+    return lista.sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  }, [disposicion]);
 
   const filteredProds = rp_uM(() => {
     if (!q) return productos;
@@ -89,6 +117,7 @@ function PageUbicaciones() {
     }
     cargarRegistro(sku);
     cargarTraspasos(sku);
+    cargarDisposicion(); // la ocupación por celda cambia con cada alta/edición/traspaso
   };
 
   const cargarRegistro = async (sku) => {
@@ -164,8 +193,53 @@ function PageUbicaciones() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const guardar = async () => {
+  // Arrastre en el esquema: cambia solo la celda (warehouse_id), no la cantidad.
+  const moverTarjeta = (ub, codigo) => {
+    if (ub.id == null) { toast.error('No se puede mover', 'La tarjeta no tiene ID'); return; }
+    const L = window.ubicacionesLogica;
+    const clave = window.anaquelesLogica.normalizarCodigo(codigo);
+    const oc = disposicion?.ocupacion?.[clave];
+    const delSku = ubicaciones.filter(u => window.anaquelesLogica.normalizarCodigo(u.warehouse_id) === clave);
+    const partes = [`¿Mover la tarjeta ${ub.warehouse_id || 'sin ID'} de ${selSku} (cantidad ${ub.cantidad ?? 0}) a la celda ${codigo}?`];
+    if (oc?.tarjetas) {
+      partes.push(`La celda ya tiene ${oc.tarjetas} tarjeta(s) de ${oc.skus} SKU(s)` +
+        (delSku.length ? `, ${delSku.length} de ${selSku} (quedarán como tarjetas separadas).` : '.'));
+    }
+    const antes = L.calcularTotalPiezas(ub.cantidad, selSku, ub.warehouse_id);
+    const despues = L.calcularTotalPiezas(ub.cantidad, selSku, codigo);
+    if (antes !== despues) {
+      partes.push(`Atención: entra o sale de «Oficina», el total pasa de ${antes} a ${despues} piezas. Para empaquetar o desempaquetar usa Traspasar.`);
+    }
+    partes.push('Solo cambia la ubicación; la cantidad no se toca.');
+    askConfirm(partes.join(' '), () => ejecutarMover(ub, codigo));
+  };
+
+  const ejecutarMover = async (ub, codigo) => {
+    const r = await window.api.moverUbicacion(ub.id, { sku: selSku, warehouse_id: codigo });
+    if (r.ok) {
+      toast.success('Tarjeta movida', `${selSku}: ${r.data?.origen ?? ub.warehouse_id} → ${r.data?.destino ?? codigo}`);
+      await cargarUbicaciones(selSku);
+      setResaltarId(ub.id);
+    } else {
+      toast.error(`No se pudo mover la tarjeta de ${selSku}`, r.error);
+    }
+  };
+
+  const guardar = () => {
     if (!selSku) return;
+    const L = window.ubicacionesLogica;
+    const previo = ubicaciones.find(u => String(u.id) === String(form.id));
+    if (previo && L.obtenerMultiplo(selSku, previo.warehouse_id) !== L.obtenerMultiplo(selSku, form.warehouse_id)) {
+      askConfirm(
+        `La ubicación entra o sale de «Oficina»: el múltiplo de piezas de esta tarjeta cambia (${L.obtenerMultiplo(selSku, previo.warehouse_id)} → ${L.obtenerMultiplo(selSku, form.warehouse_id)} pzas/unidad). ¿Guardar de todas formas?`,
+        ejecutarGuardar
+      );
+      return;
+    }
+    ejecutarGuardar();
+  };
+
+  const ejecutarGuardar = async () => {
     setSaving(true);
     const r = await window.api.editarUbicacion(form.id, {
       sku: selSku,
@@ -231,12 +305,21 @@ function PageUbicaciones() {
   return (
     <div className="page page-ubicaciones">
       {ConfirmModal}
+      <datalist id="ubi-celdas">
+        {codigosCeldas.map(c => <option key={c} value={c}/>)}
+      </datalist>
       <div className="section-header">
         <div>
           <h2 className="section-title">Ubicaciones de Bodega</h2>
           <p className="section-subtitle">Consulta y edita las ubicaciones físicas por SKU.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {!editandoBodega && (
+            <button className="btn btn-sm btn-secondary" onClick={() => setEditandoBodega(true)}
+              title="Mover y dimensionar anaqueles y poner los IDs de sus celdas">
+              <Icon name="edit" size={13}/> Editar bodega
+            </button>
+          )}
           <button
             className="btn btn-sm btn-secondary"
             disabled={repSaving}
@@ -295,7 +378,31 @@ function PageUbicaciones() {
         </aside>
 
         <section className="ubi-col ubi-col-mapa">
-          {!selSku ? mapaVacio : loading ? mapaCarga : (
+          {editandoBodega ? (
+            <div className="card ubi-mapa-card">
+              <div className="card-header"><h3 className="card-title">Editar bodega — plano de anaqueles</h3></div>
+              <div className="card-body">
+                {dispEstado === 'ok' && disposicion ? (
+                  window.EditorBodega
+                    ? <window.EditorBodega key={disposicion.version} disposicion={disposicion}
+                        onRecargar={cargarDisposicion} onCerrar={() => setEditandoBodega(false)}/>
+                    : <div className="empty" style={{ padding: 32 }}>Editor no disponible (revisa la versión del archivo).</div>
+                ) : dispEstado === 'error' ? (
+                  <div className="empty" style={{ padding: 32 }}>
+                    <div className="empty-icon"><Icon name="alert"/></div>
+                    <div>No se pudo cargar el plano de anaqueles</div>
+                    <div className="td-muted" style={{ fontSize: 12 }}>{dispError}</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button className="btn btn-sm btn-secondary" onClick={() => setEditandoBodega(false)}>Volver</button>
+                      <button className="btn btn-sm btn-primary" onClick={cargarDisposicion}><Icon name="refresh" size={12}/> Reintentar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="empty" style={{ padding: 60 }}><span className="spinner"/></div>
+                )}
+              </div>
+            </div>
+          ) : !selSku ? mapaVacio : loading ? mapaCarga : (
             <>
               <div className="card ubi-sku-head">
                 <div className="card-body ubi-sku-head-body">
@@ -312,8 +419,16 @@ function PageUbicaciones() {
               <div className="card ubi-mapa-card">
                 <div className="card-header"><h3 className="card-title">Esquema de Ubicaciones de Bodega</h3></div>
                 <div className="card-body ubi-mapa-body">
+                  {dispEstado === 'error' && (
+                    <div className="crm-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                      <span>No se pudo cargar el plano de anaqueles; se muestra la vista provisional. {dispError}</span>
+                      <button className="btn btn-sm btn-secondary" onClick={cargarDisposicion}><Icon name="refresh" size={12}/> Reintentar</button>
+                    </div>
+                  )}
                   {window.EsquemaBodega
-                    ? <window.EsquemaBodega ubicaciones={ubicaciones} selSku={selSku} resaltarId={resaltarId} onCeldaClick={resaltarUbicacion}/>
+                    ? <window.EsquemaBodega ubicaciones={ubicaciones} selSku={selSku} resaltarId={resaltarId}
+                        disposicion={dispEstado === 'ok' ? disposicion : null}
+                        onCeldaClick={resaltarUbicacion} onMoverTarjeta={moverTarjeta}/>
                     : <div className="empty" style={{ padding: 32 }}>Esquema no disponible (revisa la versión del archivo).</div>}
                 </div>
               </div>
@@ -432,6 +547,7 @@ function PageUbicaciones() {
                     <div className="field"><label className="field-label">Ubicación *</label>
                       <input
                         className="input mono"
+                        list="ubi-celdas"
                         value={nuevaForm.warehouse_id}
                         onChange={e => setNuevaForm(f => ({ ...f, warehouse_id: e.target.value }))}
                         placeholder="CEDIS-E5"
@@ -528,7 +644,7 @@ function PageUbicaciones() {
                       <div className="card-header"><h3 className="card-title">Editar ubicación {idx + 1}</h3></div>
                       <div className="card-body ubi-tras-grid">
                         <div className="field"><label className="field-label">Ubicación</label>
-                          <input className="input mono" value={form.warehouse_id} onChange={e => set('warehouse_id', e.target.value)} placeholder="CEDIS-E5"/></div>
+                          <input className="input mono" list="ubi-celdas" value={form.warehouse_id} onChange={e => set('warehouse_id', e.target.value)} placeholder="CEDIS-E5"/></div>
                         <div className="field"><label className="field-label">Cantidad</label>
                           <input className="input mono" type="number" min="0" value={form.cantidad} onChange={e => set('cantidad', e.target.value)} placeholder="0"/></div>
                         <div className="field"><label className="field-label">Cama</label>

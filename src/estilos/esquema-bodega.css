@@ -123,7 +123,7 @@
   max-width: 100%;
   min-width: 0;
   flex: 1;
-  min-height: 220px;
+  min-height: 480px;
   height: auto;
   display: block;
 }
@@ -173,6 +173,90 @@
 .eb-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: baseline; }
 .eb-dot.llena { background: oklch(0.62 0.15 205 / 0.7); border: 1px solid var(--brand-hi); }
 .eb-dot.vacia { background: transparent; border: 1px solid var(--fg-3); }
+
+/* Zoom del esquema: controles flotantes y cursor de arrastre de la vista. */
+.eb-zoom {
+  position: absolute; top: 8px; right: 8px; z-index: 4;
+  display: flex; align-items: center; gap: 4px;
+}
+.eb-zoom-nivel { min-width: 52px; font-variant-numeric: tabular-nums; }
+.eb-svg.zoomeado { cursor: grab; touch-action: none; }
+.eb-wrap.paneando .eb-svg, .eb-wrap.paneando .eb-celda { cursor: grabbing; }
+
+/* Plano guardado: celdas con ID sin tarjetas del SKU, con otros SKUs, y arrastre. */
+.eb-wrap { position: relative; }
+.eb-celda.libre polygon { fill: oklch(0.24 0.01 240 / 0.22); stroke: var(--fg-3); }
+.eb-celda.otros polygon { fill: oklch(0.40 0.03 280 / 0.30); stroke: var(--fg-2); }
+.eb-celda.libre .eb-texto, .eb-celda.otros .eb-texto { fill: var(--fg-2); }
+.eb-otros {
+  fill: var(--fg-2); font-size: 8px; text-anchor: middle;
+  pointer-events: none; font-family: inherit;
+}
+.eb-celda.movible { cursor: grab; touch-action: none; }
+.eb-wrap.arrastrando, .eb-wrap.arrastrando .eb-celda { cursor: grabbing; }
+.eb-celda.origen polygon { stroke-dasharray: 4 3; opacity: 0.55; }
+.eb-celda.destino polygon { stroke: var(--success); stroke-width: 2.4; fill: var(--success-bg); }
+.eb-arrastre {
+  position: absolute; z-index: 5; pointer-events: none;
+  padding: 3px 8px; border-radius: 6px;
+  background: var(--bg-2); border: 1px solid var(--brand);
+  color: var(--fg-0); font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap; box-shadow: 0 4px 14px oklch(0 0 0 / 0.35);
+}
+.eb-dot.otros { background: oklch(0.40 0.03 280 / 0.6); border: 1px solid var(--fg-2); }
+.eb-sin-posicion { border-top: none; padding-top: 6px; margin-top: 0; gap: 6px; }
+.eb-chip {
+  border: 1px dashed var(--fg-3); background: var(--bg-1); color: var(--fg-1);
+  border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: grab; touch-action: none;
+}
+.eb-chip:hover { border-color: var(--brand); color: var(--fg-0); }
+
+/* ===== Editor 2D del plano ===== */
+.ebe { display: flex; flex-direction: column; gap: 12px; }
+.ebe-barra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ebe-ayuda { font-size: 11px; margin-left: auto; }
+.ebe-plano {
+  width: 100%; height: auto; display: block;
+  background: var(--bg-0); border: 1px solid var(--line); border-radius: 8px;
+  touch-action: none; user-select: none;
+}
+.ebe-fondo { fill: transparent; }
+.ebe-linea { stroke: oklch(0.67 0.16 205 / 0.10); stroke-width: 1; }
+.ebe-anaquel { cursor: grab; outline: none; }
+.ebe-cuerpo { fill: oklch(0.55 0.14 205 / 0.28); stroke: var(--brand-hi); stroke-width: 1.2; }
+.ebe-anaquel:hover .ebe-cuerpo { fill: oklch(0.58 0.14 205 / 0.38); }
+.ebe-anaquel.sel .ebe-cuerpo, .ebe-anaquel:focus-visible .ebe-cuerpo { stroke: var(--brand); stroke-width: 2.2; fill: oklch(0.60 0.15 205 / 0.42); }
+.ebe-anaquel.invalido .ebe-cuerpo { stroke: var(--danger); fill: var(--danger-bg); }
+.ebe-division { stroke: var(--brand-hi); stroke-width: 0.8; opacity: 0.5; pointer-events: none; }
+.ebe-etiqueta {
+  fill: var(--fg-0); font-size: 11px; font-weight: 600; text-anchor: middle;
+  pointer-events: none; font-family: inherit;
+}
+.ebe-tirador { fill: var(--brand); cursor: ew-resize; opacity: 0.85; }
+.ebe-tirador.vertical { cursor: ns-resize; }
+.ebe-anaquel:not(.sel) .ebe-tirador { opacity: 0.35; }
+.ebe-frente { fill: var(--fg-2); font-size: 10px; letter-spacing: 4px; text-anchor: middle; pointer-events: none; }
+.ebe-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+}
+.ebe-campos { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.ebe-campos .field { min-width: 0; }
+.ebe-campos .input { width: 110px; }
+.ebe-paso { display: flex; align-items: center; gap: 6px; }
+.ebe-paso .mono { min-width: 22px; text-align: center; }
+.ebe-celdas-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ebe-celdas { display: grid; gap: 6px; overflow-x: auto; }
+.ebe-celda { position: relative; display: flex; flex-direction: column; }
+.ebe-celda .input { width: 100%; min-width: 0; padding-right: 18px; font-size: 12px; text-align: center; }
+.ebe-celda.ocupada .input { border-color: var(--brand-hi); }
+.ebe-celda.error .input { border-color: var(--danger); background: var(--danger-bg); }
+.ebe-badge {
+  position: absolute; top: 3px; right: 3px; pointer-events: none;
+  font-size: 9px; font-weight: 700; color: var(--brand-hi);
+}
+.ebe-antes { font-size: 9px; color: var(--warn); text-align: center; margin-top: 2px; }
+.ebe-pie { display: flex; justify-content: flex-end; gap: 8px; }
 
 .ubi-resaltada { outline: 2px solid var(--brand); outline-offset: 2px; animation: eb-pulso 1.2s ease-in-out 2; }
 @keyframes eb-pulso { 50% { outline-color: transparent; } }

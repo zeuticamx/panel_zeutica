@@ -679,6 +679,18 @@ const api = {
   async traspasosUbicaciones(sku) {
     return tryFetch(`/zeutica/ubicaciones/traspasos/${encodeURIComponent(sku)}`);
   },
+  // Mueve una tarjeta a otra celda: solo cambia su warehouse_id (= ID de la celda).
+  async moverUbicacion(id, payload, usuario) {
+    return tryFetch(`/zeutica/ubicaciones/mover/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  },
+  // Plano de la bodega: { version, anaqueles: [{ id, codigo, x, y, columnas, niveles, celdas }], ocupacion }.
+  async disposicionBodega() {
+    return tryFetch('/zeutica/anaqueles');
+  },
+  // Reemplaza la disposición completa. Exige la `version` leída: 409 si otro usuario guardó antes.
+  async guardarDisposicionBodega(payload, usuario) {
+    return tryFetch('/zeutica/anaqueles/disposicion', { method: 'PUT', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  },
   // Descarga binaria del Excel de conteo cíclico (mismo patrón que generaCotizacion:
   // tryFetch solo sirve JSON). Éxito: { ok, blob, nombre }.
   async ubicacionesReporteConteo(sku) {
