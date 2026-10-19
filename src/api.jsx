@@ -702,10 +702,9 @@ const api = {
   async guardarDisposicionBodega(payload) {
     return tryFetch('/zeutica/anaqueles/disposicion', { method: 'PUT', body: JSON.stringify(payload) });
   },
-  // Descarga binaria del Excel de conteo cíclico (mismo patrón que generaCotizacion:
-  // tryFetch solo sirve JSON). Éxito: { ok, blob, nombre }.
-  async ubicacionesReporteConteo(sku) {
-    const ruta = `/zeutica/ubicaciones/reporte-conteo${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`;
+  // Descarga binaria de un archivo (mismo patrón que generaCotizacion: tryFetch solo sirve JSON).
+  // Éxito: { ok, blob, nombre }.
+  async descargarBinario(ruta, nombreDefault) {
     const segundos = 30;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), segundos * 1000);
@@ -726,7 +725,7 @@ const api = {
       }
       const blob = await res.blob();
       const disp = res.headers.get('Content-Disposition') || '';
-      const nombre = (disp.match(/filename=([^;]+)/) || [])[1] || `conteo-ciclico-${sku || 'todos'}.xlsx`;
+      const nombre = (disp.match(/filename=([^;]+)/) || [])[1] || nombreDefault;
       return { ok: true, status: res.status, live: true, blob, nombre: nombre.replace(/["']/g, '') };
     } catch (err) {
       const abortado = err.name === 'AbortError';
@@ -740,6 +739,20 @@ const api = {
     } finally {
       clearTimeout(t);
     }
+  },
+  // Excel de conteo cíclico.
+  async ubicacionesReporteConteo(sku) {
+    return api.descargarBinario(
+      `/zeutica/ubicaciones/reporte-conteo${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`,
+      `conteo-ciclico-${sku || 'todos'}.xlsx`,
+    );
+  },
+  // Excel de la bitácora CRM (solo gerencia). El periodo lo fija el servidor: mes en curso.
+  async crmExportarBitacora({ vendedor, tipo } = {}) {
+    return api.descargarBinario(
+      `/zeutica/crm/interacciones/exportar${window.crmLogica.queryString({ vendedor, tipo })}`,
+      'crm-bitacora.xlsx',
+    );
   },
   async editarProducto(payload, usuario) {
     return tryFetch('/zeutica/productos/editados', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
@@ -905,6 +918,9 @@ const api = {
   },
   async eliminarProspecto(id) {
     return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  async eliminarSeguimientoProspecto(prospectoId, seguimientoId) {
+    return tryFetch(`/zeutica/prospectos/${encodeURIComponent(prospectoId)}/seguimientos/${encodeURIComponent(seguimientoId)}`, { method: 'DELETE' });
   },
   async registrarSeguimientoProspecto(id, payload) {
     return tryFetch(`/zeutica/prospectos/${encodeURIComponent(id)}/seguimientos`, { method: 'POST', body: JSON.stringify(payload) });

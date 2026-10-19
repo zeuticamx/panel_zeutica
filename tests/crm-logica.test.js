@@ -131,3 +131,8 @@ test('calendario: grilla del mes en lunes y rango por vista', () => {
   assert.equal(crm.claveDia(new Date(2026, 9, 5, 23, 59)), '2026-10-05');
   assert.equal(crm.aInputLocal(new Date(2026, 9, 5, 9, 7)), '2026-10-05T09:07');
 });
+
+test('etiquetaMesEnCurso nombra el mes de la descarga', () => {
+  assert.equal(crm.etiquetaMesEnCurso(new Date(2026, 9, 19)), 'octubre 2026');
+  assert.equal(crm.etiquetaMesEnCurso(new Date(2027, 0, 1)), 'enero 2027');
+});

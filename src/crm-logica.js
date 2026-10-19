@@ -263,6 +263,10 @@
     return s ? `?${s}` : '';
   }
 
+  // Mes del que se puede descargar la bitácora (el servidor siempre exporta el mes en curso).
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const etiquetaMesEnCurso = (ahora = new Date()) => `${MESES[ahora.getMonth()]} ${ahora.getFullYear()}`;
+
   // Serie diaria → puntos de LineChart, con etiqueta solo cada `cada` días para no encimar.
   function puntosSerie(serie, maxEtiquetas = 10) {
     const lista = Array.isArray(serie) ? serie : [];
@@ -281,7 +285,7 @@
     validarInteraccion, armarPayloadInteraccion, validarEvento, armarPayloadEvento,
     aInputLocal, aLas9, claveDia, mismoDia, lunesSemana, diasGrillaMes, diasSemana,
     rangoVista, moverAncla, tituloRango,
-    enlaceContacto, queryString, puntosSerie,
+    enlaceContacto, queryString, puntosSerie, etiquetaMesEnCurso,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;

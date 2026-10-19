@@ -82,9 +82,16 @@ function PrFormFields({ form, set }) {
   );
 }
 
-function ProspectoFichaModal({ id, onClose, onChanged }) {
+function ProspectoFichaModal({ id, editarAlAbrir, onClose, onChanged }) {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
+  const gerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
+  const [editando, setEditando] = pr_uS(false);
+  const [formEdit, setFormEdit] = pr_uS(null);
+  const [vendedorEdit, setVendedorEdit] = pr_uS('');
+  const [vendedores, setVendedores] = pr_uS([]);
+  const [editSaving, setEditSaving] = pr_uS(false);
+  const [eliminando, setEliminando] = pr_uS(false);
   const [ficha, setFicha] = pr_uS(null);
   const [error, setError] = pr_uS('');
   const [etapaSel, setEtapaSel] = pr_uS('');
@@ -110,6 +117,56 @@ function ProspectoFichaModal({ id, onClose, onChanged }) {
 
   const p = ficha?.prospecto;
   const esConvertido = p?.etapa === 'convertido';
+  const setEdit = (k, v) => setFormEdit(f => ({ ...f, [k]: v }));
+
+  const empezarEdicion = () => {
+    setFormEdit(window.clienteAlta.clienteAFormulario(p));
+    setVendedorEdit(p.vendedor || '');
+    setEditando(true);
+    if (gerencia && vendedores.length === 0) window.api.crmVendedores().then(setVendedores);
+  };
+  // Abierto desde el lápiz de la tabla: entra directo a editar en cuanto carga la ficha.
+  pr_uE(() => { if (editarAlAbrir && p && !esConvertido && !formEdit) empezarEdicion(); }, [p]);
+
+  // 404/409: el prospecto ya no existe o se convirtió mientras estaba abierto → refrescar la lista.
+  const alFallar = async (r) => {
+    if (r.status === 404) { onChanged?.(); onClose(); }
+    else if (r.status === 409) { setEditando(false); await cargar(); onChanged?.(); }
+  };
+
+  const guardarEdicion = async () => {
+    const invalido = window.clienteAlta.validarCliente(formEdit);
+    if (invalido) { toast.error('Campo requerido', invalido); return; }
+    const payload = window.clienteAlta.armarPayloadProspectoEdicion(formEdit, p, gerencia ? vendedorEdit : undefined);
+    if (Object.keys(payload).length === 0) { toast.warn('Sin cambios', 'No modificaste ningún dato'); setEditando(false); return; }
+    setEditSaving(true);
+    const r = await window.api.editarProspecto(id, payload);
+    setEditSaving(false);
+    if (!r.ok) { toast.error('No se pudo guardar', r.error); await alFallar(r); return; }
+    toast.success('Prospecto actualizado', formEdit.nombre.trim());
+    setEditando(false);
+    await cargar(); onChanged?.();
+  };
+
+  const eliminarProspecto = async () => {
+    setEliminando(true);
+    const r = await window.api.eliminarProspecto(id);
+    setEliminando(false);
+    if (!r.ok) { toast.error('No se pudo eliminar', r.error); await alFallar(r); return; }
+    toast.success('Prospecto eliminado', p.nombre);
+    onChanged?.(); onClose();
+  };
+
+  // Solo el autor o gerencia (el backend lo valida igual); un convertido ya no se toca.
+  const puedeBorrarSeg = (s) => !esConvertido
+    && (gerencia || String(s.vendedor || '').trim().toLowerCase() === String(window.api.usuario || '').trim().toLowerCase());
+
+  const eliminarSeg = async (s) => {
+    const r = await window.api.eliminarSeguimientoProspecto(id, s.id);
+    if (!r.ok) { toast.error('No se pudo eliminar el seguimiento', r.error); if (r.status === 404) await cargar(); return; }
+    toast.success('Seguimiento eliminado', s.tipo);
+    await cargar(); onChanged?.();
+  };
 
   const cambiarEtapa = async () => {
     if (!etapaSel || etapaSel === p.etapa || esConvertido) return;
@@ -156,7 +213,18 @@ function ProspectoFichaModal({ id, onClose, onChanged }) {
           {error && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
           {!p && !error && <div className="empty"><span className="spinner"/></div>}
           {p && (<>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+            {editando && formEdit && (<>
+              <PrFormFields form={formEdit} set={setEdit}/>
+              {gerencia && (
+                <div className="field" style={{ maxWidth: 260 }}>
+                  <label className="field-label">Vendedor asignado</label>
+                  <select className="select" value={vendedorEdit} onChange={e => setVendedorEdit(e.target.value)} disabled={editSaving}>
+                    {[...new Set([p.vendedor, ...vendedores].filter(Boolean))].map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              )}
+            </>)}
+            {!editando && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
               <div><span className="field-label">Empresa</span><div>{p.empresa || '—'}</div></div>
               <div><span className="field-label">Contacto</span><div>{p.contacto || '—'}</div></div>
               <div><span className="field-label">Teléfono</span><div className="mono">{p.telefono || '—'}</div></div>
@@ -164,8 +232,8 @@ function ProspectoFichaModal({ id, onClose, onChanged }) {
               <div><span className="field-label">Vendedor</span><div>{p.vendedor || '—'}</div></div>
               <div><span className="field-label">Medio contacto</span><div>{p.medio_contacto || '—'}</div></div>
               {esConvertido && <div><span className="field-label">Cliente</span><div className="mono">#{p.cliente_id}</div></div>}
-            </div>
-            {!esConvertido && (
+            </div>}
+            {!esConvertido && !editando && (
               <div className="field">
                 <label className="field-label">Etapa (nuevo → contactado → cotización)</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -184,7 +252,7 @@ function ProspectoFichaModal({ id, onClose, onChanged }) {
                 </div>
               </div>
             )}
-            {!esConvertido && (
+            {!esConvertido && !editando && (
               <div className="field">
                 <label className="field-label">Nuevo seguimiento</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -217,6 +285,12 @@ function ProspectoFichaModal({ id, onClose, onChanged }) {
                           <b>{s.tipo}</b>
                           {s.resultado && <span className="badge">{s.resultado}</span>}
                           <span className="td-muted">{window.fmt.datetime(s.fecha)} · {s.vendedor}</span>
+                          {puedeBorrarSeg(s) && (
+                            <button className="btn btn-ghost btn-sm" title="Eliminar seguimiento" style={{ marginLeft: 'auto' }}
+                              onClick={() => askConfirm(`¿Eliminar este seguimiento (${s.tipo}) del ${window.fmt.datetime(s.fecha)}?`, () => eliminarSeg(s))}>
+                              <Icon name="trash" size={12}/>
+                            </button>
+                          )}
                         </div>
                         {s.notas && <div style={{ marginTop: 4 }}>{s.notas}</div>}
                         {s.proxima_fecha && <div className="td-muted" style={{ fontSize: 12 }}>⏭ {s.proxima_accion || 'Seguimiento'} — {window.fmt.date(s.proxima_fecha)}</div>}
@@ -227,13 +301,27 @@ function ProspectoFichaModal({ id, onClose, onChanged }) {
           </>)}
         </div>
         <div className="card-footer">
+          {editando ? (<>
+            <button className="btn btn-secondary btn-sm" disabled={editSaving} onClick={() => setEditando(false)}>Cancelar</button>
+            <button className="btn btn-primary btn-sm" disabled={editSaving || !String(formEdit?.nombre || '').trim()} onClick={guardarEdicion}>
+              {editSaving ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar cambios</>}
+            </button>
+          </>) : (<>
           <button className="btn btn-secondary btn-sm" onClick={onClose}>Cerrar</button>
+          {p && !esConvertido && (<>
+            <button className="btn btn-secondary btn-sm" onClick={empezarEdicion}><Icon name="edit" size={13}/> Editar</button>
+            <button className="btn btn-secondary btn-sm" disabled={eliminando}
+              onClick={() => askConfirm(`¿Eliminar al prospecto "${p.nombre}"? Sus seguimientos dejarán de verse.`, eliminarProspecto)}>
+              {eliminando ? <span className="spinner"/> : <><Icon name="trash" size={13}/> Eliminar</>}
+            </button>
+          </>)}
           {p && !esConvertido && (
             <button className="btn btn-primary btn-sm" disabled={convirtiendo}
               onClick={() => askConfirm(`¿Convertir a "${p.nombre}" en cliente del sistema?`, convertir)}>
               {convirtiendo ? <><span className="spinner"/> Convirtiendo...</> : <><Icon name="check" size={13}/> Convertir a cliente</>}
             </button>
           )}
+          </>)}
         </div>
       </div>
     </div>
@@ -252,7 +340,9 @@ function PageProspectos({ embedded, onConverted }) {
   const [form, setForm] = pr_uS(window.clienteAlta.CLIENTE_BLANK);
   const [saving, setSaving] = pr_uS(false);
   const [fichaId, setFichaId] = pr_uS(null);
+  const [fichaEditar, setFichaEditar] = pr_uS(false);
   const gerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
+  const abrirFicha = (id, editar = false) => { setFichaEditar(editar); setFichaId(id); };
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const cargar = async () => {
@@ -354,7 +444,7 @@ function PageProspectos({ embedded, onConverted }) {
               {!cargando && lista.map(p => (
                 <tr key={p.id}>
                   <td className="mono td-muted">#{p.id}</td>
-                  <td style={{ cursor: 'pointer', fontWeight: 500 }} onClick={() => setFichaId(p.id)}>
+                  <td style={{ cursor: 'pointer', fontWeight: 500 }} onClick={() => abrirFicha(p.id)}>
                     {p.nombre}
                     {p.empresa && p.empresa !== p.nombre && <div className="td-muted" style={{ fontSize: 12, fontWeight: 400 }}>{p.empresa}</div>}
                   </td>
@@ -363,7 +453,10 @@ function PageProspectos({ embedded, onConverted }) {
                   <td className="td-muted">{p.total_seguimientos || 0}{p.ultimo_seguimiento ? ` · ${window.fmt.relative(p.ultimo_seguimiento)}` : ''}</td>
                   {gerencia && <td className="td-muted">{p.vendedor || '—'}</td>}
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-sm btn-secondary" title="Abrir ficha y seguimiento" onClick={() => setFichaId(p.id)} style={{ marginRight: 4 }}><Icon name="eye" size={12}/></button>
+                    <button className="btn btn-sm btn-secondary" title="Abrir ficha y seguimiento" onClick={() => abrirFicha(p.id)} style={{ marginRight: 4 }}><Icon name="eye" size={12}/></button>
+                    {p.etapa !== 'convertido' && (
+                      <button className="btn btn-sm btn-secondary" title="Editar" onClick={() => abrirFicha(p.id, true)} style={{ marginRight: 4 }}><Icon name="edit" size={12}/></button>
+                    )}
                     {p.etapa !== 'convertido' && (
                       <button className="btn btn-sm btn-secondary" title="Eliminar" onClick={() => askConfirm(`¿Eliminar al prospecto "${p.nombre}"?`, () => eliminar(p))}><Icon name="trash" size={12}/></button>
                     )}
@@ -374,7 +467,7 @@ function PageProspectos({ embedded, onConverted }) {
           </table>
         </div>
       </div>
-      {fichaId && <ProspectoFichaModal id={fichaId} onClose={() => setFichaId(null)} onChanged={() => { cargar(); onConverted?.(); }}/>}
+      {fichaId && <ProspectoFichaModal key={fichaId} id={fichaId} editarAlAbrir={fichaEditar} onClose={() => setFichaId(null)} onChanged={() => { cargar(); onConverted?.(); }}/>}
     </div>
   );
 }

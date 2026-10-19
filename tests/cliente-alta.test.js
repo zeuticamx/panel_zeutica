@@ -117,3 +117,31 @@ test('el payload manda uso_cfdi y también usocdfi para el backend desplegado', 
   assert.equal(p.usocdfi, 'P01');
   assert.equal(alta.armarPayloadCliente({ ...alta.CLIENTE_BLANK, nombre: 'B', uso_cfdi: 'G01' }).usocdfi, 'G01');
 });
+
+test('armarPayloadProspectoEdicion manda solo lo que cambió', () => {
+  const original = { nombre: 'Acme', empresa: 'Acme SA', telefono: 3312345678, usocfdi: 'G03', credito: 0, vendedor: 'ana' };
+  const form = { ...alta.clienteAFormulario(original), empresa: 'Acme SAPI', telefono: '3312345678' };
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original), { empresa: 'Acme SAPI' });
+});
+
+test('armarPayloadProspectoEdicion sin cambios devuelve {} y recorta el nombre', () => {
+  const original = { nombre: 'Acme', vendedor: 'ana' };
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(alta.clienteAFormulario(original), original), {});
+  const form = { ...alta.clienteAFormulario(original), nombre: '  Acme  ' };
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original), {});
+  assert.deepEqual(alta.armarPayloadProspectoEdicion({ ...form, nombre: ' Nuevo ' }, original), { nombre: 'Nuevo' });
+});
+
+test('armarPayloadProspectoEdicion convierte números, usa uso_cfdi y detecta el crédito', () => {
+  const original = { nombre: 'A', usocfdi: 'G01', cp: 44100 };
+  const form = { ...alta.clienteAFormulario(original), uso_cfdi: 'G03', cp: '44200', credito: true, monto_credito: '5000' };
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original), { uso_cfdi: 'G03', cp: 44200, credito: true, monto_credito: 5000 });
+});
+
+test('armarPayloadProspectoEdicion solo incluye vendedor si cambió (sin distinguir mayúsculas)', () => {
+  const original = { nombre: 'A', vendedor: 'ana' };
+  const form = alta.clienteAFormulario(original);
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original, 'ANA'), {});
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original, ''), {});
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original, 'luis'), { vendedor: 'luis' });
+});

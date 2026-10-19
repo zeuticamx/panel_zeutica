@@ -48,6 +48,7 @@ function PageCrmGerencia() {
   const [fichaId, setFichaId] = crg_uS(null);
   const [registro, setRegistro] = crg_uS(null);
   const [version, setVersion] = crg_uS(0);
+  const [exportando, setExportando] = crg_uS(false);
   const POR_PAGINA = 25;
 
   crg_uE(() => { window.api.crmVendedores().then(setVendedores); }, []);
@@ -79,6 +80,23 @@ function PageCrmGerencia() {
     setCargandoMas(false);
     if (b.ok) setBitacora(prev => ({ items: [...prev.items, ...b.data.items], total: b.data.total }));
     else toast.error('No se pudo cargar la bitácora', b.error);
+  };
+
+  // La descarga es siempre del mes en curso (lo fija el servidor); respeta vendedor y tipo.
+  const exportarExcel = async () => {
+    setExportando(true);
+    const r = await window.api.crmExportarBitacora({ vendedor: vendSel, tipo: tipoSel });
+    setExportando(false);
+    if (!r.ok) { toast.error('No se pudo descargar la bitácora', r.error); return; }
+    const url = URL.createObjectURL(r.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = r.nombre || 'crm-bitacora.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast.success('Bitácora descargada', r.nombre || '');
   };
 
   const elegirPreset = (k) => { setPreset(k); setRango(L.rangoPreset(k)); };
@@ -217,7 +235,13 @@ function PageCrmGerencia() {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-header"><h3 className="card-title">Bitácora <span className="td-muted">({window.fmt.int(bitacora.total)})</span></h3></div>
+        <div className="card-header">
+          <h3 className="card-title">Bitácora <span className="td-muted">({window.fmt.int(bitacora.total)})</span></h3>
+          <button className="btn btn-secondary btn-sm" disabled={exportando} onClick={exportarExcel}
+            title="Descarga solo las interacciones del mes en curso, con los filtros de vendedor y tipo">
+            {exportando ? <><span className="spinner"/> Generando...</> : <><Icon name="download" size={13}/> Descargar Excel ({L.etiquetaMesEnCurso()})</>}
+          </button>
+        </div>
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Tipo</th><th>Resultado</th><th>Notas</th><th>Próximo</th><th></th></tr></thead>

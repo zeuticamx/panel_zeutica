@@ -53,6 +53,28 @@
     return { ...armarPayloadCliente(form, usuario), id };
   }
 
+  // Campos del formulario tal como se envían (números ya convertidos), para comparar contra el original.
+  function camposDeFormulario(form) {
+    return {
+      nombre: String(form.nombre ?? '').trim(), email: form.email, empresa: form.empresa, contacto: form.contacto,
+      telefono: Number(form.telefono) || 0, direccion: form.direccion, rfc: form.rfc, cp: Number(form.cp) || 0,
+      regimen: form.regimen, uso_cfdi: form.uso_cfdi, frecuencia: form.frecuencia,
+      credito: !!form.credito, monto_credito: Number(form.monto_credito) || 0, dias_credito: Number(form.dias_credito) || 0,
+    };
+  }
+
+  // Payload de PATCH /prospectos/{id}: solo lo que cambió respecto al prospecto original (así no se pisan
+  // campos que otra persona editó). `vendedor` solo viaja si gerencia lo cambió. {} = sin cambios.
+  function armarPayloadProspectoEdicion(form, original, vendedor) {
+    const nuevo = camposDeFormulario(form);
+    const base = camposDeFormulario(clienteAFormulario(original));
+    const payload = {};
+    Object.keys(nuevo).forEach(k => { if (nuevo[k] !== base[k]) payload[k] = nuevo[k]; });
+    const v = String(vendedor ?? '').trim();
+    if (v && v.toLowerCase() !== String(original?.vendedor ?? '').trim().toLowerCase()) payload.vendedor = v;
+    return payload;
+  }
+
   // Nombre que debe quedar seleccionado en el selector de cotizaciones (que usa
   // el nombre como valor). Se prefiere el id que devolvió el backend y se cae al
   // nombre enviado si la lista recargada aún no lo trae.
@@ -65,7 +87,7 @@
     return nombre || '';
   }
 
-  const mod = { CLIENTE_BLANK, validarCliente, armarPayloadCliente, clienteAFormulario, armarPayloadEdicion, seleccionarClienteCreado };
+  const mod = { CLIENTE_BLANK, validarCliente, armarPayloadCliente, clienteAFormulario, armarPayloadEdicion, armarPayloadProspectoEdicion, seleccionarClienteCreado };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.clienteAlta = mod;
