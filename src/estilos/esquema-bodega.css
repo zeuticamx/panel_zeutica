@@ -145,9 +145,12 @@
 .eb-lateral { fill: oklch(0.28 0.02 240 / 0.55); stroke: var(--line-strong); stroke-width: 1; }
 .eb-poste { stroke: var(--fg-2); stroke-width: 3; stroke-linecap: round; }
 .eb-pata { fill: var(--fg-2); }
+/* El ID de la celda se lee siempre, aunque esté vacía: halo del color de la superficie
+   (claro u oscuro según el tema) detrás de la letra. */
 .eb-texto {
-  fill: var(--fg-0); font-size: 10px; font-weight: 500; text-anchor: middle;
+  fill: var(--fg-0); font-size: 10px; font-weight: 600; text-anchor: middle;
   pointer-events: none; font-family: inherit;
+  paint-order: stroke; stroke: var(--bg-1); stroke-width: 3px; stroke-linejoin: round;
 }
 .eb-cant {
   fill: var(--brand-hi); font-size: 9px; font-weight: 600; text-anchor: middle;
@@ -185,9 +188,13 @@
 
 /* Plano guardado: celdas con ID sin tarjetas del SKU, con otros SKUs, y arrastre. */
 .eb-wrap { position: relative; }
-.eb-celda.libre polygon { fill: oklch(0.24 0.01 240 / 0.22); stroke: var(--fg-3); }
+.eb-celda.libre polygon { fill: oklch(0.24 0.01 240 / 0.22); stroke: var(--fg-2); }
 .eb-celda.otros polygon { fill: oklch(0.40 0.03 280 / 0.30); stroke: var(--fg-2); }
-.eb-celda.libre .eb-texto, .eb-celda.otros .eb-texto { fill: var(--fg-2); }
+.eb-celda.vacia polygon { stroke: var(--fg-2); }
+.eb-celda.libre .eb-texto, .eb-celda.otros .eb-texto, .eb-celda.vacia .eb-texto { fill: var(--fg-0); }
+.eb-celda.auditable { cursor: pointer; }
+.eb-celda.auditable:not(.sel):hover polygon { stroke: var(--brand-hi); }
+.eb-dot.libre { background: oklch(0.24 0.01 240 / 0.22); border: 1px solid var(--fg-2); }
 .eb-otros {
   fill: var(--fg-2); font-size: 8px; text-anchor: middle;
   pointer-events: none; font-family: inherit;
@@ -277,3 +284,30 @@
   .ubi-skus-card { height: auto; max-height: 320px; }
   .ubi-mapa-card { min-height: 360px; }
 }
+
+/* ===== Auditoría global: panel de SKUs por celda ===== */
+.ubi-aud-resumen { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ubi-aud-tabla td { vertical-align: top; }
+.ubi-aud-sku {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left; color: inherit;
+}
+.ubi-aud-sku .mono { color: var(--brand); font-weight: 600; font-size: 12px; }
+.ubi-aud-sku .td-muted { font-size: 12px; }
+.ubi-aud-sku:hover .mono { text-decoration: underline; }
+.ubi-aud-subtitulo { font-size: 12px; padding-bottom: 4px; border-top: 1px solid var(--line); }
+
+/* Tema claro: los rellenos de arriba son para fondo oscuro; aquí se aclaran para que las celdas
+   (sobre todo las vacías) se distingan del fondo y su ID se lea. */
+:root[data-theme="light"] .eb-piso { fill: oklch(0.94 0.008 240 / 0.7); }
+:root[data-theme="light"] .eb-lateral { fill: oklch(0.82 0.01 240 / 0.55); }
+:root[data-theme="light"] .eb-celda.fantasma polygon { fill: oklch(0.92 0.006 240 / 0.5); }
+:root[data-theme="light"] .eb-celda.libre polygon { fill: oklch(0.96 0.006 240 / 0.7); stroke: var(--fg-2); }
+:root[data-theme="light"] .eb-celda.vacia polygon { fill: oklch(0.90 0.05 75 / 0.55); stroke: var(--fg-2); }
+:root[data-theme="light"] .eb-celda.otros polygon { fill: oklch(0.90 0.04 280 / 0.5); }
+:root[data-theme="light"] .eb-celda.llena polygon { fill: oklch(0.80 0.10 205 / 0.55); }
+:root[data-theme="light"] .eb-celda.llena:hover polygon { fill: oklch(0.74 0.12 205 / 0.65); }
+:root[data-theme="light"] .eb-celda.vacia:hover polygon { fill: oklch(0.86 0.06 75 / 0.65); }
+:root[data-theme="light"] .eb-cant { fill: oklch(0.38 0.10 205); }
+:root[data-theme="light"] .eb-dot.libre { background: oklch(0.96 0.006 240 / 0.7); }
+:root[data-theme="light"] .eb-dot.vacia { background: oklch(0.90 0.05 75 / 0.55); }

@@ -17,7 +17,9 @@ const getApiBase = () => {
 };
 const API_BASE = getApiBase();
 
-const USE_MOCK_LOGIN_FALLBACK = true; // permite demo/login sin backend
+// Login demo sin backend: solo si index.html pone window.USE_MOCK_LOGIN = true (desarrollo local).
+// En producción queda apagado: el bundle no debe aceptar usuarios y contraseñas de demostración.
+const USE_MOCK_LOGIN_FALLBACK = window.USE_MOCK_LOGIN === true;
 const REQUEST_TIMEOUT = 4000;
 // Generar el PDF y guardar la cotización tarda más que una consulta normal.
 const GENERA_COTIZACION_TIMEOUT = 30000;
@@ -206,6 +208,9 @@ async function tryFetch(path, options = {}) {
     if (texto) { try { cuerpo = JSON.parse(texto); } catch { cuerpo = null; } }
 
     if (!res.ok) {
+      // Token vencido o inválido: la sesión terminó. App registra cómo cerrarla (el login mismo
+      // responde 401 ante una contraseña mala y ahí no hay sesión que cerrar).
+      if (res.status === 401 && path !== '/login' && api.token && typeof api.alExpirarSesion === 'function') api.alExpirarSesion();
       const delServidor = recortar(mensajeDelCuerpo(cuerpo) || texto.trim());
       return registrarError({
         ok: false,
@@ -657,15 +662,16 @@ const api = {
   async ubicacionesSku(sku) {
     return tryFetch(`/zeutica/productos/ubicaciones/${encodeURIComponent(sku)}`);
   },
-  async editarUbicacion(sku, payload, usuario) {
-    return tryFetch(`/zeutica/ubicacion/editar/${encodeURIComponent(sku)}`, { method: 'PUT', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  // El usuario de la bitácora lo toma el servidor del token; ya no se manda en el body ni en la URL.
+  async editarUbicacion(sku, payload) {
+    return tryFetch(`/zeutica/ubicacion/editar/${encodeURIComponent(sku)}`, { method: 'PUT', body: JSON.stringify(payload) });
   },
-  async crearUbicacion(sku, payload, usuario) {
-    return tryFetch(`/zeutica/productos/ubicacionNueva/${encodeURIComponent(sku)}`, { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  async crearUbicacion(sku, payload) {
+    return tryFetch(`/zeutica/productos/ubicacionNueva/${encodeURIComponent(sku)}`, { method: 'POST', body: JSON.stringify(payload) });
   },
-  async eliminarUbicacion(id, usuario) {
-    const u = encodeURIComponent(usuario || api.usuario || '');
-    return tryFetch(`/zeutica/producto/eliminarUbi/${encodeURIComponent(id)}/${u}`, { method: 'DELETE' });
+  // Solo gerencia (403 para el resto).
+  async eliminarUbicacion(id) {
+    return tryFetch(`/zeutica/producto/eliminarUbi/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
   async registroUbicaciones(sku) {
     return tryFetch(`/zeutica/ubicaciones/registro/${encodeURIComponent(sku)}`);
@@ -673,23 +679,28 @@ const api = {
   // Traspaso informativo entre tarjetas del mismo SKU (origen -N, destino +N).
   // No toca productos ni traspasos FULL; el usuario sale del token en lecturas
   // pero aquí va en el body, igual que editar/crear ubicación.
-  async traspasarUbicacion(payload, usuario) {
-    return tryFetch('/zeutica/ubicaciones/traspaso', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  async traspasarUbicacion(payload) {
+    return tryFetch('/zeutica/ubicaciones/traspaso', { method: 'POST', body: JSON.stringify(payload) });
   },
   async traspasosUbicaciones(sku) {
     return tryFetch(`/zeutica/ubicaciones/traspasos/${encodeURIComponent(sku)}`);
   },
   // Mueve una tarjeta a otra celda: solo cambia su warehouse_id (= ID de la celda).
-  async moverUbicacion(id, payload, usuario) {
-    return tryFetch(`/zeutica/ubicaciones/mover/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  async moverUbicacion(id, payload) {
+    return tryFetch(`/zeutica/ubicaciones/mover/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
   },
   // Plano de la bodega: { version, anaqueles: [{ id, codigo, x, y, columnas, niveles, celdas }], ocupacion }.
   async disposicionBodega() {
     return tryFetch('/zeutica/anaqueles');
   },
-  // Reemplaza la disposición completa. Exige la `version` leída: 409 si otro usuario guardó antes.
-  async guardarDisposicionBodega(payload, usuario) {
-    return tryFetch('/zeutica/anaqueles/disposicion', { method: 'PUT', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
+  // Todas las tarjetas de stock_ubicacion (todos los SKUs) para auditar por celda:
+  // { tarjetas: [{ id, sku, nombre, warehouse_id, cama, cantidad }] }.
+  async tarjetasBodega() {
+    return tryFetch('/zeutica/anaqueles/tarjetas');
+  },
+  // Reemplaza la disposición completa (solo gerencia). Exige la `version` leída: 409 si otro usuario guardó antes.
+  async guardarDisposicionBodega(payload) {
+    return tryFetch('/zeutica/anaqueles/disposicion', { method: 'PUT', body: JSON.stringify(payload) });
   },
   // Descarga binaria del Excel de conteo cíclico (mismo patrón que generaCotizacion:
   // tryFetch solo sirve JSON). Éxito: { ok, blob, nombre }.
@@ -784,6 +795,36 @@ const api = {
   },
   async eliminarPendiente(id) {
     return tryFetch(`/zeutica/pendientes-eliminar/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  // ---- Cola de pendientes por usuario (antes api_java; ahora FastAPI, sin caché en memoria) ----
+  // El usuario sale del token: cada quien ve y opera lo suyo; gerencia puede pedir `usuario` o ver todo.
+  async colaListar(usuario) {
+    return tryFetch(`/zeutica/pendientes${usuario ? `?usuario=${encodeURIComponent(usuario)}` : ''}`);
+  },
+  async colaEnProceso(usuario) {
+    return tryFetch(`/zeutica/pendientes/en-proceso${usuario ? `?usuario=${encodeURIComponent(usuario)}` : ''}`);
+  },
+  async colaEstadisticas(usuario) {
+    return tryFetch(`/zeutica/pendientes/estadisticas${usuario ? `?usuario=${encodeURIComponent(usuario)}` : ''}`);
+  },
+  async colaDetalle(id) {
+    return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}`);
+  },
+  // payload: { actividad, prioridad, observaciones?, fecha_promesa?, recurrencia?, usuario? (otro: solo gerencia) }
+  async colaNueva(payload) {
+    return tryFetch('/zeutica/pendientes/nueva', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // Pasa tu tarea a 'en proceso'. Responde { atendido, enCola }.
+  async colaAtender(id) {
+    return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}/atender`, { method: 'POST' });
+  },
+  // Si tiene recurrencia, el servidor crea la siguiente instancia (oculta hasta su fecha).
+  async colaTerminar(id) {
+    return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}/terminar`, { method: 'POST' });
+  },
+  // valor: diaria | semanal | quincenal | mensual; vacío = quitar.
+  async colaCambiarRecurrencia(id, valor) {
+    return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}/recurrencia`, { method: 'POST', body: JSON.stringify({ valor: valor || null }) });
   },
   // Solo notifica por Telegram (backend no toca DB en estos dos). Payload completo del schema `pendientes`.
   async notificarPendienteTomado(id, payload = {}) {
@@ -908,8 +949,9 @@ const api = {
     return tryFetch('/zeutica/empleado/nuevo', { method: 'POST', body: JSON.stringify(payload) });
   },
   // Endpoint pendiente en backend: ajustar ruta cuando exista
-  async cambiarPassword(usuario, password_nueva) {
-    return tryFetch('/zeutica/cambio-passw', { method: 'PUT', body: JSON.stringify({ usuario, password_nueva }) });
+  // Exige sesión y la contraseña vigente de quien la cambia.
+  async cambiarPassword(usuario, password_actual, password_nueva) {
+    return tryFetch('/zeutica/cambio-passw', { method: 'PUT', body: JSON.stringify({ usuario, password_actual, password_nueva }) });
   },
 
   // ---- Enviar plantillas (WhatsApp Cloud API de Meta) ----

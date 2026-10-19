@@ -4,14 +4,15 @@ const { useState: vt_uS, useEffect: vt_uE, useMemo: vt_uM } = React;
 function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuento, iva, total, cliente, metPago, plataforma, usuario, cotCargada }) {
   const hora = new Date().toTimeString().slice(0, 5);
   const fmt = window.fmt.mxn;
+  const esc = window.htmlSeguro.esc; // todo texto de datos va escapado: el ticket se arma con innerHTML
 
   const rows = cartItems.map(i => `
     <tr>
       <td style="padding:2px 0;vertical-align:top;">
-        <span style="font-size:8px;color:#777;">${i.sku}</span><br>
-        <span>${i.nombre}</span>
+        <span style="font-size:8px;color:#777;">${esc(i.sku)}</span><br>
+        <span>${esc(i.nombre)}</span>
       </td>
-      <td style="text-align:center;vertical-align:top;padding:2px 4px;">${i.cantidad}</td>
+      <td style="text-align:center;vertical-align:top;padding:2px 4px;">${esc(i.cantidad)}</td>
       <td style="text-align:right;vertical-align:top;padding:2px 0;white-space:nowrap;">${fmt(i.precio)}</td>
       <td style="text-align:right;vertical-align:top;padding:2px 0;white-space:nowrap;font-weight:600;">${fmt(i.total)}</td>
     </tr>`).join('');
@@ -28,13 +29,13 @@ function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuent
         <div style="font-size:12px;font-weight:bold;letter-spacing:1px;">TICKET DE VENTA</div>
       </div>
       <div style="font-size:9px;line-height:1.7;margin:4px 0;">
-        <div><b>Folio:</b> ${id_venta}</div>
-        <div><b>Fecha:</b> ${fecha} ${hora}</div>
-        <div><b>Cajero:</b> ${usuario}</div>
-        <div><b>Cliente:</b> ${cliente || '—'}</div>
-        <div><b>Plataforma:</b> ${plataforma}</div>
-        <div><b>Pago:</b> ${metPago}</div>
-        ${cotCargada ? `<div><b>Cot.:</b> ${cotCargada}</div>` : ''}
+        <div><b>Folio:</b> ${esc(id_venta)}</div>
+        <div><b>Fecha:</b> ${esc(fecha)} ${esc(hora)}</div>
+        <div><b>Cajero:</b> ${esc(usuario)}</div>
+        <div><b>Cliente:</b> ${esc(cliente) || '—'}</div>
+        <div><b>Plataforma:</b> ${esc(plataforma)}</div>
+        <div><b>Pago:</b> ${esc(metPago)}</div>
+        ${cotCargada ? `<div><b>Cot.:</b> ${esc(cotCargada)}</div>` : ''}
       </div>
       <div style="border-top:1px dashed #000;margin-bottom:2px;"></div>
       <table style="width:100%;border-collapse:collapse;font-size:9px;">
@@ -50,7 +51,7 @@ function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuent
       </table>
       <div style="border-top:1px dashed #000;padding-top:4px;margin-top:4px;font-size:9px;line-height:1.8;">
         <div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>${fmt(subtotal)}</span></div>
-        ${descuento > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Descuento (${descuento}%):</span><span>-${fmt(descMonto)}</span></div>` : ''}
+        ${descuento > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Descuento (${esc(descuento)}%):</span><span>-${fmt(descMonto)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;"><span>IVA (16%):</span><span>${fmt(iva)}</span></div>
       </div>
       <div style="border-top:2px solid #000;margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-size:14px;font-weight:bold;">

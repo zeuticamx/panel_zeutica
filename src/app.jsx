@@ -268,7 +268,10 @@ function NotifPanel({ notifs, markAllRead, onClose }) {
 
 function App() {
   const [auth, setAuth] = a_uS(() => {
-    try { return JSON.parse(localStorage.getItem('zeutica-auth') || 'null'); } catch { return null; }
+    // La sesión vive en sessionStorage (se borra al cerrar la pestaña); se purga el token que
+    // versiones anteriores dejaban guardado en localStorage.
+    try { localStorage.removeItem('zeutica-auth'); } catch {}
+    try { return JSON.parse(sessionStorage.getItem('zeutica-auth') || 'null'); } catch { return null; }
   });
   const [current, setCurrent] = a_uS(() => localStorage.getItem('zeutica-page') || 'dashboard');
   const [cmdOpen, setCmdOpen] = a_uS(false);
@@ -277,7 +280,19 @@ function App() {
   const [crmRegistroOpen, setCrmRegistroOpen] = a_uS(false); // registro CRM desde Ctrl+K
   const toast = window.useToast();
 
-  a_uE(() => { if (auth) localStorage.setItem('zeutica-auth', JSON.stringify(auth)); }, [auth]);
+  a_uE(() => { if (auth) { try { sessionStorage.setItem('zeutica-auth', JSON.stringify(auth)); } catch {} } }, [auth]);
+  // Un 401 de la API (token vencido) cierra la sesión una sola vez y avisa.
+  a_uE(() => {
+    let avisado = false;
+    window.api.alExpirarSesion = () => {
+      if (avisado) return;
+      avisado = true;
+      try { sessionStorage.removeItem('zeutica-auth'); } catch {}
+      setAuth(null);
+      toast.warn('Sesión vencida', 'Vuelve a iniciar sesión');
+    };
+    return () => { window.api.alExpirarSesion = null; };
+  }, []);
   a_uE(() => { localStorage.setItem('zeutica-page', current); }, [current]);
   a_uE(() => { window.api.token = auth?.token ?? null; window.api.id_usuario = auth?.id_usuario ?? null; window.api.usuario = auth?.user ?? null; }, [auth]);
   a_uE(() => { setMobileMenuOpen(false); }, [current]);
@@ -362,7 +377,7 @@ function App() {
   }
 
   const logout = () => {
-    localStorage.removeItem('zeutica-auth');
+    try { sessionStorage.removeItem('zeutica-auth'); } catch {}
     setAuth(null);
     toast.info('Sesión cerrada', 'Hasta pronto');
   };

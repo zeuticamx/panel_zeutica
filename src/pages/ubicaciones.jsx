@@ -2,10 +2,124 @@
 const { useState: rp_uS, useEffect: rp_uE, useMemo: rp_uM } = React;
 
 const UBI_BLANK = { warehouse_id: '', cantidad: 0, cama: 0 };
+// Valor de `celdaAud` cuando se audita el grupo de tarjetas cuyo warehouse_id no es ID de ninguna celda.
+const UBI_SIN_CELDA = '\u0000sin-celda';
+
+// Panel de auditoría global (sin SKU elegido): qué SKUs con stock hay en la celda elegida del mapa.
+function PanelAuditoriaCelda({ estado, error, onReintentar, auditoria, celdaSel, onElegirCelda, onElegirSku }) {
+  const A = window.anaquelesLogica;
+  const tarjetaVacia = (icono, texto, extra) => (
+    <div className="card">
+      <div className="card-body">
+        <div className="empty" style={{ padding: 40 }}>
+          <div className="empty-icon"><Icon name={icono}/></div>
+          <div>{texto}</div>
+          {extra}
+        </div>
+      </div>
+    </div>
+  );
+  if (estado === 'cargando') return tarjetaVacia('building', <span className="spinner"/>);
+  if (estado === 'error') {
+    return (
+      <div className="card">
+        <div className="card-body">
+          <div className="crm-error">No se pudieron cargar las tarjetas de la bodega. {error}</div>
+          <button className="btn btn-sm btn-primary" style={{ marginTop: 8 }} onClick={onReintentar}>
+            <Icon name="refresh" size={12}/> Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!auditoria) return tarjetaVacia('building', 'Cargando el plano de anaqueles…');
+
+  const sinCelda = auditoria.sinPosicion;
+  const esSinCelda = celdaSel === UBI_SIN_CELDA;
+  const datos = celdaSel && !esSinCelda ? auditoria.porCodigo.get(A.normalizarCodigo(celdaSel)) : null;
+  const gruposSinCelda = esSinCelda ? A.skusEnCelda(sinCelda) : null;
+  const grupo = esSinCelda ? gruposSinCelda : (datos || { conStock: [], sinStock: [] });
+
+  const tabla = (filas, titulo, conId) => (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="table ubi-aud-tabla">
+        <thead>
+          <tr><th>{titulo}</th><th>Cantidad</th><th>Cama</th>{conId && <th>ID guardado</th>}</tr>
+        </thead>
+        <tbody>
+          {filas.map(s => (
+            <tr key={s.sku}>
+              <td>
+                <button type="button" className="ubi-aud-sku" onClick={() => onElegirSku(s.sku)} title={`Ver ubicaciones de ${s.sku}`}>
+                  <span className="mono">{s.sku}</span>
+                  {s.nombre && <span className="td-muted">{s.nombre}</span>}
+                </button>
+              </td>
+              <td className="mono">{s.cantidad}</td>
+              <td className="mono">{s.tarjetas.map(t => t.cama ?? 0).join(' / ')}</td>
+              {conId && <td className="mono td-muted">{[...new Set(s.tarjetas.map(t => t.warehouse_id || 'sin ID'))].join(', ')}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="card">
+        <div className="card-header"><h3 className="card-title">Auditoría de bodega</h3></div>
+        <div className="card-body ubi-aud-resumen">
+          <span className="badge">{auditoria.celdasConStock} celda{auditoria.celdasConStock !== 1 ? 's' : ''} con stock</span>
+          {sinCelda.length > 0 && (
+            <button type="button" className={`btn btn-sm ${esSinCelda ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => onElegirCelda(esSinCelda ? null : UBI_SIN_CELDA)}
+              title="Tarjetas cuyo warehouse_id no es el ID de ninguna celda del plano">
+              <Icon name="alert" size={12}/> {sinCelda.length} sin celda en el plano
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!celdaSel ? tarjetaVacia('building', 'Haz clic en una celda del mapa para ver qué SKUs tiene') : (
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">
+              {esSinCelda ? 'Sin celda en el plano' : <>Celda <span className="mono">{celdaSel}</span></>}
+            </h3>
+            <span className="badge">{grupo.conStock.length} SKU{grupo.conStock.length !== 1 ? 's' : ''} con stock</span>
+          </div>
+          {grupo.conStock.length === 0 && grupo.sinStock.length === 0 ? (
+            <div className="card-body">
+              <div className="empty" style={{ padding: 28 }}>
+                <div className="empty-icon"><Icon name="box"/></div>
+                <div>Sin tarjetas en esta celda</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {grupo.conStock.length > 0
+                ? tabla(grupo.conStock, 'SKU con stock', esSinCelda)
+                : <div className="card-body td-muted" style={{ fontSize: 13 }}>Ningún SKU con stock en esta celda.</div>}
+              {grupo.sinStock.length > 0 && (
+                <>
+                  <div className="card-body td-muted ubi-aud-subtitulo">Tarjetas sin stock (cantidad 0)</div>
+                  {tabla(grupo.sinStock, 'SKU', esSinCelda)}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 function PageUbicaciones() {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
+  // El backend ya exige gerencia para borrar tarjetas y editar el plano; aquí solo se ocultan los botones.
+  const esGerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
   const [productos, setProductos] = rp_uS([]);
   const [q, setQ] = rp_uS('');
   const [selSku, setSelSku] = rp_uS(null);
@@ -32,11 +146,50 @@ function PageUbicaciones() {
   const [dispEstado, setDispEstado] = rp_uS('cargando'); // 'cargando' | 'ok' | 'error'
   const [dispError, setDispError] = rp_uS('');
   const [editandoBodega, setEditandoBodega] = rp_uS(false);
+  // Auditoría global (sin SKU elegido): todas las tarjetas de todos los SKUs + celda elegida en el mapa.
+  const [tarjetas, setTarjetas] = rp_uS([]);
+  const [tarjEstado, setTarjEstado] = rp_uS('cargando'); // 'cargando' | 'ok' | 'error'
+  const [tarjError, setTarjError] = rp_uS('');
+  const [celdaAud, setCeldaAud] = rp_uS(null);
+  const tarjPeticion = React.useRef(0);
 
   rp_uE(() => {
     (async () => setProductos(await window.api.productos()))();
     cargarDisposicion();
   }, []);
+
+  // Al abrir la página y cada vez que se vuelve a la vista global se releen las tarjetas
+  // (pudieron cambiar al editar o traspasar un SKU).
+  rp_uE(() => { if (!selSku) cargarTarjetas(); }, [selSku]);
+
+  const cargarTarjetas = async () => {
+    const n = ++tarjPeticion.current;
+    setTarjEstado(e => (e === 'ok' ? 'ok' : 'cargando'));
+    const r = await window.api.tarjetasBodega();
+    if (n !== tarjPeticion.current) return; // llegó una respuesta más nueva
+    if (r.ok) {
+      const lista = Array.isArray(r.data) ? r.data : r.data?.tarjetas;
+      setTarjetas(Array.isArray(lista) ? lista : []);
+      setTarjEstado('ok');
+      setTarjError('');
+    } else {
+      setTarjEstado('error');
+      setTarjError(r.error || 'Sin respuesta del servidor');
+    }
+  };
+
+  const volverGlobal = () => {
+    setSelSku(null);
+    setUbicaciones([]);
+    setEditIdx(null);
+    setShowNueva(false);
+    setResaltarId(null);
+  };
+
+  const auditoria = rp_uM(
+    () => (tarjEstado === 'ok' && disposicion ? window.anaquelesLogica.auditarBodega(disposicion.anaqueles, tarjetas) : null),
+    [tarjEstado, tarjetas, disposicion]
+  );
 
   const cargarDisposicion = async () => {
     setDispEstado(e => (e === 'ok' ? 'ok' : 'cargando'));
@@ -284,16 +437,6 @@ function PageUbicaciones() {
     toast.success('Reporte generado', r.nombre || '');
   };
 
-  const mapaVacio = (
-    <div className="card ubi-mapa-card">
-      <div className="card-body">
-        <div className="empty" style={{ padding: 60 }}>
-          <div className="empty-icon"><Icon name="building"/></div>
-          <div>Selecciona un SKU para ver sus ubicaciones</div>
-        </div>
-      </div>
-    </div>
-  );
   const mapaCarga = (
     <div className="card ubi-mapa-card">
       <div className="card-body">
@@ -314,7 +457,7 @@ function PageUbicaciones() {
           <p className="section-subtitle">Consulta y edita las ubicaciones físicas por SKU.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {!editandoBodega && (
+          {!editandoBodega && esGerencia && (
             <button className="btn btn-sm btn-secondary" onClick={() => setEditandoBodega(true)}
               title="Mover y dimensionar anaqueles y poner los IDs de sus celdas">
               <Icon name="edit" size={13}/> Editar bodega
@@ -330,6 +473,10 @@ function PageUbicaciones() {
           </button>
         {selSku && (
           <>
+            <button className="btn btn-sm btn-secondary" onClick={volverGlobal}
+              title="Quitar el SKU y auditar toda la bodega en el mapa">
+              <Icon name="building" size={13}/> Vista global
+            </button>
             <button
               className={`btn btn-sm ${showRegistro ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setShowRegistro(v => !v)}
@@ -402,33 +549,40 @@ function PageUbicaciones() {
                 )}
               </div>
             </div>
-          ) : !selSku ? mapaVacio : loading ? mapaCarga : (
+          ) : selSku && loading ? mapaCarga : (
             <>
-              <div className="card ubi-sku-head">
-                <div className="card-body ubi-sku-head-body">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="mono" style={{ fontSize: 12, color: 'var(--brand)', fontWeight: 600 }}>{selSku}</div>
-                    <div style={{ fontWeight: 500, fontSize: 14 }}>{prodSelObj?.nombre || ''}</div>
+              {selSku && (
+                <div className="card ubi-sku-head">
+                  <div className="card-body ubi-sku-head-body">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="mono" style={{ fontSize: 12, color: 'var(--brand)', fontWeight: 600 }}>{selSku}</div>
+                      <div style={{ fontWeight: 500, fontSize: 14 }}>{prodSelObj?.nombre || ''}</div>
+                    </div>
+                    <span className="badge">{ubicaciones.length} ubicación{ubicaciones.length !== 1 ? 'es' : ''}</span>
+                    <span className="badge" title={`Múltiplo: ${window.ubicacionesLogica.obtenerMultiplo(selSku)} pzas/unidad`}>
+                      Total: {window.ubicacionesLogica.sumarTotalPiezas(ubicaciones, selSku).toLocaleString('es-MX')} pzas
+                    </span>
                   </div>
-                  <span className="badge">{ubicaciones.length} ubicación{ubicaciones.length !== 1 ? 'es' : ''}</span>
-                  <span className="badge" title={`Múltiplo: ${window.ubicacionesLogica.obtenerMultiplo(selSku)} pzas/unidad`}>
-                    Total: {window.ubicacionesLogica.sumarTotalPiezas(ubicaciones, selSku).toLocaleString('es-MX')} pzas
-                  </span>
                 </div>
-              </div>
+              )}
               <div className="card ubi-mapa-card">
-                <div className="card-header"><h3 className="card-title">Esquema de Ubicaciones de Bodega</h3></div>
+                <div className="card-header">
+                  <h3 className="card-title">{selSku ? 'Esquema de Ubicaciones de Bodega' : 'Esquema de Bodega — auditoría global'}</h3>
+                </div>
                 <div className="card-body ubi-mapa-body">
                   {dispEstado === 'error' && (
                     <div className="crm-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-                      <span>No se pudo cargar el plano de anaqueles; se muestra la vista provisional. {dispError}</span>
+                      <span>No se pudo cargar el plano de anaqueles{selSku ? '; se muestra la vista provisional' : ''}. {dispError}</span>
                       <button className="btn btn-sm btn-secondary" onClick={cargarDisposicion}><Icon name="refresh" size={12}/> Reintentar</button>
                     </div>
                   )}
-                  {window.EsquemaBodega
-                    ? <window.EsquemaBodega ubicaciones={ubicaciones} selSku={selSku} resaltarId={resaltarId}
+                  {!selSku && dispEstado !== 'ok' ? (
+                    dispEstado === 'cargando' && <div className="empty" style={{ padding: 60 }}><span className="spinner"/></div>
+                  ) : window.EsquemaBodega
+                    ? <window.EsquemaBodega ubicaciones={selSku ? ubicaciones : []} selSku={selSku} resaltarId={resaltarId}
                         disposicion={dispEstado === 'ok' ? disposicion : null}
-                        onCeldaClick={resaltarUbicacion} onMoverTarjeta={moverTarjeta}/>
+                        onCeldaClick={resaltarUbicacion} onMoverTarjeta={moverTarjeta}
+                        auditoria={auditoria} celdaAud={celdaAud} onCeldaAuditar={setCeldaAud}/>
                     : <div className="empty" style={{ padding: 32 }}>Esquema no disponible (revisa la versión del archivo).</div>}
                 </div>
               </div>
@@ -437,12 +591,17 @@ function PageUbicaciones() {
         </section>
 
         <aside className="ubi-col ubi-col-acciones">
-          {!selSku || loading ? (
+          {!selSku ? (editandoBodega ? null :
+            <PanelAuditoriaCelda
+              estado={tarjEstado} error={tarjError} onReintentar={cargarTarjetas}
+              auditoria={auditoria} celdaSel={celdaAud} onElegirCelda={setCeldaAud}
+              onElegirSku={cargarUbicaciones}/>
+          ) : loading ? (
             <div className="card">
               <div className="card-body">
                 <div className="empty" style={{ padding: 40 }}>
                   <div className="empty-icon"><Icon name="building"/></div>
-                  <div>{loading ? <span className="spinner"/> : 'Elige un SKU para traspasar y editar tarjetas'}</div>
+                  <div><span className="spinner"/></div>
                 </div>
               </div>
             </div>
@@ -685,7 +844,7 @@ function PageUbicaciones() {
                         })()}
                       </div>
                       <div className="card-footer" style={{ justifyContent: 'flex-end' }}>
-                        {ub.id != null && (
+                        {ub.id != null && esGerencia && (
                           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}
                             onClick={() => askConfirm(`¿Eliminar ubicación ID #${ub.id}? Esta acción no se puede deshacer.`, () => eliminar(ub.id))}>
                             <Icon name="trash" size={12}/> Eliminar

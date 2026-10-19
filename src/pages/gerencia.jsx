@@ -1,31 +1,16 @@
 // ===== Zeutica — Monitor Gerencia: Pendientes de Registro =====
 const { useState: gm_uS, useEffect: gm_uE, useCallback: gm_uC, useRef: gm_uR } = React;
 
-const API_JAVA = 'https://postgresqldb-api-java.i4mjht.easypanel.host'; // Zeutica Java Server
+// La cola de pendientes (lista, estadísticas, alta con recurrencia) vive en FastAPI: window.api.cola*().
+// Antes iba a api_java, con la cola en memoria y un POST /api/recargar después de cada escritura.
 
-async function javaFetch(path, opts = {}) {
-  const metodo = (opts.method || 'GET').toUpperCase();
-  try {
-    const r = await fetch(`${API_JAVA}${path}`, { signal: AbortSignal.timeout(5000), ...opts });
-    // Misma lectura que el resto del panel: el cuerpo del error se muestra tal cual.
-    return await window.api.interpretarRespuesta(r, { metodo, ruta: path });
-  } catch (err) {
-    // Red/CORS/timeout: el servidor no contestó, su estado real se desconoce.
-    return window.api.registrarError({
-      ok: false, status: 0, data: null,
-      error: `No se pudo contactar a ${API_JAVA} — ${err.message}`,
-      detalle: err.message, cuerpo: null, texto: '', metodo, ruta: path, live: false,
-    });
-  }
-}
-
-// Backend Java mezcla mayúsc/minúsc en prioridad/estado; normalizar para tono de badge.
+// La BD mezcla mayúsc/minúsc en prioridad/estado; normalizar para tono de badge.
 const PRIO_TONE = { alta: 'danger', media: 'warn', baja: 'info' };
 const ESTADO_TONE = { pendiente: 'warn', 'en proceso': 'info', completado: 'success', cancelado: '' };
 const prioTone = (p) => PRIO_TONE[String(p || '').toLowerCase()] || 'info';
 const estadoTone = (e) => ESTADO_TONE[String(e || '').toLowerCase()] ?? 'info';
 
-function DrawerJava({ onClose }) {
+function DrawerCola({ onClose }) {
   const [items, setItems]   = gm_uS([]);
   const [stats, setStats]   = gm_uS(null);
   const [detail, setDetail] = gm_uS(null);
@@ -37,8 +22,8 @@ function DrawerJava({ onClose }) {
     setLoading(true);
     setLoadError(null);
     const [rItems, rStats] = await Promise.all([
-      javaFetch('/api/pendientes'),
-      javaFetch('/api/estadisticas'),
+      window.api.colaListar(),
+      window.api.colaEstadisticas(),
     ]);
     if (rItems.ok) setItems(Array.isArray(rItems.data) ? rItems.data : (rItems.data?.data ?? []));
     else setLoadError(rItems.error);
@@ -51,7 +36,7 @@ function DrawerJava({ onClose }) {
   const fetchDetail = async (id) => {
     if (detail?.id === id) { setDetail(null); return; }
     setDetLoading(true);
-    const r = await javaFetch(`/api/pendientes/${id}`);
+    const r = await window.api.colaDetalle(id);
     setDetLoading(false);
     setDetail(r.ok ? r.data : { error: 'No encontrado' });
   };
@@ -74,7 +59,7 @@ function DrawerJava({ onClose }) {
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 15 }}>Pendientes Zeutica</div>
-            <div style={{ fontSize: 11, color: 'var(--fg-2)' }}>Api Java Server</div>
+            <div style={{ fontSize: 11, color: 'var(--fg-2)' }}>Cola de atención</div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-ghost btn-icon btn-sm" onClick={loadAll} disabled={loading} title="Actualizar">
@@ -126,7 +111,6 @@ function DrawerJava({ onClose }) {
               <div className="empty-icon"><Icon name="close"/></div>
               <div style={{ color: 'var(--danger)' }}>Error de conexión</div>
               <div style={{ fontSize: 11, color: 'var(--fg-2)', marginTop: 4 }}>{loadError}</div>
-              <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 4 }}>Revisa CORS en el backend Java</div>
             </div>
           )}
           {!loading && !loadError && items.length === 0 && (
@@ -256,21 +240,20 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
     }
     setSaving(true);
 
-    // Alta con recurrencia: FastAPI no conoce esa columna, así que se crea
-    // directo en api_java (ya queda visible y sincronizado, sin recargar aparte).
+    // Alta con recurrencia: pendientes-agregar no conoce esa columna, así que se crea con el
+    // endpoint de la cola (queda visible de inmediato; no hay nada que recargar).
     if (!isEdit && form.recurrencia) {
-      const qs = new URLSearchParams({
+      const rCola = await window.api.colaNueva({
         usuario: form.usuario.trim(),
         actividad: form.actividad.trim(),
         prioridad: form.prioridad,
-        observaciones: form.observaciones.trim() || '',
-        fecha_promesa: form.fecha_promesa || '',
+        observaciones: form.observaciones.trim() || null,
+        fecha_promesa: form.fecha_promesa || null,
         recurrencia: form.recurrencia,
       });
-      const rJava = await javaFetch(`/api/pendientes/nueva?${qs}`, { method: 'POST' });
       setSaving(false);
-      if (!rJava.ok) {
-        toast.error('Error al guardar', rJava.error);
+      if (!rCola.ok) {
+        toast.error('Error al guardar', rCola.error);
         return;
       }
       toast.success('Pendiente agregado', form.actividad);
@@ -287,8 +270,6 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
       observaciones: form.observaciones.trim() || null,
       fecha_promesa: form.fecha_promesa || null,
     };
-    // 1) Escribir en BD (FastAPI). 2) Recién entonces recargar cola Java —
-    // si corren en paralelo, recargar lee BD antes del commit y trae datos viejos.
     const r = isEdit
       ? await window.api.actualizarPendiente(pendId(pendiente), payload)
       : await window.api.agregarPendiente(payload);
@@ -298,19 +279,18 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
       return;
     }
 
-    // La recurrencia tampoco la conoce el PATCH de FastAPI: si cambió, se
-    // ajusta aparte con el endpoint dedicado de api_java.
+    // La recurrencia tampoco la conoce el PATCH de pendientes-actualizar: si cambió, se
+    // ajusta aparte con el endpoint dedicado de la cola.
+    let avisoRecurrencia = null;
     if (isEdit && form.recurrencia !== (pendiente.recurrencia ?? '')) {
-      const idOriginal = pendId(pendiente);
-      const valor = form.recurrencia || '';
-      await javaFetch(`/api/pendientes/${idOriginal}/recurrencia?usuario=${encodeURIComponent(form.usuario.trim())}&valor=${encodeURIComponent(valor)}`, { method: 'POST' });
+      const rRec = await window.api.colaCambiarRecurrencia(pendId(pendiente), form.recurrencia || '');
+      if (!rRec.ok) avisoRecurrencia = rRec.error;
     }
 
-    const rRecarga = await javaFetch('/api/recargar', { method: 'POST' });
     setSaving(false);
-    if (!rRecarga.ok) {
-      // El pendiente sí se guardó; solo falló recargar la cola Java.
-      toast.warn(isEdit ? 'Actualizado, sin recargar' : 'Guardado, sin recargar', 'No se pudo recargar cola Java: ' + (rRecarga.error || ''));
+    if (avisoRecurrencia) {
+      // El pendiente sí se guardó; solo falló el cambio de recurrencia.
+      toast.warn('Actualizado, sin cambiar la recurrencia', avisoRecurrencia);
     } else {
       toast.success(isEdit ? 'Pendiente actualizado' : 'Pendiente agregado', form.actividad);
     }
@@ -538,17 +518,13 @@ function PageGerencia() {
     if (id == null) { toast.error('Sin identificador', 'No se puede eliminar este pendiente'); return; }
     if (!window.confirm(`¿Eliminar el pendiente "${row.actividad ?? id}"? Esta acción no se puede deshacer.`)) return;
     setDeletingId(id);
-    // 1) Borrar en BD (FastAPI). 2) Recién entonces recargar cola Java.
     const r = await window.api.eliminarPendiente(id);
+    setDeletingId(null);
     if (!r.ok) {
-      setDeletingId(null);
       toast.error('Error al eliminar', r.error);
       return;
     }
-    const rRecarga = await javaFetch('/api/recargar', { method: 'POST' });
-    setDeletingId(null);
-    if (!rRecarga.ok) toast.warn('Eliminado, sin recargar', 'No se pudo recargar cola Java: ' + (rRecarga.error || ''));
-    else toast.success('Pendiente eliminado', row.actividad || '');
+    toast.success('Pendiente eliminado', row.actividad || '');
     reloadAll();
   };
 
@@ -570,7 +546,7 @@ function PageGerencia() {
           onSaved={reloadAll}
         />
       )}
-      {showDrawer && <DrawerJava onClose={() => setShowDrawer(false)}/>}
+      {showDrawer && <DrawerCola onClose={() => setShowDrawer(false)}/>}
       <div className="section-header">
         <div>
           <h2 className="section-title">Monitor Gerencia</h2>
@@ -595,7 +571,7 @@ function PageGerencia() {
             className={`btn btn-sm ${showDrawer ? 'btn-secondary' : 'btn-ghost'}`}
             onClick={() => setShowDrawer(v => !v)}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            title="Ver pendientes Java"
+            title="Ver la cola de atención"
           >
             <Icon name="eye" size={13}/> Monitor Procesos
           </button>

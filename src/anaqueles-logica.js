@@ -40,6 +40,36 @@
     return { porCodigo, sinPosicion };
   }
 
+  // Tarjetas de UNA celda agrupadas por SKU (suma de cantidad y tarjetas que la componen).
+  // conStock: suma > 0; sinStock: suma <= 0 (tarjetas en cero que conviene revisar).
+  function skusEnCelda(tarjetas) {
+    const porSku = new Map();
+    (tarjetas || []).forEach(t => {
+      const sku = String(t?.sku ?? '').trim();
+      if (!porSku.has(sku)) porSku.set(sku, { sku, nombre: '', cantidad: 0, tarjetas: [] });
+      const f = porSku.get(sku);
+      f.cantidad += Number(t?.cantidad) || 0;
+      f.tarjetas.push(t);
+      if (!f.nombre && t?.nombre) f.nombre = t.nombre;
+    });
+    const lista = [...porSku.values()].sort((a, b) => a.sku.localeCompare(b.sku, 'es', { numeric: true }));
+    return { conStock: lista.filter(s => s.cantidad > 0), sinStock: lista.filter(s => s.cantidad <= 0) };
+  }
+
+  // Auditoría global: { porCodigo: Map(codigo normalizado -> { tarjetas, conStock, sinStock }),
+  // sinPosicion: [tarjetas cuyo warehouse_id no es ID de ninguna celda], celdasConStock }.
+  function auditarBodega(anaqueles, tarjetas) {
+    const { porCodigo, sinPosicion } = ubicarTarjetas(anaqueles, tarjetas);
+    const celdas = new Map();
+    let celdasConStock = 0;
+    porCodigo.forEach((lista, clave) => {
+      const skus = skusEnCelda(lista);
+      if (skus.conStock.length) celdasConStock++;
+      celdas.set(clave, { tarjetas: lista, ...skus });
+    });
+    return { porCodigo: celdas, sinPosicion, celdasConStock };
+  }
+
   function orientacionDe(a) {
     return a?.orientacion === 'V' ? 'V' : 'H';
   }
@@ -180,7 +210,7 @@
 
   const mod = {
     MAX_COLUMNAS, MAX_NIVELES, PLANO_ANCHO, PLANO_ALTO,
-    normalizarCodigo, tarjetasEn, celdaEn, ubicarTarjetas, orientacionDe, huella, seEnciman, cabeEnPlano, posicionLibre,
+    normalizarCodigo, tarjetasEn, celdaEn, ubicarTarjetas, skusEnCelda, auditarBodega, orientacionDe, huella, seEnciman, cabeEnPlano, posicionLibre,
     celdasOcupadasFuera, recortarCeldas, autonumerar, codigosRepetidos, planearDisposicion,
   };
 

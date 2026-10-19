@@ -40,7 +40,7 @@
 <link rel="stylesheet" href="src/estilos/skydropx.css?v=20261007">
 <link rel="stylesheet" href="src/estilos/crm.css?v=20261001">
 <link rel="stylesheet" href="src/estilos/calendario.css?v=20261009">
-<link rel="stylesheet" href="src/estilos/esquema-bodega.css?v=20261023">
+<link rel="stylesheet" href="src/estilos/esquema-bodega.css?v=20261024">
 
 <style>
   /* App-level loader (before React mounts) */ 
@@ -76,13 +76,16 @@ window.fireConfetti = function() {
   // En despliegue, ejecutar: ./inject-api-base.sh (Linux/Mac) o .\inject-api-base.ps1 (Windows)
   // Esto reemplazará la línea siguiente con el valor de .env
   // window.API_BASE_URL = 'https://postgresqldb-server-zeutica.i4mjht.easypanel.host';
+  // SOLO desarrollo local: activa el login demo sin backend (gerencia/ventas/demo). En producción no.
+  // window.USE_MOCK_LOGIN = true;
 </script>
 
 <!-- Foundations -->
 <script type="text/babel" src="src/icons.jsx?v=20261007"></script>
-<script type="text/babel" src="src/api.jsx?v=20261015"></script>
+<script type="text/babel" src="src/api.jsx?v=20261026"></script>
 <script src="src/cleanest-venta.js?v=20260612"></script>
 <script src="src/skydropx-logica.js?v=20261001"></script>
+<script src="src/html-seguro.js?v=20261025"></script>
 <script src="src/cliente-alta.js?v=20261002b"></script>
 <script src="src/cotizacion-logica.js?v=20261007"></script>
 <script src="src/gastos-logica.js?v=20260930"></script>
@@ -93,7 +96,7 @@ window.fireConfetti = function() {
 <script type="text/babel" src="src/charts.jsx?v=20260506"></script>
 
 <!-- Shell & Login -->
-<script type="text/babel" src="src/login.jsx?v=20260812"></script>
+<script type="text/babel" src="src/login.jsx?v=20261025"></script>
 <script type="text/babel" src="src/shell.jsx?v=20261007"></script>
 
 <!-- Pages -->
@@ -101,7 +104,7 @@ window.fireConfetti = function() {
 <script type="text/babel" src="src/pages/inventario.jsx?v=20261008"></script>
 <script type="text/babel" src="src/pages/movimientos_inventario.jsx?v=20261008"></script>
 <script type="text/babel" src="src/pages/conteo.jsx?v=20261007"></script>
-<script type="text/babel" src="src/pages/ventas.jsx?v=20261006"></script>
+<script type="text/babel" src="src/pages/ventas.jsx?v=20261025"></script>
 <script type="text/babel" src="src/pages/constants.jsx?v=20260607"></script>
 <script type="text/babel" src="src/pages/skydropx_envio.jsx?v=20261007"></script>
 <script type="text/babel" src="src/pages/cotizaciones.jsx?v=20261002"></script>
@@ -123,15 +126,15 @@ window.fireConfetti = function() {
 <script type="text/babel" src="src/pages/registro_ingresos.jsx?v=20260619"></script>
 <script type="text/babel" src="src/pages/registro_movimientos.jsx?v=20261008"></script>
 <script src="src/ubicaciones-logica.js?v=20261016"></script>
-<script src="src/anaqueles-logica.js?v=20261017"></script>
+<script src="src/anaqueles-logica.js?v=20261024"></script>
 <script src="src/esquema-bodega-logica.js?v=20261023"></script>
-<script type="text/babel" src="src/pages/esquema_bodega.jsx?v=20261023"></script>
+<script type="text/babel" src="src/pages/esquema_bodega.jsx?v=20261024"></script>
 <script type="text/babel" src="src/pages/editor_bodega.jsx?v=20261018"></script>
-<script type="text/babel" src="src/pages/ubicaciones.jsx?v=20261021"></script>
+<script type="text/babel" src="src/pages/ubicaciones.jsx?v=20261025"></script>
 <script type="text/babel" src="src/pages/usuarios.jsx?v=20260824"></script>
-<script type="text/babel" src="src/pages/contrasena.jsx?v=20260824"></script>
-<script type="text/babel" src="src/pages/gerencia.jsx?v=20260824"></script>
-<script type="text/babel" src="src/pages/acciones_pendientes.jsx?v=20260824"></script>
+<script type="text/babel" src="src/pages/contrasena.jsx?v=20261025"></script>
+<script type="text/babel" src="src/pages/gerencia.jsx?v=20261026"></script>
+<script type="text/babel" src="src/pages/acciones_pendientes.jsx?v=20261026"></script>
 <script type="text/babel" src="src/pages/clientes_potenciales.jsx?v=20261001"></script>
 <script type="text/babel" src="src/pages/promociones_meli.jsx?v=20260824"></script>
 <script type="text/babel" src="src/pages/conversaciones_sofi.jsx?v=20260824"></script>
@@ -145,7 +148,7 @@ window.fireConfetti = function() {
 
 <!-- App bootstrap (LAST) -->
 
-<script type="text/babel" src="src/app.jsx?v=20261007"></script>
+<script type="text/babel" src="src/app.jsx?v=20261025"></script>
 
 <script>
   // Hide loader once React mounts

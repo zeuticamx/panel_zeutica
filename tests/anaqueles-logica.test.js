@@ -21,6 +21,42 @@ test('ubicarTarjetas: casa por warehouse_id sin mayúsculas ni espacios; el rest
   assert.deepEqual(A.ubicarTarjetas(null, null), { porCodigo: new Map(), sinPosicion: [] });
 });
 
+test('skusEnCelda: agrupa por SKU, suma tarjetas y separa los que están en cero', () => {
+  const r = A.skusEnCelda([
+    { id: 1, sku: 'B2', nombre: 'Bolsa', cantidad: 5 },
+    { id: 2, sku: 'A10', nombre: '', cantidad: 0 },
+    { id: 3, sku: 'B2', nombre: null, cantidad: 3 },
+    { id: 4, sku: 'A9', nombre: 'Caja', cantidad: '4' },
+    { id: 5, sku: 'C1', nombre: 'Tapa', cantidad: 0 },
+    { id: 6, sku: 'C1', nombre: 'Tapa', cantidad: null },
+  ]);
+  assert.deepEqual(r.conStock.map(s => [s.sku, s.cantidad]), [['A9', 4], ['B2', 8]]);
+  assert.equal(r.conStock[1].nombre, 'Bolsa');
+  assert.deepEqual(r.conStock[1].tarjetas.map(t => t.id), [1, 3]);
+  assert.deepEqual(r.sinStock.map(s => s.sku), ['A10', 'C1']);
+  assert.deepEqual(A.skusEnCelda(null), { conStock: [], sinStock: [] });
+});
+
+test('auditarBodega: SKUs por celda (normalizada), celdas con stock y tarjetas sin celda', () => {
+  const anq = [anaquel(1, 'A', { celdas: [[0, 0, '10'], [0, 1, 'Ab-1'], [0, 2, '12']] })];
+  const tarjetas = [
+    { id: 1, sku: 'X', warehouse_id: '10 ', cantidad: 2 },
+    { id: 2, sku: 'Y', warehouse_id: '10', cantidad: 1 },
+    { id: 3, sku: 'X', warehouse_id: 'AB-1', cantidad: 0 },
+    { id: 4, sku: 'Z', warehouse_id: 'Oficina', cantidad: 9 },
+  ];
+  const r = A.auditarBodega(anq, tarjetas);
+  assert.deepEqual(r.porCodigo.get('10').conStock.map(s => s.sku), ['X', 'Y']);
+  assert.deepEqual(r.porCodigo.get('ab-1').sinStock.map(s => s.sku), ['X']);
+  assert.equal(r.porCodigo.get('ab-1').conStock.length, 0);
+  assert.equal(r.porCodigo.has('12'), false); // celda sin tarjetas: no aparece
+  assert.equal(r.celdasConStock, 1);
+  assert.deepEqual(r.sinPosicion.map(t => t.id), [4]);
+  const vacio = A.auditarBodega(null, null);
+  assert.equal(vacio.porCodigo.size, 0);
+  assert.equal(vacio.celdasConStock, 0);
+});
+
 test('posicionLibre: dentro del plano y sin encimarse (se ignora a sí mismo)', () => {
   const anq = [anaquel(1, 'A', { x: 0, y: 0, columnas: 4 }), anaquel(2, 'B', { x: 6, y: 0, columnas: 2 })];
   assert.equal(A.posicionLibre(anq, 0, { ...anq[0], x: 1 }), true);

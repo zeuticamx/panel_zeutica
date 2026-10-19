@@ -151,6 +151,7 @@ function LoginScreen({ onLogin }) {
             {loading ? <><span className="spinner"/> Autenticando...</> : <>Entrar <Icon name="chevRight" size={14}/></>}
           </button>
 
+          {window.USE_MOCK_LOGIN === true && (<>
           <div className="login-divider"><span>o prueba con</span></div>
 
           <div className="login-demo">
@@ -169,6 +170,7 @@ function LoginScreen({ onLogin }) {
               </div>
             </button>
           </div>
+          </>)}
 
           <div className="login-foot">
             <span>¿Problemas para acceder?</span>

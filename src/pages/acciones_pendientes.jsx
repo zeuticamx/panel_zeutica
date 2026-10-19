@@ -1,25 +1,10 @@
 // ===== Zeutica — Acciones Pendientes: cola de atención por usuario =====
 const { useState: ap_uS, useEffect: ap_uE, useCallback: ap_uC, useMemo: ap_uM } = React;
 
-const AP_API_JAVA = 'https://postgresqldb-api-java.i4mjht.easypanel.host';   // backend Java (FDK) de Zeutica
+// La cola vive en FastAPI (window.api.cola*): el usuario sale del token, así que cada quien solo ve y opera lo suyo.
+// Antes iba a api_java (cola en memoria + POST /api/recargar antes de leer).
 
-async function apFetch(path, opts = {}) {
-  const metodo = (opts.method || 'GET').toUpperCase();
-  try {
-    const r = await fetch(`${AP_API_JAVA}${path}`, { signal: AbortSignal.timeout(5000), ...opts });
-    // Misma lectura que el resto del panel: el cuerpo del error se muestra tal cual.
-    return await window.api.interpretarRespuesta(r, { metodo, ruta: path });
-  } catch (err) {
-    // Red/CORS/timeout: el servidor no contestó, su estado real se desconoce.
-    return window.api.registrarError({
-      ok: false, status: 0, data: null,
-      error: `No se pudo contactar a ${AP_API_JAVA} — ${err.message}`,
-      detalle: err.message, cuerpo: null, texto: '', metodo, ruta: path, live: false,
-    });
-  }
-}
-
-// Backend Java mezcla mayúsc/minúsc en prioridad; normalizar para tono de badge.
+// La BD mezcla mayúsc/minúsc en prioridad; normalizar para tono de badge.
 const AP_PRIO_TONE = { alta: 'danger', media: 'warn', baja: 'info' };
 const apPrioTone = (p) => AP_PRIO_TONE[String(p || '').toLowerCase()] || 'info';
 
@@ -101,16 +86,10 @@ function PageAccionesPendientes({ user }) {
   const [misPendientes, setMisPendientes] = ap_uS([]);   // /api/pendientes del usuario
   const [loadingLista, setLoadingLista]   = ap_uS(false);
 
-  // La cola Java vive en RAM: solo se sincroniza con MySQL al arrancar o con
-  // POST /api/recargar. Sin esto, las tareas creadas después no aparecen aquí.
-  const recargarCola = ap_uC(async () => {
-    await apFetch('/api/recargar', { method: 'POST' });
-  }, []);
-
   // Tareas 'en proceso' del usuario. Pueden ser varias, todas del mismo nivel.
   // El backend responde array; se tolera la respuesta antigua (objeto único).
   const cargarEnProceso = ap_uC(async () => {
-    const r = await apFetch(`/api/pendientes/en-proceso?usuario=${encodeURIComponent(user)}`);
+    const r = await window.api.colaEnProceso();
     if (r.ok) {
       const d = r.data;
       const lista = Array.isArray(d) ? d : (d ? [d.atendido ?? d] : []);
@@ -124,7 +103,7 @@ function PageAccionesPendientes({ user }) {
   // Lista completa de pendientes del usuario logeado (el backend filtra por ?usuario=).
   const cargarLista = ap_uC(async () => {
     setLoadingLista(true);
-    const r = await apFetch(`/api/pendientes?usuario=${encodeURIComponent(user)}`);
+    const r = await window.api.colaListar();
     setLoadingLista(false);
     if (!r.ok) {
       setError(r.error);
@@ -136,20 +115,18 @@ function PageAccionesPendientes({ user }) {
     setMisPendientes(u ? lista.filter((p) => String(p.usuario || '').trim().toLowerCase() === u) : lista);
   }, [user]);
 
-  // Al montar: sincronizar la cola con MySQL PRIMERO, luego leer.
+  // Al montar: leer la cola (siempre sale de MySQL; no hay nada que sincronizar antes).
   ap_uE(() => {
     (async () => {
       setError(null);
-      await recargarCola();
       await Promise.all([cargarEnProceso(), cargarLista()]);
     })();
-  }, [recargarCola, cargarEnProceso, cargarLista]);
+  }, [cargarEnProceso, cargarLista]);
 
   const refrescarTodo = ap_uC(async () => {
     setError(null);
-    await recargarCola();
     await Promise.all([cargarEnProceso(), cargarLista()]);
-  }, [recargarCola, cargarEnProceso, cargarLista]);
+  }, [cargarEnProceso, cargarLista]);
 
   // Agrupar por nivel de prioridad — solo organiza visualmente. El usuario puede
   // atender cualquier tarea propia sin importar el nivel de otras en cola o abiertas.
@@ -166,19 +143,7 @@ function PageAccionesPendientes({ user }) {
       return;
     }
     setActing(true);
-    const r = await apFetch(`/api/pendientes/${p.id}/atender?usuario=${encodeURIComponent(user)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id_pendiente: p.id,
-        usuario: user,
-        actividad: p.actividad,
-        prioridad: p.prioridad,
-        estado: 'en_proceso',
-        observaciones: p.observaciones ?? null,
-        fecha_promesa: p.fechaPromesa ?? null,
-      }),
-    });
+    const r = await window.api.colaAtender(p.id);
     setActing(false);
     if (!r.ok) {
       toast.error('No se pudo atender', r.error);
@@ -206,19 +171,7 @@ function PageAccionesPendientes({ user }) {
     if (id == null) return;
     setActing(true);
     setActingId(id);
-    const r = await apFetch(`/api/pendientes/${id}/terminar?usuario=${encodeURIComponent(user)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id_pendiente: id,
-        usuario: user,
-        actividad: tarea?.actividad,
-        prioridad: tarea?.prioridad,
-        estado: 'terminado',
-        observaciones: tarea?.observaciones ?? null,
-        fecha_promesa: tarea?.fechaPromesa ?? null,
-      }),
-    });
+    const r = await window.api.colaTerminar(id);
     setActing(false);
     setActingId(null);
     if (!r.ok) {

@@ -71,7 +71,7 @@ function PageContrasena({ user }) {
     if (nueva !== confirmar) { setErr('Las contraseñas no coinciden'); return; }
     if (nueva === actual) { setErr('La nueva contraseña debe ser diferente a la actual'); return; }
     setErr(''); setLoading(true);
-    const r = await window.api.cambiarPassword(user, nueva);
+    const r = await window.api.cambiarPassword(user, actual, nueva);
     setLoading(false);
     if (r.ok) {
       toast.success('Contraseña actualizada', 'Usa tu nueva contraseña en el próximo inicio de sesión');
