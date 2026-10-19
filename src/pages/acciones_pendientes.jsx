@@ -89,11 +89,13 @@ function PageAccionesPendientes({ user }) {
   // Tareas 'en proceso' del usuario. Pueden ser varias, todas del mismo nivel.
   // El backend responde array; se tolera la respuesta antigua (objeto único).
   const cargarEnProceso = ap_uC(async () => {
-    const r = await window.api.colaEnProceso();
+    // Siempre con el usuario logueado: sin él, el backend le da TODAS las tareas a gerencia
+    // (eso es del Monitor Gerencia). Aquí cada quien ve solo las suyas, también gerencia.
+    const r = await window.api.colaEnProceso(user);
     if (r.ok) {
       const d = r.data;
       const lista = Array.isArray(d) ? d : (d ? [d.atendido ?? d] : []);
-      setEnProceso(lista.filter(Boolean));
+      setEnProceso(lista.filter(t => t && apMismoUsuario(t, user)));
       return;
     }
     if (r.status === 404) { setEnProceso([]); return; }
@@ -103,7 +105,7 @@ function PageAccionesPendientes({ user }) {
   // Lista completa de pendientes del usuario logeado (el backend filtra por ?usuario=).
   const cargarLista = ap_uC(async () => {
     setLoadingLista(true);
-    const r = await window.api.colaListar();
+    const r = await window.api.colaListar(user);
     setLoadingLista(false);
     if (!r.ok) {
       setError(r.error);
