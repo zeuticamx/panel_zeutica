@@ -639,13 +639,21 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   // ya reconsulta un par de segundos, pero si el carrier tarda más, el dato
   // solo llega por webhook). Sin esto, quien deja el modal abierto nunca ve el
   // número de rastreo ni el botón de imprimir aparecer por sí solos.
-  const actualizarGuia = async () => {
-    setActualizando(true);
-    const lista = await window.api.skydropxEnvios(codigo);
-    setActualizando(false);
+  //
+  // `refrescar`: el backend le pregunta a Skydropx por lo que falta (tracking /
+  // etiqueta) en vez de esperar el webhook; si ese paso falla se usa lo guardado.
+  // `silencioso`: sin toasts de «sin novedades» (lo usa el auto-refresco).
+  // Devuelve true si aparecieron datos nuevos.
+  const sincronizarGuia = async ({ refrescar = false, silencioso = false } = {}) => {
+    let lista = null;
+    if (refrescar) {
+      const r = await window.api.skydropxRefrescarEnvios(codigo);
+      if (r.ok) lista = r;
+    }
+    if (!lista) lista = await window.api.skydropxEnvios(codigo);
     if (!lista.ok || lista.length === 0) {
-      toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
-      return;
+      if (!silencioso) toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
+      return false;
     }
     const ultimo = lista[0]; // el backend ya ordena por id DESC
     const actualizada = {
@@ -668,9 +676,48 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     cargarHistorial(actualizada.tracking);
     const huboNovedad = actualizada.tracking !== guia?.tracking || actualizada.etiqueta !== guia?.etiqueta
       || nuevosBultos.length !== bultos.length;
-    if (huboNovedad) toast.success('Actualizado', 'Se encontraron datos nuevos de Skydropx');
-    else toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
+    if (huboNovedad) {
+      if (silencioso) {
+        if (actualizada.etiqueta && !guia?.etiqueta) toast.success('Etiqueta lista', 'Ya puedes imprimir la guía');
+      } else {
+        toast.success('Actualizado', 'Se encontraron datos nuevos de Skydropx');
+      }
+    } else if (!silencioso) {
+      toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
+    }
+    return huboNovedad;
   };
+
+  const actualizarGuia = async () => {
+    setActualizando(true);
+    await sincronizarGuia({ refrescar: true });
+    setActualizando(false);
+  };
+
+  // Auto-refresco: mientras falte la etiqueta (la guía se compró pero el carrier
+  // aún no la entrega) se le pregunta a Skydropx cada 6 s, hasta 10 veces. Sin
+  // esto el usuario tenía que adivinar cuándo pulsar «Actualizar». El ref evita
+  // usar el estado viejo dentro del intervalo y que dos consultas se encimen.
+  const sincronizarRef = sk_uR(null);
+  sincronizarRef.current = sincronizarGuia;
+  const sincronizandoAuto = sk_uR(false);
+  const faltaEtiqueta = !!guia && (!guia.etiqueta || (bultos.length > 1 && bultos.some(b => !b.etiqueta)));
+  sk_uE(() => {
+    if (!faltaEtiqueta) return undefined;
+    let intentos = 0;
+    const id = setInterval(async () => {
+      if (sincronizandoAuto.current) return;
+      intentos += 1;
+      if (intentos > 10) { clearInterval(id); return; }
+      sincronizandoAuto.current = true;
+      try {
+        await sincronizarRef.current({ refrescar: true, silencioso: true });
+      } finally {
+        sincronizandoAuto.current = false;
+      }
+    }, 6000);
+    return () => clearInterval(id);
+  }, [faltaEtiqueta, codigo]);
 
   // ---------- Recolección (dos pasos) ----------
   // Paso 1: qué fechas/horarios ofrece el carrier para ESE shipment.
@@ -1237,10 +1284,15 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                   )}
                   {/* Documentación para imprimir: la etiqueta se pega al paquete;
                       la remisión (packing slip) acompaña la entrega. */}
-                  {guia.etiqueta && (
+                  {guia.etiqueta ? (
                     <a className="btn btn-secondary btn-sm" href={guia.etiqueta} target="_blank" rel="noopener noreferrer">
                       <Icon name="download" size={12} /> Imprimir etiqueta
                     </a>
+                  ) : (
+                    <button className="btn btn-secondary btn-sm" disabled
+                      title="El carrier aún no entrega la etiqueta; se actualiza sola o pulsa «Actualizar»">
+                      <span className="spinner" /> Generando etiqueta…
+                    </button>
                   )}
                   {guia.ordenDetalle && (
                     <a className="btn btn-secondary btn-sm" href={guia.ordenDetalle} target="_blank" rel="noopener noreferrer">

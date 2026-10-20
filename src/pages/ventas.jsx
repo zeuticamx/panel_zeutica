@@ -1,7 +1,7 @@
 // ===== Zeutica — Ventas (carrito mejorado) =====
 const { useState: vt_uS, useEffect: vt_uE, useMemo: vt_uM } = React;
 
-function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuento, iva, total, cliente, metPago, plataforma, usuario, cotCargada }) {
+function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuento, iva, total, cliente, metPago, plataforma, usuario, cotCargada, facturable }) {
   const hora = new Date().toTimeString().slice(0, 5);
   const fmt = window.fmt.mxn;
   const esc = window.htmlSeguro.esc; // todo texto de datos va escapado: el ticket se arma con innerHTML
@@ -35,6 +35,7 @@ function printTicket({ id_venta, fecha, cartItems, subtotal, descMonto, descuent
         <div><b>Cliente:</b> ${esc(cliente) || '—'}</div>
         <div><b>Plataforma:</b> ${esc(plataforma)}</div>
         <div><b>Pago:</b> ${esc(metPago)}</div>
+        ${typeof facturable === 'boolean' ? `<div><b>Factura:</b> ${facturable ? 'Sí' : 'No'}</div>` : ''}
         ${cotCargada ? `<div><b>Cot.:</b> ${esc(cotCargada)}</div>` : ''}
       </div>
       <div style="border-top:1px dashed #000;margin-bottom:2px;"></div>
@@ -100,6 +101,8 @@ function PageVentas({ user }) {
   const [cliente, setCliente] = vt_uS(null);
   const [plataforma, setPlataforma] = vt_uS('Directo');
   const [metPago, setMetPago] = vt_uS('CONTADO');
+  // null = sin contestar: el vendedor debe elegir Sí/No antes de poder cobrar.
+  const [facturable, setFacturable] = vt_uS(null);
   const [descuento, setDescuento] = vt_uS(0);
   const [loadCotMode, setLoadCotMode] = vt_uS(false);
   const [cotCargada, setCotCargada] = vt_uS(null);
@@ -261,7 +264,8 @@ function PageVentas({ user }) {
   const preciosValidos = cart.every(i => Number(i.precio) > 0);
 
   const clienteObj = clientes.find(c => c.nombre === cliente);
-  const puedeProcesar = cart.length > 0 && cliente && preciosValidos && !(metPago === 'CREDITO' && !clienteObj?.credito);
+  const puedeProcesar = cart.length > 0 && cliente && preciosValidos && facturable !== null
+    && !(metPago === 'CREDITO' && !clienteObj?.credito);
 
   const procesar = async () => {
     if (metPago === 'CREDITO' && !clienteObj?.credito) {
@@ -283,6 +287,7 @@ function PageVentas({ user }) {
       usuario: user,
       condicion_pago: metPago,
       cotizacion: cotCargada || undefined,
+      facturable: facturable === true,
       items: cart.map(item => {
         // Number() explícito: el precio de la línea se edita a mano y viaja como texto.
         const precio = Math.round(Number(item.precio) * (1 - descuento / 100) * 100) / 100;
@@ -302,6 +307,7 @@ function PageVentas({ user }) {
       cliente, metPago, plataforma,
       usuario: user,
       cotCargada,
+      facturable,
     };
     
     setSubmitting(false);
@@ -314,6 +320,7 @@ function PageVentas({ user }) {
       clearCart();
       setCliente(null);
       setCotCargada(null);
+      setFacturable(null);
     } else {
       // Con respuesta del servidor (409 duplicado, 400 stock, 500…) la transacción se
       // revirtió completa. Con status 0 no contestó y r.error ya dice que el estado es desconocido.
@@ -557,6 +564,18 @@ function PageVentas({ user }) {
             {metPago === 'CREDITO' && clienteObj && !clienteObj.credito && (
               <div className="login-error"><Icon name="alert" size={13}/> <span>{cliente} no tiene crédito autorizado</span></div>
             )}
+            <div className="field">
+              <label className="field-label">¿Requiere factura?</label>
+              <select className="select" value={facturable === null ? '' : facturable ? 'si' : 'no'}
+                onChange={e => setFacturable(e.target.value === '' ? null : e.target.value === 'si')}>
+                <option value="">Selecciona...</option>
+                <option value="si">Sí, requiere factura</option>
+                <option value="no">No requiere factura</option>
+              </select>
+            </div>
+            {cart.length > 0 && cliente && facturable === null && (
+              <div style={{ fontSize: 11, color: 'var(--fg-2)' }}>Indica si la venta requiere factura para poder cobrar.</div>
+            )}
           </div>
 
           {cotCargada && (
@@ -566,13 +585,13 @@ function PageVentas({ user }) {
           )}
 
           <div className="card-footer">
-            <button className="btn btn-secondary btn-sm" onClick={() => { clearCart(); setCliente(null); setCotCargada(null); }}>Cancelar</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => { clearCart(); setCliente(null); setCotCargada(null); setFacturable(null); }}>Cancelar</button>
             {lastTicket && cart.length === 0 && (
               <button className="btn btn-ghost btn-sm" onClick={() => printTicket(lastTicket)}>
                 <Icon name="doc" size={13}/> Reimprimir
               </button>
             )}
-            <button className="btn btn-primary btn-sm" disabled={!puedeProcesar || submitting} onClick={() => askConfirm(`¿Confirmar venta de ${cliente} por ${window.fmt.mxn(total)}? De verdad esta segur@ de realizar esta acción?, no se puede deshacer.`, procesar)}>
+            <button className="btn btn-primary btn-sm" disabled={!puedeProcesar || submitting} onClick={() => askConfirm(`¿Confirmar venta de ${cliente} por ${window.fmt.mxn(total)} ${facturable ? 'CON factura' : 'SIN factura'}? De verdad esta segur@ de realizar esta acción?, no se puede deshacer.`, procesar)}>
               {submitting
                 ? <><span className="spinner"/> Enviando...</>
                 : <><Icon name="check" size={13}/> Realizar venta{cart.length > 0 ? ` · ${window.fmt.mxn(total)}` : ''}</>}

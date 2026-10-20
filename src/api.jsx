@@ -579,6 +579,12 @@ const api = {
   async registrarVentaCompleta(payload) {
     return tryFetch('/zeutica/ventas/registrar', { method: 'POST', body: JSON.stringify(payload) });
   },
+  // Marca/desmarca facturada una venta (todas sus partidas). El usuario sale del token.
+  async marcarVentaFacturada(idVentas, facturada, factura) {
+    return tryFetch(`/zeutica/ventas/${encodeURIComponent(idVentas)}/facturada`, {
+      method: 'PATCH', body: JSON.stringify({ facturada: !!facturada, factura: factura || null }),
+    });
+  },
   // Devolución de producto. sku en path; body schema { sku, producto, cantidad, plataforma, reingreso }.
   async registrarDevolucion(sku, payload, usuario) {
     return tryFetch(`/zeutica/producto/devolucion/${encodeURIComponent(sku)}`, { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
@@ -1044,6 +1050,18 @@ const api = {
   async skydropxEnvios(codigoCotizacion) {
     const q = codigoCotizacion ? `?codigo_cotizacion=${encodeURIComponent(codigoCotizacion)}` : '';
     return listaConError(await tryFetch(`/zeutica/skydropx/envios${q}`, { timeout: 15000 }), d => d?.envios);
+  },
+  // Pide al backend completar tracking/etiqueta pendientes consultando a Skydropx
+  // (sin esperar el webhook). Devuelve la misma lista que skydropxEnvios.
+  async skydropxRefrescarEnvios(codigoCotizacion) {
+    return listaConError(
+      await tryFetch('/zeutica/skydropx/envios/refrescar', {
+        method: 'POST',
+        body: JSON.stringify({ codigo_cotizacion: codigoCotizacion }),
+        timeout: 30000,
+      }),
+      d => d?.envios
+    );
   },
   // Línea de tiempo de una guía, armada con los eventos que mandó el webhook.
   async skydropxEventosEnvio(trackingNumber) {

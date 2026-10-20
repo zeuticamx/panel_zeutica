@@ -22,6 +22,15 @@ function CrmEmbudo({ embudo }) {
           </div>
         </div>
       ))}
+      {embudo.prospectos_nuevos && (
+        <div
+          className="crm-embudo-prospectos"
+          title={embudo.prospectos_nuevos.por_vendedor.map(v => `${v.vendedor}: ${v.total}`).join('\n') || 'Sin registros en el periodo'}
+        >
+          <span>Prospectos nuevos <span className="td-muted">(registrados en Mis Seguimientos → Prospectos, en el periodo)</span></span>
+          <b className="num mono">{window.fmt.int(embudo.prospectos_nuevos.total)}</b>
+        </div>
+      )}
       <div className="td-muted" style={{ fontSize: 12, marginTop: 8 }}>
         {window.fmt.int(embudo.total)} clientes en el CRM · +N = entradas a la etapa en el periodo
         {embudo.tasa_cierre != null && <> · Tasa de cierre del periodo: <b>{Math.round(embudo.tasa_cierre * 100)}%</b></>}

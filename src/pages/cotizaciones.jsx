@@ -201,17 +201,20 @@ function PageCotizaciones({ user }) {
 
   rp_uE(() => { (async () => setCots(await window.api.cotizaciones()))(); }, []);
 
+  // Valores de relación tal como están en BD: sirven de base para saber qué cambió el usuario.
+  const cotValoresOriginales = (cot) => ({
+    relacion_factura: cot.relacion_factura || '',
+    forma_pago: cotNormalizaFormaPago(cot.metodo_pago),
+    fecha_pago: cot.fecha_pago ? cot.fecha_pago.slice(0, 10) : '',
+  });
+
   rp_uE(() => {
     if (cots.length === 0) return;
     setEditRelaciones(prev => {
       const next = { ...prev };
       cots.forEach(c => {
         if (!next[c.codigo_cotizacion]) {
-          next[c.codigo_cotizacion] = {
-            relacion_factura: c.relacion_factura || '',
-            forma_pago: cotNormalizaFormaPago(c.metodo_pago),
-            fecha_pago: c.fecha_pago ? c.fecha_pago.slice(0, 10) : '',
-          };
+          next[c.codigo_cotizacion] = cotValoresOriginales(c);
         }
       });
       return next;
@@ -444,7 +447,15 @@ function PageCotizaciones({ user }) {
 
   const guardarRelaciones = async () => {
     const records = Object.entries(editRelaciones)
-      .filter(([, v]) => v.relacion_factura || v.forma_pago || v.fecha_pago)
+      // Solo se envían las cotizaciones cuyos valores cambiaron respecto a BD.
+      .filter(([codigo, v]) => {
+        const cot = cots.find(c => c.codigo_cotizacion === codigo);
+        if (!cot) return false;
+        const o = cotValoresOriginales(cot);
+        return (v.relacion_factura || '') !== o.relacion_factura
+          || (v.forma_pago || '') !== o.forma_pago
+          || (v.fecha_pago || '') !== o.fecha_pago;
+      })
       .map(([codigo, v]) => {
         // El id numérico y el nombre del cliente no viven en editRelaciones: se buscan en la cotización.
         const cot = cots.find(c => c.codigo_cotizacion === codigo);
@@ -459,7 +470,7 @@ function PageCotizaciones({ user }) {
           fecha_pago: v.fecha_pago || null,
         };
       });
-    if (records.length === 0) { toast.warn('Sin cambios', 'Ingresa al menos una relación'); return; }
+    if (records.length === 0) { toast.warn('Sin cambios', 'No modificaste ninguna relación'); return; }
     setSavingRelacion(true);
     const r = await window.api.relacionFactura(records);
     setSavingRelacion(false);
