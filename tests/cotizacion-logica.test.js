@@ -90,3 +90,19 @@ test('nombreArchivoCotizacion quita caracteres inválidos en Windows', () => {
   assert.equal(logica.nombreArchivoCotizacion('ZTC-301', 'A/B: "C"'), 'Cotizacion_ZTC-301_AB C.pdf');
   assert.equal(logica.nombreArchivoCotizacion(null, ''), 'Cotizacion.pdf');
 });
+
+test('armarRegistroRelacion: sin cambios devuelve null', () => {
+  const o = { relacion_factura: 'F-1', forma_pago: '01 - Efectivo', fecha_pago: '2026-10-01' };
+  assert.equal(logica.armarRegistroRelacion({ id: 1, codigo_cotizacion: 'C1' }, { ...o }, o), null);
+});
+
+test('armarRegistroRelacion: arma el registro y limpia la factura vacía', () => {
+  const o = { relacion_factura: 'F-1', forma_pago: '', fecha_pago: '' };
+  const r = logica.armarRegistroRelacion(
+    { id: 7, codigo_cotizacion: 'C7', empresa: 'Uno' },
+    { relacion_factura: '  ', forma_pago: '03 - SPEI', fecha_pago: '2026-10-02' }, o);
+  assert.deepEqual(r, {
+    id: 7, nombre: 'Uno', codigo_cotizacion: 'C7', relacion_factura: null,
+    forma_pago: '03 - SPEI', metodo_pago: '03 - SPEI', fecha_pago: '2026-10-02',
+  });
+});

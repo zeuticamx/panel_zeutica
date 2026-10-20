@@ -958,6 +958,17 @@ const api = {
   async comisionesRecalcular(desde, hasta) {
     return tryFetch('/zeutica/comisiones/recalcular', { method: 'POST', body: JSON.stringify({ desde, hasta }), timeout: 60000 });
   },
+  // ---- Punto de reorden (solo gerencia; el backend calcula y responde 403 a los demás) ----
+  async reorden() {
+    return tryFetch('/zeutica/reorden', { timeout: 30000 });
+  },
+  async reordenGuardarParametros(sku, { lead_time_meses, nivel_servicio_z }) {
+    return tryFetch(`/zeutica/reorden/parametros/${encodeURIComponent(sku)}`, { method: 'PUT', body: JSON.stringify({ lead_time_meses, nivel_servicio_z }) });
+  },
+  // Manda ya el aviso de Telegram con los SKU por comprar (202: corre en segundo plano).
+  async reordenAvisar() {
+    return tryFetch('/zeutica/jobs/reorden/run', { method: 'POST', body: JSON.stringify({ motivo: 'manual' }) });
+  },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });
   },

@@ -177,8 +177,9 @@ function PageCotizaciones({ user }) {
   const [comentarioCustom, setComentarioCustom] = rp_uS('');
   const [submitting, setSubmitting] = rp_uS(false);
   const [verLoading, setVerLoading] = rp_uS(null);
-  const [showConsultor, setShowConsultor] = rp_uS(false);
-  const [editRelaciones, setEditRelaciones] = rp_uS({});
+  // Código de la cotización cuyo modal «Relacionar factura» está abierto, y su borrador.
+  const [relacionCodigo, setRelacionCodigo] = rp_uS(null);
+  const [relacionEdit, setRelacionEdit] = rp_uS({});
   const [savingRelacion, setSavingRelacion] = rp_uS(false);
   const [firmaModal, setFirmaModal] = rp_uS(null);
   const [verFirmaModal, setVerFirmaModal] = rp_uS(null);
@@ -208,18 +209,22 @@ function PageCotizaciones({ user }) {
     fecha_pago: cot.fecha_pago ? cot.fecha_pago.slice(0, 10) : '',
   });
 
+  const abrirRelacion = (cot) => {
+    setRelacionEdit(cotValoresOriginales(cot));
+    setRelacionCodigo(cot.codigo_cotizacion);
+  };
+  const cerrarRelacion = () => { if (!savingRelacion) setRelacionCodigo(null); };
+
+  // ESC cierra el modal de relación, pero solo si no hay encima el de firma o complementos
+  // (esos se muestran después en el DOM y quedan arriba).
   rp_uE(() => {
-    if (cots.length === 0) return;
-    setEditRelaciones(prev => {
-      const next = { ...prev };
-      cots.forEach(c => {
-        if (!next[c.codigo_cotizacion]) {
-          next[c.codigo_cotizacion] = cotValoresOriginales(c);
-        }
-      });
-      return next;
-    });
-  }, [cots]);
+    if (!relacionCodigo) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !firmaModal && !verFirmaModal && !complementoModal && !savingRelacion) setRelacionCodigo(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [relacionCodigo, firmaModal, verFirmaModal, complementoModal, savingRelacion]);
 
   // Guías Skydropx con su último estatus. Se pide una sola vez y se arma el mapa
   // por código de cotización; cada renglón solo lee su entrada.
@@ -445,41 +450,22 @@ function PageCotizaciones({ user }) {
     }
   };
 
-  const guardarRelaciones = async () => {
-    const records = Object.entries(editRelaciones)
-      // Solo se envían las cotizaciones cuyos valores cambiaron respecto a BD.
-      .filter(([codigo, v]) => {
-        const cot = cots.find(c => c.codigo_cotizacion === codigo);
-        if (!cot) return false;
-        const o = cotValoresOriginales(cot);
-        return (v.relacion_factura || '') !== o.relacion_factura
-          || (v.forma_pago || '') !== o.forma_pago
-          || (v.fecha_pago || '') !== o.fecha_pago;
-      })
-      .map(([codigo, v]) => {
-        // El id numérico y el nombre del cliente no viven en editRelaciones: se buscan en la cotización.
-        const cot = cots.find(c => c.codigo_cotizacion === codigo);
-        return {
-          id: cot?.id ?? null,
-          nombre: cot?.empresa || null,
-          codigo_cotizacion: codigo,
-          relacion_factura: v.relacion_factura || null,
-          forma_pago: v.forma_pago || null,
-          // Alias temporal: el endpoint viejo aún espera metodo_pago para esta columna.
-          metodo_pago: v.forma_pago || null,
-          fecha_pago: v.fecha_pago || null,
-        };
-      });
-    if (records.length === 0) { toast.warn('Sin cambios', 'No modificaste ninguna relación'); return; }
+  const guardarRelacion = async () => {
+    const cot = cots.find(c => c.codigo_cotizacion === relacionCodigo);
+    if (!cot) return;
+    // Solo se envía si algo cambió respecto a BD.
+    const registro = window.cotizacionLogica.armarRegistroRelacion(cot, relacionEdit, cotValoresOriginales(cot));
+    if (!registro) { toast.warn('Sin cambios', 'No modificaste la relación'); return; }
     setSavingRelacion(true);
-    const r = await window.api.relacionFactura(records);
+    const r = await window.api.relacionFactura([registro]);
     setSavingRelacion(false);
     if (r.ok) {
-      toast.success('Relaciones guardadas', `${records.length} cotización(es) actualizadas`);
+      toast.success('Relación guardada', cot.codigo_cotizacion);
       window.fireConfetti();
+      setRelacionCodigo(null);
       setCots(await window.api.cotizaciones());
     } else {
-      toast.error('No se pudieron guardar las relaciones', r.error);
+      toast.error(`No se pudo guardar la relación de ${cot.codigo_cotizacion}`, r.error);
     }
   };
 
@@ -556,9 +542,6 @@ function PageCotizaciones({ user }) {
           <p className="section-subtitle">Genera y da seguimiento a cotizaciones de clientes.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className={`btn btn-sm ${showConsultor ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => setShowConsultor(v => !v)}>
-            <Icon name="doc" size={13}/> {showConsultor ? 'Cerrar consultor' : 'Relacionar facturas'}
-          </button>
           <button className={`btn btn-sm ${showForm ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setShowForm(v => !v)}>
             <Icon name="plus" size={13}/> {showForm ? 'Cerrar' : 'Nueva cotización'}
           </button>
@@ -793,89 +776,75 @@ function PageCotizaciones({ user }) {
         </div>
       )}
 
-      {showConsultor && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <div>
-              <h3 className="card-title">Relación de facturas</h3>
-              <p className="card-subtitle">Vincula factura, método y fecha de pago a cotizaciones</p>
+      {relacionCodigo && (() => {
+        const cot = cots.find(c => c.codigo_cotizacion === relacionCodigo);
+        if (!cot) return null;
+        const ed = relacionEdit;
+        const setEd = (k, v) => setRelacionEdit(prev => ({ ...prev, [k]: v }));
+        return (
+          <div className="modal-backdrop" onClick={cerrarRelacion}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+                <div>
+                  <h3 className="card-title">Relacionar factura</h3>
+                  <p className="card-subtitle mono" style={{ fontSize: 11 }}>
+                    {cot.codigo_cotizacion} · {cot.empresa} · {window.fmt.mxn(cot.total)}
+                  </p>
+                </div>
+                <button className="btn btn-ghost btn-icon btn-sm" onClick={cerrarRelacion}><Icon name="x" size={14}/></button>
+              </div>
+              <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <p style={{ fontSize: 12, color: 'var(--fg-2)' }}>
+                  La factura aplica a toda la cotización (todos sus items): {(cot.items || []).map(i => i.nombre_producto).join(', ') || 'sin items'}.
+                </p>
+                <div className="field">
+                  <label className="field-label">N° Factura</label>
+                  <input className="input" value={ed.relacion_factura || ''}
+                    onChange={e => setEd('relacion_factura', e.target.value)} placeholder="N° factura"/>
+                  <span style={{ fontSize: 11, color: 'var(--fg-2)' }}>Déjalo vacío para quitar la factura: las ventas de esta cotización con esa factura regresan a pendientes.</span>
+                </div>
+                <div className="field">
+                  <label className="field-label">Método de pago</label>
+                  <select className="select" value={ed.forma_pago || ''} onChange={e => setEd('forma_pago', e.target.value)}>
+                    <option value="">—</option>
+                    {/* Valor fuera del catálogo (clave vieja o texto libre): se muestra tal cual en vez de quedar vacío. */}
+                    {ed.forma_pago && !COT_FORMAS_PAGO.includes(ed.forma_pago) && (
+                      <option value={ed.forma_pago}>{ed.forma_pago}</option>
+                    )}
+                    {COT_FORMAS_PAGO.map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field-label">Fecha de pago</label>
+                  <input className="input" type="date" value={ed.fecha_pago || ''} onChange={e => setEd('fecha_pago', e.target.value)}/>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setFirmaModal({ codigo: cot.codigo_cotizacion })}>
+                    <Icon name="edit" size={12}/> Firmar
+                  </button>
+                  <button className="btn btn-ghost btn-sm" disabled={!cot.firma_envio}
+                    onClick={() => setVerFirmaModal({ codigo: cot.codigo_cotizacion, firma_b64: cot.firma_envio })}>
+                    <Icon name="eye" size={12}/> Ver firma
+                  </button>
+                  <button className="btn btn-ghost btn-sm"
+                    onClick={() => setComplementoModal({ codigo_cotizacion: cot.codigo_cotizacion, total: cot.total })}>
+                    <Icon name="plus" size={12}/> Complemento de pago
+                  </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button className="btn btn-secondary btn-sm" disabled={savingRelacion} onClick={cerrarRelacion}>Cancelar</button>
+                  <button className="btn btn-primary btn-sm" disabled={savingRelacion}
+                    onClick={() => askConfirm(`¿Guardar la relación de ${cot.codigo_cotizacion}?`, guardarRelacion)}>
+                    {savingRelacion ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar relación</>}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr>
-                <th>Código</th><th>Cliente</th><th className="td-right">Total</th>
-                <th>N° Factura</th><th>Método de pago</th><th>Fecha de pago</th><th>Firma</th><th>Complementos</th><th></th>
-              </tr></thead>
-              <tbody>
-                {cots.map(c => {
-                  const ed = editRelaciones[c.codigo_cotizacion] || {};
-                  const setEd = (k, v) => setEditRelaciones(prev => ({
-                    ...prev,
-                    [c.codigo_cotizacion]: { ...(prev[c.codigo_cotizacion] || {}), [k]: v },
-                  }));
-                  return (
-                    <tr key={c.codigo_cotizacion}>
-                      <td className="mono" style={{ fontSize: 12, fontWeight: 500 }}>{c.codigo_cotizacion}</td>
-                      <td style={{ fontSize: 12 }}>{c.empresa}</td>
-                      <td className="td-right mono" style={{ fontSize: 12 }}>{window.fmt.mxn(c.total)}</td>
-                      <td style={{ minWidth: 130 }}>
-                        <input className="input" style={{ fontSize: 12, padding: '4px 8px' }}
-                          value={ed.relacion_factura || ''}
-                          onChange={e => setEd('relacion_factura', e.target.value)}
-                          placeholder="N° factura"/>
-                      </td>
-                      <td style={{ minWidth: 150 }}>
-                        <select className="select" style={{ fontSize: 12, padding: '4px 8px' }}
-                          value={ed.forma_pago || ''}
-                          onChange={e => setEd('forma_pago', e.target.value)}>
-                          <option value="">—</option>
-                          {/* Valor fuera del catálogo (clave vieja o texto libre): se muestra tal cual en vez de quedar vacío. */}
-                          {ed.forma_pago && !COT_FORMAS_PAGO.includes(ed.forma_pago) && (
-                            <option value={ed.forma_pago}>{ed.forma_pago}</option>
-                          )}
-                          {COT_FORMAS_PAGO.map(f => (
-                            <option key={f} value={f}>{f}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ minWidth: 140 }}>
-                        <input className="input" type="date" style={{ fontSize: 12, padding: '4px 8px' }}
-                          value={ed.fecha_pago || ''}
-                          onChange={e => setEd('fecha_pago', e.target.value)}/>
-                      </td>
-                      <td style={{ minWidth: 130 }}>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
-                            onClick={() => setFirmaModal({ codigo: c.codigo_cotizacion })}>
-                            <Icon name="edit" size={12}/> Firmar
-                          </button>
-                          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
-                            disabled={!c.firma_envio}
-                            onClick={() => setVerFirmaModal({ codigo: c.codigo_cotizacion, firma_b64: c.firma_envio })}>
-                            <Icon name="eye" size={12}/> Ver
-                          </button>
-                        </div>
-                      </td>
-                      <td>
-                        <button className="btn btn-ghost btn-icon btn-sm" title="Complemento de pago"
-                          onClick={() => setComplementoModal({ codigo_cotizacion: c.codigo_cotizacion, total: c.total })}>
-                          <Icon name="plus" size={13}/>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="card-footer">
-            <button className="btn btn-primary btn-sm" disabled={savingRelacion} onClick={() => askConfirm('¿Guardar las relaciones de facturas seleccionadas?', guardarRelaciones)}>
-              {savingRelacion ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar relaciones</>}
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {showClienteNuevo && window.ClienteNuevoModal && (
         <window.ClienteNuevoModal onCreated={clienteCreado} onClose={() => setShowClienteNuevo(false)}/>
@@ -1094,11 +1063,32 @@ function PageCotizaciones({ user }) {
                         : <span style={{ color: 'var(--danger)' }} title="Cotización vencida">{fecha}</span>;
                     })()}
                   </td>
-                  <td className="td-right mono">{(c.items || []).map((item, index) => (
-                    <li key={index}>
-                        {item.nombre_producto}
-                    </li>
-                ))}</td>
+                  <td className="td-right mono">
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                      {(c.items || []).map((item, index) => (
+                        <li key={`${index}-${item.nombre_producto}`}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, padding: '2px 0' }}>
+                          {item.nombre_producto}
+                          {/* La factura es de toda la cotización: cada botón abre el mismo modal. */}
+                          {!!c.vendido && (
+                            <button type="button" className="btn btn-ghost btn-sm"
+                              title={c.relacion_factura ? `Factura ${c.relacion_factura}: editar relación` : 'Relacionar factura'}
+                              onClick={() => abrirRelacion(c)}>
+                              {c.relacion_factura ? (
+                                <>
+                                  <span className="badge badge-success"><span className="badge-dot"/>Facturada</span>
+                                  <span className="mono">{String(c.relacion_factura).slice(0, 8)}…</span>
+                                  <Icon name="edit" size={12}/>
+                                </>
+                              ) : (
+                                <><Icon name="doc" size={12}/> Relacionar factura</>
+                              )}
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
                   <td className="td-right mono">{window.fmt.mxn(c.subtotal)}</td>
                   <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(c.total)}</td>
                   <td>

@@ -59,7 +59,28 @@
     return `${partes.join('_')}.pdf`;
   }
 
-  const mod = { armarPayloadCotizacion, nombreArchivoCotizacion };
+  // Registro de POST /relacionFactura para UNA cotización, o null si no cambió nada
+  // respecto a `original` (mismas claves: relacion_factura, forma_pago, fecha_pago).
+  function armarRegistroRelacion(cot, editado, original) {
+    const e = editado || {};
+    const o = original || {};
+    const sinCambios = (e.relacion_factura || '') === (o.relacion_factura || '')
+      && (e.forma_pago || '') === (o.forma_pago || '')
+      && (e.fecha_pago || '') === (o.fecha_pago || '');
+    if (sinCambios) return null;
+    return {
+      id: cot?.id ?? null,
+      nombre: cot?.empresa || null,
+      codigo_cotizacion: cot?.codigo_cotizacion,
+      relacion_factura: String(e.relacion_factura || '').trim() || null,
+      forma_pago: e.forma_pago || null,
+      // Alias: el endpoint aún espera metodo_pago para esta columna.
+      metodo_pago: e.forma_pago || null,
+      fecha_pago: e.fecha_pago || null,
+    };
+  }
+
+  const mod = { armarPayloadCotizacion, nombreArchivoCotizacion, armarRegistroRelacion };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.cotizacionLogica = mod;

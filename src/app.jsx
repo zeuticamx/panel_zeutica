@@ -401,6 +401,7 @@ function App() {
     full:         window.PageFull,    
     gastos:       window.PageGastos,
     embarques:    window.PageEmbarques,
+    punto_reorden: window.PagePuntoReorden,
     //pendientes:   window.PagePendientes,
     cleanest:     window.PageCleanest,
     compras:      window.PageCompras,

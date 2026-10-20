@@ -33,6 +33,7 @@ const NAV = [
   { key: 'gastos',       label: 'Gastos Operativos',icon: 'wallet' },
   { key: 'devoluciones',  label: 'Devoluciones',     icon: 'refresh' },
   { key: 'embarques',    label: 'Rastreo Importaciones', icon: 'pkg' },
+  { key: 'punto_reorden', label: 'Punto de reorden', icon: 'trend', gerencia: true },
   //{ key: 'pendientes',   label: 'Cuentas Pendientes',icon: 'clock', gerencia: true },
   { key: 'cleanest',     label: 'CleanestChoice',   icon: 'stars' },
   { key: 'compras',      label: 'Compras',          icon: 'cart', gerencia: true },
@@ -76,11 +77,12 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Operación</div>
-        {NAV.slice(6, 17).map((n) => (
+        {/* Índices por posición en NAV: al agregar un item en Operación, mueve también Finanzas. */}
+        {NAV.slice(6, 18).map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Finanzas</div>
-        {NAV.slice(17, 21).map((n) => (
+        {NAV.slice(18, 22).map((n) => (
           <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
         ))}
       </nav>
