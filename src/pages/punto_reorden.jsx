@@ -147,6 +147,17 @@ function PagePuntoReorden() {
         <window.MiniStat label="Sin demanda" value={window.fmt.int(res.sin_demanda)} icon="box"/>
       </div>
 
+      {data && data.ventas_en_ventana === 0 && (
+        <div className="crm-error" style={{ marginTop: 16 }}>
+          No se encontraron ventas activas entre {data.desde} y {data.hasta} (sin incluir esa fecha): por eso todos los SKU salen «Sin demanda». Revisa que las ventas tengan fecha de registro y estatus activa.
+        </div>
+      )}
+      {data && data.skus_vendidos_sin_producto?.length > 0 && (
+        <div className="td-muted" style={{ marginTop: 12, fontSize: 12 }}>
+          Hay ventas de {data.skus_vendidos_sin_producto.length} SKU que no existen en Inventario y no se evalúan: {data.skus_vendidos_sin_producto.slice(0, 8).join(', ')}{data.skus_vendidos_sin_producto.length > 8 ? '…' : ''}.
+        </div>
+      )}
+
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header" style={{ flexWrap: 'wrap', gap: 8 }}>
           <div className="input-group" style={{ maxWidth: 280, flex: 1 }}>
