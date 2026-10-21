@@ -243,6 +243,42 @@
     return p;
   }
 
+  // Editar/borrar un seguimiento: su autor, el dueño actual del cliente (`vendedor` en
+  // /crm/seguimientos) o gerencia. Espejo de _interaccion_autorizada del backend.
+  function puedeEditarSeguimiento(s, usuario, gerencia) {
+    if (!s) return false;
+    if (gerencia) return true;
+    const yo = String(usuario ?? '').trim().toLowerCase();
+    return !!yo && [s.autor, s.vendedor].some(v => String(v ?? '').trim().toLowerCase() === yo);
+  }
+
+  // Valor normalizado para comparar: el backend manda null donde el form tiene ''.
+  const textoONulo = (v) => String(v ?? '').trim() || null;
+
+  // Devuelve null si es válido o el mensaje de error. Una fecha ya vencida se acepta
+  // mientras no se toque (el backend solo rechaza fechas pasadas que se envían).
+  function validarSeguimientoEdicion(form, original, hoy = hoyISO()) {
+    if (!form?.proxima_fecha) return 'Indica la fecha del seguimiento (para quitarlo, elimínalo)';
+    if (form.proxima_fecha !== String(original?.proxima_fecha ?? '').slice(0, 10) && form.proxima_fecha < hoy) {
+      return 'La fecha compromiso no puede estar en el pasado';
+    }
+    if (String(form.notas || '').length > MAX_NOTAS) return `Las notas admiten máximo ${MAX_NOTAS} caracteres`;
+    if (String(form.proxima_accion || '').length > 255) return 'La próxima acción admite máximo 255 caracteres';
+    return null;
+  }
+
+  // Solo manda lo que cambió, para no pisar lo que otra persona editó. {} = «Sin cambios».
+  function armarPayloadSeguimientoEdicion(form, original) {
+    const p = {};
+    ['resultado', 'notas', 'proxima_accion'].forEach(k => {
+      const nuevo = textoONulo(form[k]);
+      if (nuevo !== textoONulo(original?.[k])) p[k] = nuevo;
+    });
+    const fecha = String(form.proxima_fecha || '').slice(0, 10);
+    if (fecha && fecha !== String(original?.proxima_fecha ?? '').slice(0, 10)) p.proxima_fecha = fecha;
+    return p;
+  }
+
   // Enlace para contactar desde la lista (tel:, mailto:, wa.me). null si no hay dato.
   function enlaceContacto(tipoKey, cliente) {
     const tel = String(cliente?.telefono ?? '').replace(/\D/g, '');
@@ -283,6 +319,7 @@
     etapa, tipo, tipoEvento, etiquetaEtapa, etiquetaTipo, etiquetaTipoEvento, etiquetaResultado,
     fechaISO, hoyISO, sumarDias, rangoPreset, textoAtraso,
     validarInteraccion, armarPayloadInteraccion, validarEvento, armarPayloadEvento,
+    puedeEditarSeguimiento, validarSeguimientoEdicion, armarPayloadSeguimientoEdicion,
     aInputLocal, aLas9, claveDia, mismoDia, lunesSemana, diasGrillaMes, diasSemana,
     rangoVista, moverAncla, tituloRango,
     enlaceContacto, queryString, puntosSerie, etiquetaMesEnCurso,

@@ -136,3 +136,42 @@ test('etiquetaMesEnCurso nombra el mes de la descarga', () => {
   assert.equal(crm.etiquetaMesEnCurso(new Date(2026, 9, 19)), 'octubre 2026');
   assert.equal(crm.etiquetaMesEnCurso(new Date(2027, 0, 1)), 'enero 2027');
 });
+
+// ---------- Editar / borrar seguimientos ----------
+
+const SEG = { id: 9, autor: 'luis', vendedor: 'ana', resultado: 'contesto', notas: 'Llamar', proxima_accion: 'Enviar cotización', proxima_fecha: '2026-09-20' };
+
+test('puedeEditarSeguimiento: autor, dueño actual o gerencia', () => {
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'luis', false), true);   // autor
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'ANA', false), true);    // dueño actual, sin importar mayúsculas
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'pedro', false), false);
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'pedro', true), true);   // gerencia
+  assert.equal(crm.puedeEditarSeguimiento(null, 'luis', false), false);
+});
+
+test('armarPayloadSeguimientoEdicion manda solo lo que cambió', () => {
+  const igual = { resultado: 'contesto', notas: 'Llamar', proxima_accion: 'Enviar cotización', proxima_fecha: '2026-09-20' };
+  assert.deepEqual(crm.armarPayloadSeguimientoEdicion(igual, SEG), {});
+  assert.deepEqual(crm.armarPayloadSeguimientoEdicion({ ...igual, notas: '  Volver a llamar ' }, SEG), { notas: 'Volver a llamar' });
+  assert.deepEqual(crm.armarPayloadSeguimientoEdicion({ ...igual, proxima_fecha: '2026-10-05' }, SEG), { proxima_fecha: '2026-10-05' });
+});
+
+test('armarPayloadSeguimientoEdicion: vaciar un texto o el resultado manda null', () => {
+  const base = { resultado: 'contesto', notas: 'Llamar', proxima_accion: 'Enviar cotización', proxima_fecha: '2026-09-20' };
+  assert.deepEqual(
+    crm.armarPayloadSeguimientoEdicion({ ...base, resultado: '', notas: '   ', proxima_accion: '' }, SEG),
+    { resultado: null, notas: null, proxima_accion: null },
+  );
+  // nulos del backend equivalen a vacío: no es un cambio
+  const vacio = { ...SEG, resultado: null, notas: null, proxima_accion: null };
+  assert.deepEqual(crm.armarPayloadSeguimientoEdicion({ ...base, resultado: '', notas: '', proxima_accion: '' }, vacio), {});
+});
+
+test('validarSeguimientoEdicion: fecha vencida solo se acepta si no se tocó', () => {
+  const f = { resultado: 'contesto', notas: 'x', proxima_accion: '', proxima_fecha: '2026-09-20' };
+  assert.equal(crm.validarSeguimientoEdicion(f, SEG, HOY), null);                       // vencido sin cambiar la fecha
+  assert.match(crm.validarSeguimientoEdicion({ ...f, proxima_fecha: '2026-09-25' }, SEG, HOY), /pasado/);
+  assert.equal(crm.validarSeguimientoEdicion({ ...f, proxima_fecha: HOY }, SEG, HOY), null);
+  assert.match(crm.validarSeguimientoEdicion({ ...f, proxima_fecha: '' }, SEG, HOY), /fecha/i);
+  assert.match(crm.validarSeguimientoEdicion({ ...f, notas: 'a'.repeat(crm.MAX_NOTAS + 1) }, SEG, HOY), /máximo/);
+});

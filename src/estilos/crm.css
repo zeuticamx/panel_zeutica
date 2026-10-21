@@ -68,6 +68,7 @@ button.crm-resultado:hover { background: var(--bg-3); color: var(--fg-0); }
 .crm-seg {
   display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line);
 }
+.crm-seg-borrar:hover:not(:disabled) { color: var(--danger); }
 .crm-seg-vencido { box-shadow: inset 3px 0 0 var(--danger); }
 .crm-seg-main { flex: 1; min-width: 0; cursor: pointer; }
 .crm-seg-cliente { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }

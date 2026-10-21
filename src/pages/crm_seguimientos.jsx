@@ -2,10 +2,11 @@
 // Pestañas: Seguimientos (vencidos / hoy / próximos 7 días), Mi cartera (etapa en
 // línea) y Mi bitácora. El vendedor solo ve lo suyo (lo filtra el backend por token);
 // gerencia ve todo y puede filtrar por vendedor.
-const { useState: crs_uS, useEffect: crs_uE, useCallback: crs_uC } = React;
+const { useState: crs_uS, useEffect: crs_uE, useCallback: crs_uC, useRef: crs_uR } = React;
 
-function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, vencido }) {
+function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, onEditar, onEliminar, ocupado, vencido }) {
   const L = window.crmLogica;
+  const puedeEditar = L.puedeEditarSeguimiento(s, window.api.usuario, gerencia);
   const cliente = { id: s.cliente_id, nombre: s.cliente, telefono: s.telefono, email: s.email };
   return (
     <div className={`crm-seg ${vencido ? 'crm-seg-vencido' : ''}`}>
@@ -27,6 +28,102 @@ function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, vencid
       <button className="btn btn-ghost btn-sm" title="Marcar como hecho sin registrar interacción" onClick={() => onHecho(s)}>
         <Icon name="check" size={13}/>
       </button>
+      {puedeEditar && (
+        <>
+          <button className="btn btn-ghost btn-sm" title="Editar seguimiento" disabled={ocupado} onClick={() => onEditar(s)}>
+            <Icon name="edit" size={13}/>
+          </button>
+          <button className="btn btn-ghost btn-sm crm-seg-borrar" title="Eliminar seguimiento" disabled={ocupado} onClick={() => onEliminar(s)}>
+            <Icon name="trash" size={13}/>
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Edita notas, resultado, próxima acción y fecha de un seguimiento. Tipo y fecha de la
+// interacción no se tocan (alteran la bitácora y las métricas).
+function CrmSeguimientoEditarModal({ seg, onClose, onSaved, onGone }) {
+  const L = window.crmLogica;
+  const toast = window.useToast();
+  const hoy = L.hoyISO();
+  const [form, setForm] = crs_uS({
+    resultado: seg.resultado || '', notas: seg.notas || '', proxima_accion: seg.proxima_accion || '',
+    proxima_fecha: String(seg.proxima_fecha || '').slice(0, 10),
+  });
+  const [saving, setSaving] = crs_uS(false);
+  const [error, setError] = crs_uS('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const payload = L.armarPayloadSeguimientoEdicion(form, seg);
+  const sinCambios = Object.keys(payload).length === 0;
+
+  const guardar = async () => {
+    if (saving) return;
+    if (sinCambios) { onClose(); return; }
+    const invalido = L.validarSeguimientoEdicion(form, seg, hoy);
+    if (invalido) { setError(invalido); return; }
+    setError(''); setSaving(true);
+    const r = await window.api.crmEditarInteraccion(seg.id, payload);
+    setSaving(false);
+    if (r.ok) { toast.success('Seguimiento actualizado', seg.cliente); onSaved(); onClose(); return; }
+    if (r.status === 404) { toast.error('El seguimiento ya no existe', seg.cliente); onGone(); onClose(); return; }
+    setError(r.error);
+  };
+
+  const guardarRef = crs_uR(guardar);
+  guardarRef.current = guardar;
+  crs_uE(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !saving) onClose();
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); guardarRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [saving, onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={() => { if (!saving) onClose(); }}>
+      <div className="modal crm-modal" onClick={e => e.stopPropagation()}>
+        <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+          <h3 className="card-title">Editar seguimiento · {seg.cliente || `Cliente #${seg.cliente_id}`}</h3>
+          <button className="btn btn-ghost btn-icon btn-sm" disabled={saving} onClick={onClose}><Icon name="x" size={14}/></button>
+        </div>
+        <div className="card-body crm-form">
+          <div className="td-muted" style={{ fontSize: 12 }}>{L.tipo(seg.tipo)?.emoji} {L.etiquetaTipo(seg.tipo)} del {window.fmt.date(seg.fecha)}</div>
+          <div className="field">
+            <label className="field-label">Resultado <span className="td-muted">(opcional)</span></label>
+            <window.CrmChips opciones={L.RESULTADOS} valor={form.resultado} onChange={v => set('resultado', v)}/>
+          </div>
+          <div className="field">
+            <label className="field-label">Notas <span className="td-muted">(opcional)</span></label>
+            <textarea className="input crm-textarea" rows={3} maxLength={L.MAX_NOTAS} value={form.notas} onChange={e => set('notas', e.target.value)}/>
+          </div>
+          <div className="field">
+            <label className="field-label">Próximo seguimiento</label>
+            <div className="crm-chips">
+              {L.ATAJOS_FECHA.map(a => {
+                const f = L.sumarDias(hoy, a.dias);
+                return (
+                  <button key={a.key} type="button" className={`crm-chip ${form.proxima_fecha === f ? 'active' : ''}`}
+                    onClick={() => set('proxima_fecha', f)}>{a.label}</button>
+                );
+              })}
+              <input type="date" className="input crm-date" value={form.proxima_fecha} onChange={e => set('proxima_fecha', e.target.value)}/>
+            </div>
+            <input className="input" style={{ marginTop: 8 }} maxLength={255} value={form.proxima_accion}
+              onChange={e => set('proxima_accion', e.target.value)} placeholder="Próxima acción (ej. enviar cotización)"/>
+          </div>
+          {error && <div className="crm-error">{error}</div>}
+        </div>
+        <div className="card-footer">
+          <span className="td-muted crm-hint"><kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">Enter</kbd> guarda</span>
+          <button className="btn btn-secondary btn-sm" disabled={saving} onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary btn-sm" disabled={saving || sinCambios} onClick={guardar}>
+            {saving ? <><span className="spinner"/> Guardando...</> : <><Icon name="check" size={13}/> Guardar</>}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -172,6 +269,7 @@ function CrmBitacoraPropia({ vendedor, version, onFicha }) {
 
 function PageCrmSeguimientos() {
   const toast = window.useToast();
+  const [askConfirm, ConfirmModal] = window.useConfirm();
   const gerencia = window.crmEsGerencia();
   const [tab, setTab] = crs_uS('seguimientos');
   const [seg, setSeg] = crs_uS({ vencidos: [], hoy: [], proximos: [], totales: { vencidos: 0, hoy: 0, proximos: 0 } });
@@ -179,6 +277,8 @@ function PageCrmSeguimientos() {
   const [error, setError] = crs_uS('');
   const [registro, setRegistro] = crs_uS(null);   // { cliente?, tipo? }
   const [fichaId, setFichaId] = crs_uS(null);
+  const [editando, setEditando] = crs_uS(null);      // seguimiento en edición
+  const [borrandoId, setBorrandoId] = crs_uS(null);  // evita doble clic mientras se elimina
   const [version, setVersion] = crs_uS(0);         // sube tras guardar para recargar pestañas
   const [vendedor, setVendedor] = crs_uS('');
   const [vendedores, setVendedores] = crs_uS([]);
@@ -204,10 +304,27 @@ function PageCrmSeguimientos() {
     else { toast.error('No se pudo cerrar el seguimiento', r.error); cargar(); }
   };
 
-  const filaProps = { gerencia, onRegistrar: abrirRegistro, onFicha: setFichaId, onHecho: marcarHecho };
+  const eliminar = (s) => askConfirm(
+    `¿Eliminar el seguimiento de ${s.cliente || `cliente #${s.cliente_id}`}? Se borra la interacción completa: también deja de contar en la bitácora y en las métricas.`,
+    async () => {
+      setBorrandoId(s.id);
+      const r = await window.api.crmEliminarInteraccion(s.id);
+      setBorrandoId(null);
+      if (r.ok) toast.success('Seguimiento eliminado', s.cliente);
+      else if (r.status === 404) toast.error('El seguimiento ya no existe', s.cliente);
+      else toast.error('No se pudo eliminar', r.error);
+      if (r.ok || r.status === 404) refrescar();
+    },
+  );
+
+  const filaProps = {
+    gerencia, onRegistrar: abrirRegistro, onFicha: setFichaId, onHecho: marcarHecho,
+    onEditar: setEditando, onEliminar: eliminar, ocupado: borrandoId != null,
+  };
 
   return (
     <div className="page">
+      {ConfirmModal}
       <div className="section-header">
         <div>
           <h2 className="section-title">{gerencia ? 'Seguimientos del equipo' : 'Mis Seguimientos'}</h2>
@@ -263,6 +380,9 @@ function PageCrmSeguimientos() {
       {registro && (
         <window.CrmRegistroModal cliente={registro.cliente} tipo={registro.tipo}
           onClose={() => setRegistro(null)} onSaved={refrescar}/>
+      )}
+      {editando && (
+        <CrmSeguimientoEditarModal seg={editando} onClose={() => setEditando(null)} onSaved={refrescar} onGone={refrescar}/>
       )}
       {fichaId && (
         <window.CrmFichaModal clienteId={fichaId} onClose={() => setFichaId(null)} onChanged={refrescar}
