@@ -115,11 +115,132 @@ function PanelAuditoriaCelda({ estado, error, onReintentar, auditoria, celdaSel,
   );
 }
 
+// Compras recién ingresadas con piezas aún sin tarjeta. Cada línea se reparte en una o varias celdas;
+// al quedar todo ubicado (o marcarla «sin ubicación») deja de aparecer. El datalist #ubi-celdas lo pone la página.
+function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
+  const toast = window.useToast();
+  const L = window.comprasUbicarLogica;
+  const [estado, setEstado] = rp_uS('cargando'); // 'cargando' | 'ok' | 'error'
+  const [error, setError] = rp_uS('');
+  const [facturas, setFacturas] = rp_uS([]);
+  const [abierto, setAbierto] = rp_uS(null); // id de la línea con el formulario abierto
+  const [form, setForm] = rp_uS(null);
+  const [guardando, setGuardando] = rp_uS(false);
+
+  const cargar = async () => {
+    setEstado(e => (e === 'ok' ? 'ok' : 'cargando'));
+    const r = await window.api.comprasPorUbicar();
+    if (r.ok) {
+      setFacturas(Array.isArray(r.data?.facturas) ? r.data.facturas : []);
+      setEstado('ok');
+      setError('');
+    } else {
+      setEstado('error');
+      setError(r.error || 'Sin respuesta del servidor');
+    }
+  };
+  rp_uE(() => { cargar(); }, []);
+
+  const abrir = (item) => { setAbierto(item.id); setForm(L.formularioInicial(item)); };
+
+  const ubicar = async (item) => {
+    const v = L.validarReparto(form, item.pendiente);
+    if (v.error) { toast.error('Revisa la ubicación', v.error); return; }
+    setGuardando(true);
+    const r = await window.api.ubicarCompra(item.id, v.datos);
+    setGuardando(false);
+    if (r.ok) {
+      toast.success('Ubicación creada', `${v.datos.cantidad} de ${item.sku} en ${v.datos.warehouse_id}`);
+      setAbierto(null);
+      await cargar();
+      onCambio(item.sku);
+    } else {
+      toast.error(`No se pudo ubicar ${item.sku}`, r.error);
+      if (r.status === 409 || r.status === 404) { setAbierto(null); cargar(); } // ya la ubicó alguien más
+    }
+  };
+
+  const sinUbicacion = (item) => askConfirm(
+    `¿Marcar ${item.sku} (${item.pendiente} pendientes) como sin ubicación? Saldrá de esta lista y no se creará ninguna tarjeta.`,
+    async () => {
+      const r = await window.api.compraSinUbicacion(item.id);
+      if (r.ok) { toast.success('Compra sin ubicación', item.sku); setAbierto(null); await cargar(); }
+      else { toast.error(`No se pudo marcar ${item.sku}`, r.error); cargar(); }
+    }
+  );
+
+  const cuenta = L.contarPendientes(facturas);
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">
+        <h3 className="card-title">Compras por ubicar</h3>
+        {estado === 'ok' && cuenta.lineas > 0 && (
+          <span className="badge badge-warning">{cuenta.lineas} SKU · {cuenta.piezas} pzas</span>
+        )}
+      </div>
+      {estado === 'cargando' && <div className="card-body"><span className="spinner"/></div>}
+      {estado === 'error' && (
+        <div className="card-body">
+          <div className="crm-error">No se pudieron cargar las compras por ubicar. {error}</div>
+          <button className="btn btn-sm btn-primary" style={{ marginTop: 8 }} onClick={cargar}>
+            <Icon name="refresh" size={12}/> Reintentar
+          </button>
+        </div>
+      )}
+      {estado === 'ok' && cuenta.lineas === 0 && (
+        <div className="card-body td-muted" style={{ fontSize: 13 }}>Todo lo comprado ya está ubicado.</div>
+      )}
+      {estado === 'ok' && facturas.map(f => (
+        <div key={`${f.num_factura}|${f.proveedor}`} className="card-body" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="td-muted" style={{ fontSize: 12, marginBottom: 6 }}>
+            Factura <span className="mono">{f.num_factura || 's/n'}</span>{f.proveedor ? ` · ${f.proveedor}` : ''}
+          </div>
+          {f.items.map(item => (
+            <div key={item.id} style={{ padding: '6px 0' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="ubi-aud-sku" onClick={() => onElegirSku(item.sku)} title={`Ver ubicaciones de ${item.sku}`}>
+                  <span className="mono">{item.sku}</span>
+                  {item.nombre && <span className="td-muted">{item.nombre}</span>}
+                </button>
+                <span className="mono" style={{ marginLeft: 'auto' }}>
+                  {item.pendiente} por ubicar{item.cantidad_ubicada > 0 ? ` (de ${item.cantidad})` : ''}
+                </span>
+                <button className="btn btn-sm btn-primary" onClick={() => (abierto === item.id ? setAbierto(null) : abrir(item))}>
+                  {abierto === item.id ? 'Cancelar' : 'Ubicar'}
+                </button>
+                <button className="btn btn-sm btn-ghost" onClick={() => sinUbicacion(item)}
+                  title="Sacar de la lista sin crear tarjetas">Sin ubicación</button>
+              </div>
+              {abierto === item.id && form && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ fontSize: 12 }}>Celda
+                    <input className="input" list="ubi-celdas" value={form.warehouse_id} autoFocus
+                      onChange={e => setForm({ ...form, warehouse_id: e.target.value })}/>
+                  </label>
+                  <label style={{ fontSize: 12 }}>Cantidad
+                    <input className="input" type="number" min="1" max={item.pendiente} value={form.cantidad}
+                      onChange={e => setForm({ ...form, cantidad: e.target.value })}/>
+                  </label>
+                  <label style={{ fontSize: 12 }}>Cama
+                    <input className="input" type="number" min="0" value={form.cama}
+                      onChange={e => setForm({ ...form, cama: e.target.value })}/>
+                  </label>
+                  <button className="btn btn-sm btn-primary" disabled={guardando} onClick={() => ubicar(item)}>
+                    {guardando ? <><span className="spinner"/> Guardando...</> : 'Guardar ubicación'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PageUbicaciones() {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
-  // El backend ya exige gerencia para borrar tarjetas y editar el plano; aquí solo se ocultan los botones.
-  const esGerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
   const [productos, setProductos] = rp_uS([]);
   const [q, setQ] = rp_uS('');
   const [selSku, setSelSku] = rp_uS(null);
@@ -457,7 +578,7 @@ function PageUbicaciones() {
           <p className="section-subtitle">Consulta y edita las ubicaciones físicas por SKU.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {!editandoBodega && esGerencia && (
+          {!editandoBodega && (
             <button className="btn btn-sm btn-secondary" onClick={() => setEditandoBodega(true)}
               title="Mover y dimensionar anaqueles y poner los IDs de sus celdas">
               <Icon name="edit" size={13}/> Editar bodega
@@ -493,6 +614,12 @@ function PageUbicaciones() {
         )}
         </div>
       </div>
+
+      <ComprasPorUbicar
+        askConfirm={askConfirm}
+        onElegirSku={cargarUbicaciones}
+        onCambio={(sku) => { cargarDisposicion(); if (selSku === sku) cargarUbicaciones(sku); else if (!selSku) cargarTarjetas(); }}
+      />
 
       <div className="ubi-layout">
         <aside className="ubi-col ubi-col-skus">
@@ -844,7 +971,7 @@ function PageUbicaciones() {
                         })()}
                       </div>
                       <div className="card-footer" style={{ justifyContent: 'flex-end' }}>
-                        {ub.id != null && esGerencia && (
+                        {ub.id != null && (
                           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}
                             onClick={() => askConfirm(`¿Eliminar ubicación ID #${ub.id}? Esta acción no se puede deshacer.`, () => eliminar(ub.id))}>
                             <Icon name="trash" size={12}/> Eliminar

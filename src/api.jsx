@@ -675,7 +675,18 @@ const api = {
   async crearUbicacion(sku, payload) {
     return tryFetch(`/zeutica/productos/ubicacionNueva/${encodeURIComponent(sku)}`, { method: 'POST', body: JSON.stringify(payload) });
   },
-  // Solo gerencia (403 para el resto).
+  // Compras con piezas aún sin tarjeta: { total, facturas: [{ num_factura, proveedor, fecha_registro, items: [{ id, sku, nombre, cantidad, cantidad_ubicada, pendiente }] }] }.
+  async comprasPorUbicar() {
+    return tryFetch('/zeutica/compras/por-ubicar');
+  },
+  // Reparte parte de una compra en una celda: { warehouse_id, cantidad, cama }. Crea la tarjeta y suma lo ubicado.
+  async ubicarCompra(id, payload) {
+    return tryFetch(`/zeutica/compras/${encodeURIComponent(id)}/ubicar`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // Saca la compra de la lista sin crear tarjetas.
+  async compraSinUbicacion(id) {
+    return tryFetch(`/zeutica/compras/${encodeURIComponent(id)}/sin-ubicacion`, { method: 'POST' });
+  },
   async eliminarUbicacion(id) {
     return tryFetch(`/zeutica/producto/eliminarUbi/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
@@ -704,7 +715,7 @@ const api = {
   async tarjetasBodega() {
     return tryFetch('/zeutica/anaqueles/tarjetas');
   },
-  // Reemplaza la disposición completa (solo gerencia). Exige la `version` leída: 409 si otro usuario guardó antes.
+  // Reemplaza la disposición completa (cualquier usuario con sesión). Exige la `version` leída: 409 si otro usuario guardó antes.
   async guardarDisposicionBodega(payload) {
     return tryFetch('/zeutica/anaqueles/disposicion', { method: 'PUT', body: JSON.stringify(payload) });
   },
@@ -1173,6 +1184,24 @@ const api = {
   },
   async eliminarItemEmbarque(embarqueId, itemId) {
     return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
+  },
+  // ---- Costeo de importación / Landed Cost (solo gerencia; el backend calcula) ----
+  // Todas devuelven { embarque, liquidacion, estado, items: [{ item_id, sku, entrada, calculado,
+  // advertencias }], resumen, advertencias, cerrado, cerrado_por, cerrado_en } (simular, sin embarque/cerrado).
+  async landedCost(embarqueId) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/landed-cost`);
+  },
+  // liquidacion: todos los campos de logística y aduana (reemplaza los guardados). 409 = costeo cerrado.
+  async landedCostGuardarLiquidacion(embarqueId, liquidacion) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/landed-cost/liquidacion`, { method: 'PUT', body: JSON.stringify(liquidacion) });
+  },
+  // cambios: solo los campos de costo que cambiaron (landedCostLogica.armarPayloadItem).
+  async landedCostGuardarItem(embarqueId, itemId, cambios) {
+    return tryFetch(`/zeutica/embarques/${encodeURIComponent(embarqueId)}/items/${encodeURIComponent(itemId)}/costos`, { method: 'PATCH', body: JSON.stringify(cambios) });
+  },
+  // Vista previa sin guardar (landedCostLogica.armarSimulacion).
+  async landedCostSimular(cuerpo) {
+    return tryFetch('/zeutica/landed-cost/simular', { method: 'POST', body: JSON.stringify(cuerpo) });
   },
   // { valor, fecha } — tipo de cambio USD/MXN del dia (Banxico, con cache diaria en backend)
   async tipoCambioHoy() {

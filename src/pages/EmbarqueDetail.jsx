@@ -1,6 +1,7 @@
 // ===== Zeutica — Rastreo de Importaciones: Detalle de Embarque =====
 // Requiere que src/pages/EmbarqueForm.jsx haya cargado antes (define
-// window.EMBARQUE_ETAPAS / window.EMBARQUE_ESTATUS).
+// window.EMBARQUE_ETAPAS / window.EMBARQUE_ESTATUS) y src/pages/EmbarqueCosteo.jsx
+// (sección de costeo de importación).
 const { useState: ed_uS, useEffect: ed_uE } = React;
 
 function embarqueEtapaDraftInicial(etapa) {
@@ -457,6 +458,8 @@ function EmbarqueDetail({ id, onBack, onDeleted }) {
           })}
         </div>
       </div>
+
+      <window.EmbarqueCosteo id={id} embarque={embarque}/>
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header"><h3 className="card-title">Estatus</h3></div>
