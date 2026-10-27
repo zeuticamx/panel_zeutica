@@ -402,6 +402,7 @@ function App() {
     gastos:       window.PageGastos,
     embarques:    window.PageEmbarques,
     punto_reorden: window.PagePuntoReorden,
+    mercado_ads: window.PageMercadoAds,
     //pendientes:   window.PagePendientes,
     cleanest:     window.PageCleanest,
     compras:      window.PageCompras,

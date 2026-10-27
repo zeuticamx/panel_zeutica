@@ -774,6 +774,16 @@ const api = {
   async editarProducto(payload, usuario) {
     return tryFetch('/zeutica/productos/editados', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
   },
+  // Borrado lógico (solo gerencia): el backend rechaza con 409 si hay inventario, embarques o compras pendientes.
+  async eliminarProducto(sku) {
+    return tryFetch(`/zeutica/producto/${encodeURIComponent(sku)}`, { method: 'DELETE' });
+  },
+  async restaurarProducto(sku) {
+    return tryFetch(`/zeutica/producto/${encodeURIComponent(sku)}/restaurar`, { method: 'POST' });
+  },
+  async productosEliminados() {
+    return listaConError(await tryFetch('/zeutica/productos?eliminados=true'));
+  },
   async crearProducto(payload, usuario) {
     return tryFetch('/zeutica/producto/nuevo', { method: 'POST', body: JSON.stringify({ ...payload, usuario: usuario || api.usuario }) });
   },
@@ -979,6 +989,32 @@ const api = {
   // Manda ya el aviso de Telegram con los SKU por comprar (202: corre en segundo plano).
   async reordenAvisar() {
     return tryFetch('/zeutica/jobs/reorden/run', { method: 'POST', body: JSON.stringify({ motivo: 'manual' }) });
+  },
+  // ---- Motor Zentor / Mercado Ads (leer: cualquier sesión; todo lo demás solo gerencia) ----
+  async zentorMetricas(desde, hasta) {
+    const qs = new URLSearchParams();
+    if (desde) qs.set('desde', desde);
+    if (hasta) qs.set('hasta', hasta);
+    const sufijo = qs.toString();
+    return tryFetch(`/zeutica/mercado-ads/metricas${sufijo ? `?${sufijo}` : ''}`, { timeout: 60000 });
+  },
+  async zentorReglas() {
+    return tryFetch('/zeutica/mercado-ads/reglas');
+  },
+  // datos = { target_acos, max_clicks_without_sale, min_spend_threshold, auto_pilot, version } (409 si la versión es vieja)
+  async zentorGuardarReglas(datos) {
+    return tryFetch('/zeutica/mercado-ads/reglas', { method: 'PUT', body: JSON.stringify(datos) });
+  },
+  // estado_motor: 'activo' | 'pausa'
+  async zentorMotor(estado_motor) {
+    return tryFetch('/zeutica/mercado-ads/motor', { method: 'PUT', body: JSON.stringify({ estado_motor }) });
+  },
+  // accion: 'pausar' | 'activar'. desde/hasta = el rango que se está viendo (el backend revalida contra él).
+  async zentorAplicar(item_id, accion, desde, hasta) {
+    return tryFetch('/zeutica/mercado-ads/acciones/aplicar', { method: 'POST', body: JSON.stringify({ item_id, accion, desde, hasta }), timeout: 60000 });
+  },
+  async zentorEvaluar() {
+    return tryFetch('/zeutica/mercado-ads/evaluar', { method: 'POST', timeout: 120000 });
   },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });

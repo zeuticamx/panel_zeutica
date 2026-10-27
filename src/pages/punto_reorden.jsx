@@ -1,7 +1,7 @@
 // ===== Zeutica — Punto de reorden (WRP) =====
 // Solo gerencia. El backend (api_zeutica1/reorden_logica.py) calcula por SKU con los
 // últimos 12 meses completos de ventas activas (todos los canales):
-//   total mercancía = stock total (bodega + FBA + Clean) + en tránsito (embarques sin recibir)
+//   total mercancía = stock total (bodega + FBA + Clean) + en tránsito (embarques con llegada a bodega pendiente)
 //   stock de seguridad = ⌈Z · σ · √LT⌉ · punto de reorden = ⌈promedio · LT + SS⌉
 //   COMPRAR si total ≤ punto de reorden. Informativo: no toca stock_minimo.
 const { useState: pr_uS, useEffect: pr_uE, useMemo: pr_uM } = React;

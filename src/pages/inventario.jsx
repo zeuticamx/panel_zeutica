@@ -20,6 +20,74 @@ function exportarInventarioCSV(productos) {
   URL.revokeObjectURL(url);
 }
 
+// SKUs eliminados (borrado lógico) con opción de restaurar; solo se monta para gerencia.
+function InventarioEliminados({ askConfirm, onRestaurado }) {
+  const toast = window.useToast();
+  const [loading, setLoading] = inv_uS(true);
+  const [error, setError] = inv_uS(null);
+  const [lista, setLista] = inv_uS([]);
+  const [restaurando, setRestaurando] = inv_uS(null);
+
+  const cargar = async () => {
+    setLoading(true);
+    setError(null);
+    const r = await window.api.productosEliminados();
+    if (r.ok === false) setError(r.detalle || r.error || 'No se pudo cargar'); else setLista(Array.isArray(r) ? r : []);
+    setLoading(false);
+  };
+  inv_uE(() => { cargar(); }, []);
+
+  const restaurar = (p) => askConfirm(window.inventarioLogica.mensajeConfirmarRestaurar(p), async () => {
+    setRestaurando(p.sku);
+    const r = await window.api.restaurarProducto(p.sku);
+    setRestaurando(null);
+    if (r.ok) {
+      toast.success('Producto restaurado', p.sku);
+      setLista(prev => prev.filter(x => x.sku !== p.sku));
+      onRestaurado?.();
+    } else {
+      toast.error(`No se pudo restaurar ${p.sku}`, r.detalle || r.error);
+      if (r.status === 404) cargar();
+    }
+  });
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-header">
+        <h3 className="card-title">Productos eliminados</h3>
+        <span className="badge">{lista.length}</span>
+      </div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>SKU</th><th>Producto</th><th>Categoría</th><th>Eliminado por</th><th>Fecha</th><th></th></tr></thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }}><span className="spinner"/></td></tr>
+            ) : error ? (
+              <tr><td colSpan={6} className="empty">{error} <button className="btn btn-secondary btn-sm" onClick={cargar}>Reintentar</button></td></tr>
+            ) : lista.length === 0 ? (
+              <tr><td colSpan={6} className="empty">No hay productos eliminados</td></tr>
+            ) : lista.map(p => (
+              <tr key={p.sku}>
+                <td className="mono" style={{ fontSize: 12 }}>{p.sku}</td>
+                <td>{p.nombre}</td>
+                <td><span className="badge">{p.categoria}</span></td>
+                <td className="td-muted">{p.eliminado_por || '—'}</td>
+                <td className="td-muted mono">{p.fecha_eliminado ? String(p.fecha_eliminado).replace('T', ' ').slice(0, 16) : '—'}</td>
+                <td className="td-right">
+                  <button className="btn btn-secondary btn-sm" disabled={restaurando === p.sku} onClick={() => restaurar(p)}>
+                    <Icon name="refresh" size={13}/> Restaurar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function PageInventario({ user }) {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
@@ -33,6 +101,7 @@ function PageInventario({ user }) {
   const [newSaving, setNewSaving] = inv_uS(false);
   const [editProduct, setEditProduct] = inv_uS(null);
   const [editSaving, setEditSaving] = inv_uS(false);
+  const [eliminando, setEliminando] = inv_uS(null);
   const [expandedSkus, setExpandedSkus] = inv_uS({});
   const [ubicCache, setUbicCache] = inv_uS({});
   const [vista, setVista] = inv_uS('inventario');
@@ -93,12 +162,33 @@ function PageInventario({ user }) {
     }
   };
 
-  inv_uE(() => { (async () => {
+  const recargarProductos = async () => {
     setLoading(true);
     const data = await window.api.productos();
     setProductos(Array.isArray(data) ? data : []);
     setLoading(false);
-  })(); }, []);
+  };
+  inv_uE(() => { recargarProductos(); }, []);
+
+  // Borrado lógico (solo gerencia). El backend vuelve a validar inventario, embarques y compras
+  // pendientes: ante 404/409 se avisa y se recarga la tabla porque la fila ya cambió.
+  const eliminarProducto = (p) => {
+    const regla = window.inventarioLogica.puedeEliminar(p);
+    if (!regla.ok) { toast.error('No se puede eliminar', regla.motivo); return; }
+    askConfirm(window.inventarioLogica.mensajeConfirmarEliminar(p), async () => {
+      setEliminando(p.sku);
+      const r = await window.api.eliminarProducto(p.sku);
+      setEliminando(null);
+      if (r.ok) {
+        toast.success('Producto eliminado', p.sku);
+        setProductos(prev => prev.filter(x => x.sku !== p.sku));
+        setExpandedSkus(prev => { const { [p.sku]: _, ...resto } = prev; return resto; });
+      } else {
+        toast.error(`No se pudo eliminar ${p.sku}`, r.detalle || r.error);
+        if (r.status === 404 || r.status === 409) recargarProductos();
+      }
+    });
+  };
 
   const cats = inv_uM(() => ['Todas', ...Array.from(new Set(productos.map(p => p.categoria)))], [productos]);
 
@@ -144,6 +234,11 @@ function PageInventario({ user }) {
           <button className={`btn btn-sm ${vista === 'movimientos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setVista(v => v === 'movimientos' ? 'inventario' : 'movimientos')}>
             <Icon name="clock" size={13}/> Movimientos
           </button>
+          {window.AppShell.GERENCIA_USERS?.includes(user) && (
+            <button className={`btn btn-sm ${vista === 'eliminados' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setVista(v => v === 'eliminados' ? 'inventario' : 'eliminados')}>
+              <Icon name="trash" size={13}/> Eliminados
+            </button>
+          )}
           <button className="btn btn-secondary btn-sm" onClick={() => exportarInventarioCSV(filtered)}><Icon name="download" size={13}/> Exportar</button>
           {window.AppShell.GERENCIA_USERS?.includes(user) && <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Icon name="plus" size={13}/> Nuevo producto</button>}
         </div>
@@ -151,6 +246,8 @@ function PageInventario({ user }) {
 
       {vista === 'movimientos' ? (
         <window.PageMovimientosInventario user={user} />
+      ) : vista === 'eliminados' ? (
+        <InventarioEliminados askConfirm={askConfirm} onRestaurado={recargarProductos} />
       ) : (
       <>
       <div className="dash-kpis" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
@@ -216,6 +313,15 @@ function PageInventario({ user }) {
                         {window.AppShell.GERENCIA_USERS.includes(user) && (
                           <button className="btn btn-ghost btn-sm btn-icon" title="Editar" onClick={() => setEditProduct({ ...p })}><Icon name="edit" size={13}/></button>
                         )}
+                        {window.AppShell.GERENCIA_USERS.includes(user) && (() => {
+                          const regla = window.inventarioLogica.puedeEliminar(p);
+                          return (
+                            <button className="btn btn-ghost btn-sm btn-icon" title={regla.ok ? 'Eliminar' : regla.motivo}
+                              disabled={!regla.ok || eliminando === p.sku} onClick={() => eliminarProducto(p)}>
+                              <Icon name="trash" size={13}/>
+                            </button>
+                          );
+                        })()}
                       </td>
                     </tr>
                     {isExpanded && (
