@@ -50,6 +50,8 @@ const NAV = [
   { key: 'comisiones',       label: 'Comisiones',       icon: 'cash', seccion: 'comercial' },
   // Visible para todos (solo lectura); aplicar, reglas y motor los protege el backend (gerencia).
   { key: 'mercado_ads',      label: 'Mercado Ads',      icon: 'trend', seccion: 'comercial' },
+  // Visible para todos: el cupo (1 análisis nuevo por usuario por semana) lo aplica el backend.
+  { key: 'analisis_competencia', label: 'Análisis de Competencia ML', icon: 'search', seccion: 'comercial' },
 ];
 
 const GERENCIA_USERS = ['gerencia', 'fparra'];

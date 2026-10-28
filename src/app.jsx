@@ -403,6 +403,7 @@ function App() {
     embarques:    window.PageEmbarques,
     punto_reorden: window.PagePuntoReorden,
     mercado_ads: window.PageMercadoAds,
+    analisis_competencia: window.PageAnalisisCompetencia,
     //pendientes:   window.PagePendientes,
     cleanest:     window.PageCleanest,
     compras:      window.PageCompras,

@@ -1,0 +1,75 @@
+/* ===== Análisis de Competencia ML ===== */
+/* Solo tokens de tokens.css (sirve igual en tema oscuro y claro). Reutiliza .zt-kpi de zentor.css. */
+
+.cmp-form {
+  display: grid; gap: 14px; align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.cmp-form .field { margin: 0; min-width: 0; }
+.cmp-campo-url { grid-column: 1 / -1; }
+.cmp-enviar { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.cmp-ayuda { font-size: 12px; }
+
+/* Selector de SKU */
+.cmp-sku { position: relative; }
+.cmp-sku-lista {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+  list-style: none; margin: 0; padding: 4px; max-height: 260px; overflow-y: auto;
+  background: var(--bg-1); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+}
+.cmp-sku-lista li { padding: 6px 8px; font-size: 12px; }
+.cmp-sku-lista button {
+  all: unset; display: block; width: 100%; box-sizing: border-box; cursor: pointer;
+  padding: 6px 8px; border-radius: var(--r-sm); color: var(--fg-0);
+}
+.cmp-sku-lista button:hover, .cmp-sku-lista button:focus-visible { background: var(--bg-2); }
+.cmp-sku-error { font-size: 12px; color: var(--danger); margin-top: 4px; }
+.cmp-sku-elegido {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  height: 36px; padding: 0 10px; border: 1px solid var(--brand-edge); border-radius: var(--r-md);
+  background: var(--brand-bg); color: var(--fg-0); font-size: 13px; min-width: 0;
+}
+.cmp-sku-elegido span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Estados */
+.cmp-cargando, .cmp-vacio, .cmp-error { margin-top: 16px; padding: 18px; }
+.cmp-cargando-msg { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--fg-1); }
+.cmp-vacio { text-align: center; color: var(--fg-1); }
+.cmp-vacio p { margin: 6px auto 0; max-width: 560px; }
+.cmp-error { border-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+.cmp-error div { color: var(--fg-0); margin-top: 2px; }
+.cmp-sin-datos { padding: 4px 16px 16px; font-size: 13px; }
+
+/* Resultado */
+.cmp-resultado { margin-top: 16px; }
+.cmp-avisos { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.cmp-meta { font-size: 12px; }
+.cmp-sugerencia, .cmp-resumen { margin-top: 16px; }
+.cmp-sugerencia > *:not(.card-header), .cmp-resumen > p { margin-left: 16px; margin-right: 16px; }
+.cmp-resumen > p { margin-top: 0; margin-bottom: 16px; line-height: 1.5; color: var(--fg-1); }
+.cmp-sug-grid {
+  display: grid; gap: 12px; margin-bottom: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.cmp-sug-grid div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cmp-sug-grid span { font-size: 11px; }
+.cmp-sug-grid strong { font-size: 16px; color: var(--fg-0); overflow-wrap: anywhere; }
+.cmp-nota { font-size: 12px; margin-top: 4px; margin-bottom: 12px; line-height: 1.45; }
+.cmp-prod { min-width: 240px; max-width: 420px; overflow-wrap: anywhere; }
+.cmp-columnas {
+  display: grid; gap: 16px; margin-top: 16px; margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.cmp-lista.is-warn .card-title { color: var(--warn); }
+.cmp-lista.is-success .card-title { color: var(--success); }
+.cmp-ul { margin: 0; padding: 0 16px 16px 34px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--fg-1); line-height: 1.45; }
+
+/* Historial */
+.cmp-acciones { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cmp-url { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-2); }
+.cmp-detalle-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+@media (max-width: 640px) {
+  .cmp-form { grid-template-columns: 1fr; }
+}

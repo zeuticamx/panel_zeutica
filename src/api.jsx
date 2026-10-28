@@ -1016,6 +1016,21 @@ const api = {
   async zentorEvaluar() {
     return tryFetch('/zeutica/mercado-ads/evaluar', { method: 'POST', timeout: 120000 });
   },
+  // ---- Análisis de Competencia ML (cualquier sesión; 1 análisis nuevo por usuario por semana, gerencia sin tope) ----
+  // payload = { url, enfoque, sku?, margen_objetivo?, comision_pct? }. Tarda: Context.dev + IA (hasta ~3 min).
+  async competenciaAnalizar(payload) {
+    return tryFetch('/zeutica/competencia/analizar', { method: 'POST', body: JSON.stringify(payload), timeout: 200000 });
+  },
+  async competenciaCupo() {
+    return tryFetch('/zeutica/competencia/cupo');
+  },
+  // usuario: solo lo respeta gerencia (filtra); para el resto el backend devuelve siempre lo propio.
+  async competenciaHistorial(usuario) {
+    return tryFetch(`/zeutica/competencia/historial${usuario ? `?usuario_filtro=${encodeURIComponent(usuario)}` : ''}`);
+  },
+  async competenciaDetalle(id) {
+    return tryFetch(`/zeutica/competencia/${encodeURIComponent(id)}`);
+  },
   async marcarNotificacionLeida(notificacion_id) {
     return tryFetch(`/zeutica/notificaciones/marcar-leida/${encodeURIComponent(notificacion_id)}`, { method: 'POST' });
   },
