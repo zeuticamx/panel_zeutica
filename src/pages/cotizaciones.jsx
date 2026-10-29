@@ -192,11 +192,20 @@ function PageCotizaciones({ user }) {
   const [savingComplemento, setSavingComplemento] = rp_uS(false);
   const [seguimientoEdit, setSeguimientoEdit] = rp_uS({});
   const [seguimientoSaving, setSeguimientoSaving] = rp_uS(null);
+  // Cancelar (inactivar, no se elimina): cotización cuyo modal de motivo está abierto, y el
+  // código que está cancelándose / reactivándose (bloquea los botones de esa fila).
+  const [cancelarModal, setCancelarModal] = rp_uS(null);
+  const [motivoCancelar, setMotivoCancelar] = rp_uS('');
+  const [cancelando, setCancelando] = rp_uS(null);
+  const gerencia = window.AppShell.GERENCIA_USERS.includes(user);
+  const CL = window.cotizacionLogica;
   // Envío Skydropx: cotización abierta en el modal y guías ya generadas por código.
   // El estatus lo mantiene el webhook en la BD, así que la fuente de verdad es el
   // backend (el navegador no puede recibir la notificación de Skydropx).
   const [envioModal, setEnvioModal] = rp_uS(null);
   const [enviosGenerados, setEnviosGenerados] = rp_uS({});
+  // Envíos (compras) activos por cotización: { codigo: n }. Máximo 10 por cotización.
+  const [conteoEnvios, setConteoEnvios] = rp_uS({});
   // Saldo de la cuenta de Skydropx: de ahí se descuenta cada guía generada.
   const [saldoSky, setSaldoSky] = rp_uS(null);
 
@@ -232,12 +241,19 @@ function PageCotizaciones({ user }) {
     const lista = await window.api.skydropxEnvios();
     if (!lista.ok) return; // el error ya se avisó en la capa de API
     const mapa = {};
+    const porCodigo = {};
     lista.forEach(e => {
       // Si una cotización tuviera más de una guía, se queda la más reciente
       // (el backend ordena por id descendente).
       if (e.codigo_cotizacion && !mapa[e.codigo_cotizacion]) mapa[e.codigo_cotizacion] = e;
+      if (e.codigo_cotizacion) (porCodigo[e.codigo_cotizacion] = porCodigo[e.codigo_cotizacion] || []).push(e);
     });
+    // Una cotización puede tener varios envíos (compras); se cuentan los activos (sin cancelar).
+    const SL = window.skydropxLogica;
+    const conteo = {};
+    Object.entries(porCodigo).forEach(([codigo, filas]) => { conteo[codigo] = SL.enviosActivos(SL.agruparEnvios(filas)); });
     setEnviosGenerados(mapa);
+    setConteoEnvios(conteo);
   };
 
   const cargarSaldo = async () => setSaldoSky(await window.api.skydropxSaldo());
@@ -253,6 +269,12 @@ function PageCotizaciones({ user }) {
   // cruzar por ese mismo campo recupera esos datos para precargar el modal de
   // Skydropx sin pedírselos de nuevo al usuario.
   const abrirSkydropx = (c) => {
+    // Una cancelada no cotiza envíos ni compra guías (el backend también la rechaza con 409).
+    // Con guías ya generadas el modal sí abre, solo para consultarlas.
+    if (!CL.puedeEnviar(c) && !enviosGenerados[c.codigo_cotizacion]) {
+      toast.warn('Cotización cancelada', `${c.codigo_cotizacion} no puede cotizar envíos ni generar guías`);
+      return;
+    }
     const cliente = clientes.find(cl => cl.nombre === c.empresa) || null;
     setEnvioModal({ ...c, cliente });
   };
@@ -484,6 +506,49 @@ function PageCotizaciones({ user }) {
     }
   };
 
+  // Recarga la lista del backend: la cancelación la puede mover otra persona.
+  const recargarCotizaciones = async () => setCots(await window.api.cotizaciones());
+
+  const abrirCancelar = (c) => { setMotivoCancelar(''); setCancelarModal(c); };
+  const cerrarCancelar = () => { if (!cancelando) setCancelarModal(null); };
+
+  // ESC cierra el modal de cancelación (si no está guardando).
+  rp_uE(() => {
+    if (!cancelarModal) return;
+    const onKey = (e) => { if (e.key === 'Escape' && !cancelando) setCancelarModal(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cancelarModal, cancelando]);
+
+  const confirmarCancelar = async () => {
+    const codigo = cancelarModal.codigo_cotizacion;
+    setCancelando(codigo);
+    const r = await window.api.cancelarCotizacion(codigo, motivoCancelar.trim());
+    setCancelando(null);
+    if (r.ok) {
+      setCancelarModal(null);
+      toast.success('Cotización cancelada', codigo);
+      // Cancelar no cancela las guías de Skydropx: se avisa para que alguien las gestione.
+      if (r.data?.aviso) toast.warn(`${codigo} tiene guías de Skydropx`, r.data.aviso);
+      await recargarCotizaciones();
+    } else {
+      toast.error(`No se pudo cancelar ${codigo}`, r.detalle || r.error);
+      // 404/409: ya no está como la veía esta pantalla (vendida, facturada, ya cancelada…).
+      if (r.status === 404 || r.status === 409) { setCancelarModal(null); await recargarCotizaciones(); }
+    }
+  };
+
+  const reactivarCotizacion = (c) => askConfirm(
+    `¿Reactivar la cotización ${c.codigo_cotizacion}? Volverá a poder cotizar envíos y aparecer en Ventas.`,
+    async () => {
+      setCancelando(c.codigo_cotizacion);
+      const r = await window.api.reactivarCotizacion(c.codigo_cotizacion);
+      setCancelando(null);
+      if (r.ok) toast.success('Cotización reactivada', c.codigo_cotizacion);
+      else toast.error(`No se pudo reactivar ${c.codigo_cotizacion}`, r.detalle || r.error);
+      if (r.ok || r.status === 404 || r.status === 409) await recargarCotizaciones();
+    });
+
   const verCotizacion = async (codigo) => {
     setVerLoading(codigo);
     try {
@@ -516,22 +581,22 @@ function PageCotizaciones({ user }) {
   // Misma regla que tenía el SQL (fecha_vencimiento >= CURDATE()), ahora del lado
   // del panel. Sin fecha se considera vigente: no se esconde una cotización por
   // un dato faltante.
-  const esVigente = c => !c.fecha_vencimiento || String(c.fecha_vencimiento).slice(0, 10) >= hoy;
+  const esVigente = c => CL.esVigente(c, hoy);
 
+  // Las pestañas salen de cotizacionLogica (con test): las canceladas solo se ven en
+  // «Canceladas» y «Todas».
   const filtered = cots.filter(c => {
-    if (estado === 'vigentes' && !esVigente(c)) return false;
-    if (estado === 'vencidas' && esVigente(c)) return false;
-    if (estado === 'abiertas' && c.vendido) return false;
-    if (estado === 'vendidas' && !c.vendido) return false;
+    if (!CL.coincideConPestana(c, estado, hoy)) return false;
     if (q && !`${c.codigo_cotizacion} ${c.empresa}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
-  // El pipeline solo cuenta lo que sigue vivo: una cotización vencida ya no es
+  // El pipeline solo cuenta lo que sigue vivo: una cotización vencida o cancelada ya no es
   // negocio por cerrar. Contarlas infla el valor con cotizaciones muertas y
   // vuelve el número inútil para decidir.
-  const abiertasVigentes = cots.filter(c => !c.vendido && esVigente(c));
+  const abiertasVigentes = cots.filter(c => CL.esAbiertaVigente(c, hoy));
   const totalPipeline = abiertasVigentes.reduce((s, c) => s + (parseFloat(c.subtotal) || 0), 0);
   const vendidas = cots.filter(c => c.vendido).length;
+  const totalCanceladas = cots.filter(c => CL.estaCancelada(c)).length;
 
   return (
     <div className="page">
@@ -969,6 +1034,41 @@ function PageCotizaciones({ user }) {
         </div>
       )}
 
+      {cancelarModal && (
+        <div className="modal-backdrop" onClick={cerrarCancelar}>
+          <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+              <div>
+                <h3 className="card-title">Cancelar cotización</h3>
+                <p className="card-subtitle mono" style={{ fontSize: 11 }}>{cancelarModal.codigo_cotizacion} · {cancelarModal.empresa}</p>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" disabled={!!cancelando} onClick={cerrarCancelar}><Icon name="x" size={14}/></button>
+            </div>
+            <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.6, margin: 0 }}>
+                La cotización <b>no se elimina</b>: queda inactiva. Ya no podrá cotizar envíos ni generar guías con Skydropx, y dejará de aparecer en Ventas. Se puede reactivar después.
+              </p>
+              {enviosGenerados[cancelarModal.codigo_cotizacion] && (
+                <div style={{ fontSize: 12, color: 'var(--warn)' }}>
+                  Ojo: ya tiene una guía de Skydropx. Cancelar la cotización no cancela la guía; hay que gestionarla en Skydropx.
+                </div>
+              )}
+              <div className="field">
+                <label className="field-label">Motivo (opcional)</label>
+                <textarea className="input" rows={3} maxLength={500} autoFocus value={motivoCancelar}
+                  onChange={e => setMotivoCancelar(e.target.value)} placeholder="Ej. el cliente ya no la necesita"/>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button className="btn btn-secondary btn-sm" disabled={!!cancelando} onClick={cerrarCancelar}>Volver</button>
+                <button className="btn btn-primary btn-sm" disabled={!!cancelando} onClick={confirmarCancelar}>
+                  {cancelando ? <><span className="spinner"/> Cancelando...</> : <><Icon name="check" size={13}/> Cancelar cotización</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {envioModal && window.SkydropxEnvioModal && (
         <window.SkydropxEnvioModal
           cot={envioModal}
@@ -1017,6 +1117,7 @@ function PageCotizaciones({ user }) {
                 ['vencidas', 'Vencidas'],
                 ['abiertas', 'Abiertas'],
                 ['vendidas', 'Vendidas'],
+                ['canceladas', `Canceladas${totalCanceladas ? ` · ${totalCanceladas}` : ''}`],
                 ['todos', 'Todas'],
               ].map(([k, label]) => (
                 <button key={k} className={`tab ${estado === k ? 'active' : ''}`} onClick={() => setEstado(k)}>{label}</button>
@@ -1041,14 +1142,16 @@ function PageCotizaciones({ user }) {
                             ? 'Ninguna cotización sigue vigente hoy. Revisa Vencidas o Todas.'
                             : estado === 'vencidas'
                               ? 'Ninguna cotización ha vencido.'
-                              : 'Cambia de pestaña para ver otras cotizaciones.'}
+                              : estado === 'canceladas'
+                                ? 'No hay cotizaciones canceladas.'
+                                : 'Cambia de pestaña para ver otras cotizaciones.'}
                       </div>
                     </div>
                   </td>
                 </tr>
               )}
               {filtered.map(c => (
-                <tr key={c.codigo_cotizacion}>
+                <tr key={c.codigo_cotizacion} style={CL.estaCancelada(c) ? { opacity: 0.6 } : undefined}>
                   <td className="mono" style={{ fontSize: 12, fontWeight: 500 }}>{c.codigo_cotizacion}</td>
                   <td>{c.empresa}</td>
                   <td className="td-muted">{window.fmt.date(c.fecha)}</td>
@@ -1092,9 +1195,16 @@ function PageCotizaciones({ user }) {
                   <td className="td-right mono">{window.fmt.mxn(c.subtotal)}</td>
                   <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(c.total)}</td>
                   <td>
-                    <span className={`badge badge-${c.vendido ? 'success' : c.estado === 'Seguimiento' ? 'warn' : 'info'}`}>
-                      <span className="badge-dot"/>{c.estado}
-                    </span>
+                    {CL.estaCancelada(c) ? (
+                      <span className="badge badge-danger"
+                        title={[c.cancelada_por && `Cancelada por ${c.cancelada_por}`, c.fecha_cancelada && String(c.fecha_cancelada).slice(0, 10), c.motivo_cancelacion && `Motivo: ${c.motivo_cancelacion}`].filter(Boolean).join(' · ') || 'Cotización cancelada'}>
+                        <span className="badge-dot"/>Cancelada
+                      </span>
+                    ) : (
+                      <span className={`badge badge-${c.vendido ? 'success' : c.estado === 'Seguimiento' ? 'warn' : 'info'}`}>
+                        <span className="badge-dot"/>{c.estado}
+                      </span>
+                    )}
                   </td>
                   <td style={{ minWidth: 150 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1113,9 +1223,11 @@ function PageCotizaciones({ user }) {
                     {(() => {
                       const envio = enviosGenerados[c.codigo_cotizacion];
                       if (!envio) {
+                        const bloqueada = !CL.puedeEnviar(c);
                         return (
                           <button className="btn btn-ghost btn-sm sky-btn-tabla" onClick={() => abrirSkydropx(c)}
-                            title="Cotizar envío con Skydropx">
+                            disabled={bloqueada}
+                            title={bloqueada ? 'Cotización cancelada: no cotiza envíos ni genera guías' : 'Cotizar envío con Skydropx'}>
                             <Icon name="pkg" size={12} /> Cotizar envío
                           </button>
                         );
@@ -1127,14 +1239,44 @@ function PageCotizaciones({ user }) {
                             <span className="badge-dot" />{envio.estatus_texto}
                           </span>
                           <span className="mono sky-celda-track">{envio.tracking_number || 'sin rastreo'}</span>
+                          {(conteoEnvios[c.codigo_cotizacion] || 0) > 1 && (
+                            <span className="sky-celda-track" title="Envíos activos de esta cotización (máximo 10)">
+                              {conteoEnvios[c.codigo_cotizacion]} envíos
+                            </span>
+                          )}
                         </button>
                       );
                     })()}
                   </td>
                   <td className="td-right">
-                    <button className="btn btn-ghost btn-sm" disabled={verLoading === c.codigo_cotizacion} onClick={() => verCotizacion(c.codigo_cotizacion)}>
-                      {verLoading === c.codigo_cotizacion ? <span className="spinner"/> : <>Ver <Icon name="chevRight" size={12}/></>}
-                    </button>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                      {(() => {
+                        // Cancelar solo anticipa lo que el backend valida (autor o gerencia; no
+                        // vendida, facturada ni ya cancelada). Reactivar solo en las canceladas.
+                        const ocupada = cancelando === c.codigo_cotizacion;
+                        if (CL.estaCancelada(c)) {
+                          const regla = CL.puedeReactivar(c, user, gerencia);
+                          return (
+                            <button className="btn btn-ghost btn-sm" disabled={!regla.ok || ocupada}
+                              title={regla.ok ? 'Reactivar cotización' : regla.motivo}
+                              onClick={() => reactivarCotizacion(c)}>
+                              {ocupada ? <span className="spinner"/> : <><Icon name="refresh" size={12}/> Reactivar</>}
+                            </button>
+                          );
+                        }
+                        const regla = CL.puedeCancelar(c, user, gerencia);
+                        return (
+                          <button className="btn btn-ghost btn-sm" disabled={!regla.ok || ocupada}
+                            title={regla.ok ? 'Cancelar cotización (no se elimina)' : regla.motivo}
+                            onClick={() => abrirCancelar(c)}>
+                            <Icon name="x" size={12}/> Cancelar
+                          </button>
+                        );
+                      })()}
+                      <button className="btn btn-ghost btn-sm" disabled={verLoading === c.codigo_cotizacion} onClick={() => verCotizacion(c.codigo_cotizacion)}>
+                        {verLoading === c.codigo_cotizacion ? <span className="spinner"/> : <>Ver <Icon name="chevRight" size={12}/></>}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

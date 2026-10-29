@@ -80,7 +80,55 @@
     };
   }
 
-  const mod = { armarPayloadCotizacion, nombreArchivoCotizacion, armarRegistroRelacion };
+  // ---- Cancelación (borrado lógico). Solo anticipa: manda el backend (409/403/404). ----
+  const estaCancelada = c => !!c && Number(c.cancelada) === 1;
+  const esAutor = (c, usuario) =>
+    !!usuario && !!c?.usuario && String(c.usuario).trim().toLowerCase() === String(usuario).trim().toLowerCase();
+
+  // Espejo de POST /cotizaciones/{codigo}/cancelar: autor o gerencia, y ni cancelada, ni
+  // vendida, ni con factura relacionada. `motivo` explica por qué no (para el tooltip).
+  function puedeCancelar(c, usuario, gerencia) {
+    if (estaCancelada(c)) return { ok: false, motivo: 'Ya está cancelada' };
+    if (c?.vendido) return { ok: false, motivo: 'Ya está vendida' };
+    if (String(c?.relacion_factura || '').trim()) return { ok: false, motivo: 'Tiene factura relacionada' };
+    if (!gerencia && !esAutor(c, usuario)) return { ok: false, motivo: 'Solo su autor o gerencia puede cancelarla' };
+    return { ok: true, motivo: '' };
+  }
+
+  // Espejo de POST /cotizaciones/{codigo}/reactivar.
+  function puedeReactivar(c, usuario, gerencia) {
+    if (!estaCancelada(c)) return { ok: false, motivo: 'No está cancelada' };
+    if (!gerencia && !esAutor(c, usuario)) return { ok: false, motivo: 'Solo su autor o gerencia puede reactivarla' };
+    return { ok: true, motivo: '' };
+  }
+
+  // Una cancelada no cotiza envíos ni compra guías con Skydropx.
+  const puedeEnviar = c => !estaCancelada(c);
+
+  // Sin fecha de vencimiento se considera vigente (no se esconde por un dato faltante).
+  const esVigente = (c, hoy) => !c?.fecha_vencimiento || String(c.fecha_vencimiento).slice(0, 10) >= hoy;
+
+  // Pestañas de la tabla. Las canceladas salen de todas menos de «Canceladas» y «Todas».
+  function coincideConPestana(c, pestana, hoy) {
+    const cancelada = estaCancelada(c);
+    switch (pestana) {
+      case 'canceladas': return cancelada;
+      case 'todos': return true;
+      case 'vigentes': return !cancelada && esVigente(c, hoy);
+      case 'vencidas': return !cancelada && !esVigente(c, hoy);
+      case 'abiertas': return !cancelada && !c.vendido;
+      case 'vendidas': return !cancelada && !!c.vendido;
+      default: return !cancelada;
+    }
+  }
+
+  // Cotizaciones que siguen vivas: no vendidas, no canceladas y vigentes (KPIs y pipeline).
+  const esAbiertaVigente = (c, hoy) => !estaCancelada(c) && !c.vendido && esVigente(c, hoy);
+
+  const mod = {
+    armarPayloadCotizacion, nombreArchivoCotizacion, armarRegistroRelacion,
+    estaCancelada, puedeCancelar, puedeReactivar, puedeEnviar, esVigente, coincideConPestana, esAbiertaVigente,
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.cotizacionLogica = mod;

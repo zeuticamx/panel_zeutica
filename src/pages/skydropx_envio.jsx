@@ -57,9 +57,9 @@ const SKY_PAQUETE_DEFAULT = {
 const CONSIGNMENT_CODE_DEFAULT = '53103200';
 
 // ---------- Memoria local por cotización ----------
-// El backend quedó como passthrough (no guarda envíos en MySQL), así que el número
-// de guía solo sobrevive aquí. Es por navegador: si se genera la guía en otra
-// máquina, este panel no la verá. Ver nota en la conversación de implementación.
+// Aquí solo se recuerda el borrador del formulario (destino, paquete, origen) y el peso de
+// cada envío. Las guías viven en la BD (skydropx_envios): al abrir el modal se leen de
+// ahí, así que se ven desde cualquier navegador.
 const skyClave = (codigo) => `zeutica.skydropx.${codigo}`;
 
 function skyLeerEnvio(codigo) {
@@ -364,6 +364,14 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   // Se completa al generar la guía o al usar "Actualizar", que ya trae todos
   // los renglones que el backend tiene guardados para esta cotización.
   const [bultos, setBultos] = sk_uS(() => guardado?.bultos || []);
+  // Todos los envíos (compras) de esta cotización, del 1 al N, tal como los tiene el
+  // backend (se llena al abrir y en cada «Actualizar»). `guia`/`bultos` son los del envío
+  // que se está viendo; los demás se listan como «Envíos anteriores». Se pueden comprar
+  // hasta skydropxLogica.MAX_ENVIOS_POR_COTIZACION (10); el backend lo hace cumplir (409).
+  const [envios, setEnvios] = sk_uS([]);
+  // Peso por bulto de cada envío ({ numeroEnvio: kg }): la recolección lo necesita y cada
+  // envío puede llevar otra caja. Solo vive en este navegador (el backend no guarda el peso).
+  const [pesosPorEnvio, setPesosPorEnvio] = sk_uS(() => guardado?.pesosPorEnvio || {});
 
   const [cotizando, setCotizando] = sk_uS(false);
   const [tarifas, setTarifas] = sk_uS([]);
@@ -386,6 +394,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
           estatus_texto: envio.estatus_texto,
           estatus_tono: envio.estatus_tono,
           estatus_descripcion: envio.estatus_descripcion,
+          numeroEnvio: envio.numero_envio || 1,
         }
       : (guardado?.guia || null)
   ));
@@ -419,7 +428,9 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
 
   const cpValido = /^\d{5}$/.test(String(destino.postal_code || '').trim());
   const paqueteValido = ['length', 'width', 'height', 'weight'].every(k => Number(paquete[k]) > 0);
-  const puedeCotizar = cpValido && paqueteValido && !cotizando;
+  // Una cotización cancelada no cotiza envíos ni compra guías (el backend también responde 409).
+  const cotCancelada = !!window.cotizacionLogica && window.cotizacionLogica.estaCancelada(cot);
+  const puedeCotizar = cpValido && paqueteValido && !cotizando && !cotCancelada;
   // Skydropx no exige reference/consignment_note/package_type para cotizar, solo
   // para generar la guía (confirmado en sandbox). Los defaults ya los dejan
   // llenos, así que esto casi siempre pasa; solo bloquea si el usuario los borró.
@@ -450,6 +461,9 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       setCajasApi(cajas);
       setRecolecciones(Object.fromEntries(recs.map(r => [r.shipment_id, r])));
     })();
+    // Con guías ya compradas, trae del backend todos los envíos de la cotización (la lista de
+    // «Envíos anteriores» y la recolección salen de ahí, no del localStorage de este navegador).
+    if (envio) sincronizarRef.current?.({ silencioso: true });
     // El CP es el único dato que siempre falta: ahí arranca el foco.
     setTimeout(() => primerCampo.current?.focus(), 60);
   }, []);
@@ -470,7 +484,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [cerrarBloqueado, onClose]);
 
-  const persistir = (extra = {}) => skyGuardarEnvio(codigo, { destino, paquete, origen, guia, cantidadBultos, bultos, ...extra });
+  const persistir = (extra = {}) => skyGuardarEnvio(codigo, { destino, paquete, origen, guia, cantidadBultos, bultos, pesosPorEnvio, ...extra });
 
   const setD = (k, v) => setDestino(prev => ({ ...prev, [k]: v }));
   const setP = (k, v) => setPaquete(prev => ({ ...prev, [k]: v }));
@@ -484,6 +498,12 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     if (tarifas.length === 0) return null;
     return tarifas.reduce((min, t) => (t.total > 0 && t.total < min.total ? t : min), tarifas[0]);
   }, [tarifas]);
+
+  // Seguro = 1 % del monto asegurado por bulto (skydropxLogica.costoSeguro); el total de la
+  // tarifa cubre todo el envío y el seguro se le suma. Se calcula con el valor declarado
+  // actual, así que cambia al instante aunque la tarifa se haya cotizado antes.
+  const seguroEnvio = window.skydropxLogica.costoSeguro(paquete.declared_value, cantidadBultos);
+  const totalDe = (t) => window.skydropxLogica.totalConSeguro(t.total, paquete.declared_value, cantidadBultos);
 
   const limpiarDireccion = (dir) => {
     const out = {};
@@ -503,6 +523,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   const construirParcela = () => window.skydropxLogica.construirParcela(paquete);
 
   const cotizar = async () => {
+    if (cotCancelada) return;
     setCotizando(true);
     setError(null);
     setTarifas([]);
@@ -512,6 +533,8 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       address_to: limpiarDireccion(destino),
       parcels: [construirParcela()],
       cantidad_bultos: cantidadBultos,
+      // El backend rechaza (409) las cotizaciones canceladas; no se manda a Skydropx.
+      codigo_cotizacion: codigo,
     };
     const r = await window.api.skydropxCotizar(payload);
     setCotizando(false);
@@ -558,7 +581,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
 
   const generarGuia = async () => {
     const tarifa = tarifas.find(t => t.id === tarifaSel);
-    if (!tarifa) return;
+    if (!tarifa || cotCancelada) return;
     setGenerando(true);
     setError(null);
     const r = await window.api.skydropxGenerarGuia({
@@ -575,40 +598,63 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       // respuesta del envío. NO van dentro de `extras`, que se reenvía tal cual
       // al API de Skydropx.
       servicio: tarifa.servicio,
-      costo: tarifa.total,
+      costo: totalDe(tarifa),  // tarifa + seguro (1 % del monto asegurado)
     }, user);
     setGenerando(false);
     if (!r.ok) {
       setError(r.error || 'No se pudo generar la guía');
       toast.error(`No se pudo generar la guía de ${codigo}`, r.error);
+      // Un rechazo por tope o por «compra en curso» suele significar que la lista cambió
+      // (otro usuario, o un clic anterior que sí compró): se vuelve a leer del backend.
+      sincronizarGuia({ silencioso: true });
       return;
     }
     const nueva = skyNormalizaGuia(r.data?.envio);
     // El carrier de la tarifa es más confiable que el del cuerpo del envío para rastrear.
     if (!nueva.carrier) nueva.carrier = tarifa.carrier;
-    nueva.costo = tarifa.total;
+    nueva.costo = totalDe(tarifa);
     nueva.servicio = tarifa.servicio;
     nueva.fecha = new Date().toISOString();
     // Mismo estatus inicial con el que el backend acaba de guardar la fila, para
     // que el badge aparezca de una vez y no hasta reabrir el modal.
     nueva.estatus_texto = 'Guía creada';
     nueva.estatus_tono = 'info';
+    // Número de compra que le dio el backend (1 si es un backend anterior al tope por cotización).
+    const numeroEnvio = r.data?.numero_envio || 1;
+    nueva.numeroEnvio = numeroEnvio;
 
     // Skydropx V2: el backend arma `paquetes` con una entrada por guía, cada
     // una con su tracking/etiqueta y su shipment_id (2+ en multipaquete).
     const paquetesResp = window.skydropxLogica.bultosDesdePaquetes(r.data?.paquetes);
-    const nuevosBultos = paquetesResp.length > 0
+    const nuevosBultos = (paquetesResp.length > 0
       ? paquetesResp
-      : [{ numero: 1, tracking: nueva.tracking, etiqueta: nueva.etiqueta, shipmentId: nueva.id, packageId: '' }];
+      : [{ numero: 1, tracking: nueva.tracking, etiqueta: nueva.etiqueta, shipmentId: nueva.id, packageId: '' }]
+    ).map(b => ({ ...b, numeroEnvio, cancelado: false }));
     // El shipment (nivel raíz del envío) no siempre trae tracking/etiqueta
     // propios en multipaquete -- viven en cada paquete. Se completa `nueva`
     // (la guía "principal" que usan rastreo/historial) con el primer bulto.
     if (!nueva.tracking && nuevosBultos[0]?.tracking) nueva.tracking = nuevosBultos[0].tracking;
     if (!nueva.etiqueta && nuevosBultos[0]?.etiqueta) nueva.etiqueta = nuevosBultos[0].etiqueta;
 
+    const pesos = { ...pesosPorEnvio, [numeroEnvio]: Number(paquete.weight) };
+    setPesosPorEnvio(pesos);
     setBultos(nuevosBultos);
     setGuia(nueva);
-    persistir({ guia: nueva, bultos: nuevosBultos });
+    setEnvios(prev => window.skydropxLogica.conEnvio(prev, {
+      numero: numeroEnvio,
+      bultos: nuevosBultos,
+      carrier: nueva.carrier,
+      servicio: nueva.servicio,
+      costo: nueva.costo,
+      tracking: nueva.tracking,
+      etiqueta: nueva.etiqueta,
+      ordenDetalle: nueva.ordenDetalle,
+      estatus_texto: nueva.estatus_texto,
+      estatus_tono: nueva.estatus_tono,
+      estatus_descripcion: '',
+      cancelado: false,
+    }));
+    persistir({ guia: nueva, bultos: nuevosBultos, pesosPorEnvio: pesos });
     cargarSaldo();   // la guía ya descontó saldo
     onGuiaGenerada?.(codigo, nueva);
     toast.success(
@@ -655,27 +701,40 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       if (!silencioso) toast.info('Sin novedades', 'Skydropx todavía no reporta datos nuevos para esta guía');
       return false;
     }
-    const ultimo = lista[0]; // el backend ya ordena por id DESC
+    // `lista` trae todas las guías de la cotización; se agrupan por envío (compra). Los envíos
+    // son los de siempre aunque aún no se vea ninguno en pantalla (modo «nuevo envío»).
+    const todos = window.skydropxLogica.agruparEnvios(lista);
+    const totalAntes = envios.reduce((n, e) => n + e.bultos.length, 0);
+    setEnvios(todos);
+    if (!guia) {
+      // Estoy armando un envío nuevo: solo se actualiza la lista de los anteriores.
+      return todos.reduce((n, e) => n + e.bultos.length, 0) !== totalAntes;
+    }
+
+    // El envío que se está viendo: el de su número (o el último, si la guía viene de un
+    // localStorage anterior a los envíos múltiples y no lo trae).
+    const actual = todos.find(e => e.numero === guia.numeroEnvio) || todos[todos.length - 1];
     const actualizada = {
       ...guia,
-      tracking: ultimo.tracking_number || guia?.tracking || '',
-      carrier: ultimo.carrier || guia?.carrier || '',
-      etiqueta: ultimo.etiqueta_url || guia?.etiqueta || '',
-      ordenDetalle: ultimo.orden_detalle_url || guia?.ordenDetalle || '',
-      estatus_texto: ultimo.estatus_texto || guia?.estatus_texto,
-      estatus_tono: ultimo.estatus_tono || guia?.estatus_tono,
-      estatus_descripcion: ultimo.estatus_descripcion || guia?.estatus_descripcion,
+      numeroEnvio: actual.numero,
+      tracking: actual.tracking || guia.tracking || '',
+      carrier: actual.carrier || guia.carrier || '',
+      etiqueta: actual.etiqueta || guia.etiqueta || '',
+      ordenDetalle: actual.ordenDetalle || guia.ordenDetalle || '',
+      estatus_texto: actual.estatus_texto || guia.estatus_texto,
+      estatus_tono: actual.estatus_tono || guia.estatus_tono,
+      estatus_descripcion: actual.estatus_descripcion || guia.estatus_descripcion,
     };
     setGuia(actualizada);
 
-    // Multipaquete: cada guía generada para esta cotización queda como su
-    // propio renglón en skydropx_envios, y `lista` ya trae todos.
-    const nuevosBultos = window.skydropxLogica.bultosDesdeEnviosGuardados(lista);
+    // Multipaquete: cada guía de la compra es un renglón en skydropx_envios.
+    const nuevosBultos = actual.bultos;
     setBultos(nuevosBultos);
     persistir({ guia: actualizada, bultos: nuevosBultos });
     cargarHistorial(actualizada.tracking);
-    const huboNovedad = actualizada.tracking !== guia?.tracking || actualizada.etiqueta !== guia?.etiqueta
-      || nuevosBultos.length !== bultos.length;
+    const huboNovedad = actualizada.tracking !== guia.tracking || actualizada.etiqueta !== guia.etiqueta
+      || nuevosBultos.length !== bultos.length
+      || todos.reduce((n, e) => n + e.bultos.length, 0) !== totalAntes;
     if (huboNovedad) {
       if (silencioso) {
         if (actualizada.etiqueta && !guia?.etiqueta) toast.success('Etiqueta lista', 'Ya puedes imprimir la guía');
@@ -701,7 +760,10 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
   const sincronizarRef = sk_uR(null);
   sincronizarRef.current = sincronizarGuia;
   const sincronizandoAuto = sk_uR(false);
-  const faltaEtiqueta = !!guia && (!guia.etiqueta || (bultos.length > 1 && bultos.some(b => !b.etiqueta)));
+  // Vale también para los envíos anteriores (ya no solo el que se está viendo), y sigue
+  // mientras se arma uno nuevo: sus etiquetas pueden llegar en cualquier momento.
+  const faltaEtiqueta = (!!guia && (!guia.etiqueta || (bultos.length > 1 && bultos.some(b => !b.etiqueta))))
+    || window.skydropxLogica.faltaEtiquetaEnEnvios(envios);
   sk_uE(() => {
     if (!faltaEtiqueta) return undefined;
     let intentos = 0;
@@ -747,7 +809,17 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     });
   };
 
-  const shipments = sk_uM(() => window.skydropxLogica.shipmentsDeBultos(bultos), [bultos]);
+  // Recolección de TODOS los envíos vigentes de la cotización (no solo el que se está viendo);
+  // los de un envío cancelado no se ofrecen. Si el backend aún no devolvió la lista (o es una
+  // guía de antes de los envíos múltiples), se cae a los bultos del envío en pantalla.
+  const shipments = sk_uM(() => window.skydropxLogica.shipmentsDeBultos(
+    envios.length > 0 ? window.skydropxLogica.bultosVigentes(envios) : bultos
+  ), [envios, bultos]);
+  const enviosAnteriores = guia ? envios.filter(e => e.numero !== guia.numeroEnvio) : envios;
+  const numeroActual = guia ? (guia.numeroEnvio || 1) : window.skydropxLogica.siguienteNumeroEnvio(envios);
+  const activos = window.skydropxLogica.enviosActivos(envios);
+  const puedeNuevo = !!guia && window.skydropxLogica.puedeNuevoEnvio(envios) && !cotCancelada;
+  const topeAlcanzado = !window.skydropxLogica.puedeNuevoEnvio(envios);
   const horarioElegido = recForm?.horarios.find(h => h.fecha === recForm.fecha) || null;
   const ventanaOk = window.skydropxLogica.ventanaValida(horarioElegido, recForm?.inicio, recForm?.fin);
 
@@ -758,7 +830,8 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
       fecha: recForm.fecha,
       inicio: recForm.inicio,
       fin: recForm.fin,
-      pesoPorBulto: paquete.weight,
+      // Cada envío pudo llevar otra caja: se usa el peso con el que se compró ese envío.
+      pesoPorBulto: window.skydropxLogica.pesoDeEnvio(pesosPorEnvio, shipment.numeroEnvio, paquete.weight),
       usuario: user,
     });
     setAgendando(true);
@@ -774,6 +847,25 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
     setRecolecciones(prev => ({ ...prev, [shipment.shipmentId]: rec }));
     setRecForm(null);
     toast.success('Recolección agendada', `${rec.fecha} · ${rec.hora_inicio}–${rec.hora_fin}`);
+  };
+
+  // Empieza otra compra para la misma cotización: se limpia lo del envío en pantalla (tarifas,
+  // guía, rastreo) y se conservan destino, origen y paquete, que siguen editables. El envío
+  // anterior no se pierde: queda en «Envíos anteriores» y en la recolección.
+  const nuevoEnvio = () => {
+    if (!puedeNuevo) return;
+    setGuia(null);
+    setBultos([]);
+    setTarifas([]);
+    setTarifaSel(null);
+    setCotizacionId(null);
+    setCotizado(false);
+    setEventos(null);
+    setHistorial([]);
+    setRecForm(null);
+    setError(null);
+    persistir({ guia: null, bultos: [] });
+    setTimeout(() => primerCampo.current?.focus(), 60);
   };
 
   const copiar = (texto) => {
@@ -843,6 +935,21 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
             <div className="sky-aviso sky-aviso-danger" role="alert" aria-live="assertive">
               <Icon name="alert" size={15} />
               <div style={{ flex: 1 }}>{error}</div>
+            </div>
+          )}
+
+          {/* ---------- Envíos de la cotización ---------- */}
+          {(envios.length > 0 || guia) && (
+            <div className="sky-aviso sky-aviso-info" role="status">
+              <Icon name="pkg" size={15} />
+              <div>
+                <strong>{guia ? `Envío ${numeroActual}` : `Nuevo envío (${numeroActual})`}</strong>
+                {' · '}{activos} de {window.skydropxLogica.MAX_ENVIOS_POR_COTIZACION} envíos activos en esta cotización
+                {window.skydropxLogica.costoAcumulado(envios) > 0 && ` · ${window.fmt.mxn(window.skydropxLogica.costoAcumulado(envios))} en guías`}
+                {topeAlcanzado && !cotCancelada && (
+                  <div className="field-hint">Llegaste al máximo: no se pueden comprar más envíos para esta cotización.</div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1164,7 +1271,7 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
               />
               <span className="field-hint">
                 {window.skydropxLogica.valorDeclarado(paquete.declared_value) > 0
-                  ? `La guía se genera con seguro por ${window.fmt.mxn(window.skydropxLogica.valorDeclarado(paquete.declared_value))} por bulto. Cotiza de nuevo si lo cambias.`
+                  ? `La guía se genera con seguro por ${window.fmt.mxn(window.skydropxLogica.valorDeclarado(paquete.declared_value))} por bulto. El seguro cuesta el 1 %: ${window.fmt.mxn(seguroEnvio)}${cantidadBultos > 1 ? ` (${cantidadBultos} bultos)` : ''}, se suma a la tarifa. Cotiza de nuevo si lo cambias.`
                   : 'Sin seguro: la guía se generará sin protección.'}
               </span>
             </div>
@@ -1226,7 +1333,12 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                         )}
                       </span>
                       <span className="sky-tarifa-precio">
-                        <span className="sky-tarifa-monto mono">{window.fmt.mxn(t.total)}</span>
+                        <span className="sky-tarifa-monto mono">{window.fmt.mxn(totalDe(t))}</span>
+                        {seguroEnvio > 0 && totalDe(t) > 0 && (
+                          <span className="sky-tarifa-dias" title="Tarifa del carrier + seguro (1 % del monto asegurado)">
+                            {window.fmt.mxn(t.total)} + seguro {window.fmt.mxn(seguroEnvio)}
+                          </span>
+                        )}
                         <span className="sky-tarifa-dias">{t.dias ? `${t.dias} día(s)` : 'Sin estimado'}</span>
                       </span>
                     </button>
@@ -1236,11 +1348,74 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
             </div>
           )}
 
+          {/* ---------- Envíos anteriores (solo lectura; la recolección va aparte, abajo) ---------- */}
+          {enviosAnteriores.length > 0 && (
+            <details open={enviosAnteriores.length <= 3}>
+              <summary className="sky-seccion-titulo" style={{ cursor: 'pointer' }}>
+                Envíos anteriores ({enviosAnteriores.length})
+              </summary>
+              <div className="sky-recolecciones">
+                {enviosAnteriores.map(e => (
+                  <div className="sky-guia" key={e.numero} style={e.cancelado ? { opacity: 0.6 } : undefined}>
+                    <div className="sky-guia-row">
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'capitalize' }}>
+                          Envío {e.numero} · {e.carrier} {e.servicio ? `· ${e.servicio}` : ''}
+                        </div>
+                        <div className="sky-guia-track mono">{e.tracking || 'Sin número de rastreo'}</div>
+                        {e.estatus_texto && (
+                          <div style={{ marginTop: 6 }}>
+                            <span className={`badge badge-${e.estatus_tono || 'info'}`}>
+                              <span className="badge-dot" />{e.estatus_texto}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      {e.costo > 0 && (
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 11, color: 'var(--fg-1)' }}>Costo</div>
+                          <div className="mono" style={{ fontSize: 15, fontWeight: 700 }}>{window.fmt.mxn(e.costo)}</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="sky-guia-acciones" style={{ flexWrap: 'wrap' }}>
+                      {e.tracking && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => copiar(e.tracking)}>
+                          <Icon name="doc" size={12} /> Copiar rastreo
+                        </button>
+                      )}
+                      {e.bultos.map(b => (
+                        <a
+                          key={b.packageId || `${b.shipmentId}-${b.numero}`}
+                          className="btn btn-secondary btn-sm"
+                          href={b.etiqueta || undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={ev => { if (!b.etiqueta) ev.preventDefault(); }}
+                          title={b.tracking || 'Sin número de rastreo'}
+                          aria-disabled={!b.etiqueta}
+                          style={!b.etiqueta ? { opacity: 0.5, cursor: 'default' } : undefined}
+                        >
+                          <Icon name="download" size={12} /> {e.bultos.length > 1 ? `Guía bulto ${b.numero}` : 'Imprimir etiqueta'}
+                        </a>
+                      ))}
+                      {e.ordenDetalle && (
+                        <a className="btn btn-secondary btn-sm" href={e.ordenDetalle} target="_blank" rel="noopener noreferrer">
+                          <Icon name="doc" size={12} /> Imprimir remisión
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
           {/* ---------- 4. Guía generada ---------- */}
           {guia && (
             <div>
               <div className="sky-seccion-titulo">
-                <span className="sky-paso sky-paso-ok"><Icon name="check" size={10} /></span> Guía generada
+                <span className="sky-paso sky-paso-ok"><Icon name="check" size={10} /></span> Guía generada · Envío {numeroActual}
               </div>
               <div className="sky-guia">
                 <div className="sky-guia-row">
@@ -1339,10 +1514,14 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
 
-              {/* Recolección en dos pasos por shipment: consultar horarios
-                  (cobertura del carrier) y agendar. Con tarifa "multishipment"
-                  hay un shipment por bulto, y cada uno se agenda por separado. */}
+          {/* Recolección en dos pasos por shipment: consultar horarios
+              (cobertura del carrier) y agendar. Con tarifa "multishipment"
+              hay un shipment por bulto, y cada uno se agenda por separado.
+              Va fuera del bloque de la guía para ofrecer los shipments de TODOS
+              los envíos, también mientras se arma uno nuevo. */}
               {shipments.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <div className="sky-seccion-titulo" style={{ marginBottom: 8 }}>Recolección</div>
@@ -1350,8 +1529,9 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                     {shipments.map((s, i) => {
                       const rec = recolecciones[s.shipmentId];
                       const abierto = recForm?.shipmentId === s.shipmentId;
-                      const etiqueta = shipments.length > 1
-                        ? `Envío ${i + 1} (bulto${s.bultos.length > 1 ? 's' : ''} ${s.bultos.map(b => b.numero).join(', ')})`
+                      const bultosTxt = `bulto${s.bultos.length > 1 ? 's' : ''} ${s.bultos.map(b => b.numero).join(', ')}`;
+                      const etiqueta = (envios.length > 1 || shipments.length > 1)
+                        ? `Envío ${s.numeroEnvio} (${bultosTxt})`
                         : `${s.bultos.length} bulto${s.bultos.length > 1 ? 's' : ''}`;
                       return (
                         <div className="sky-recoleccion" key={s.shipmentId}>
@@ -1464,6 +1644,8 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                 </div>
               )}
 
+          {guia && (
+            <div>
               {/* Historial propio: lo que Skydropx nos empujó por webhook. A
                   diferencia de "Rastrear", esto no consulta al carrier: ya está
                   guardado y queda aunque el carrier deje de responder. */}
@@ -1519,10 +1701,30 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
           )}
         </div>
 
+        {cotCancelada && !guia && (
+          <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--danger)' }}>
+            Esta cotización está cancelada: no se pueden cotizar envíos ni generar guías. Reactívala desde Cotizaciones.
+          </div>
+        )}
+
         <div className="sky-footer">
           <button className="btn btn-secondary btn-sm" onClick={onClose} disabled={cerrarBloqueado}>
-            {guia ? 'Cerrar' : 'Cancelar'}
+            {guia || envios.length > 0 ? 'Cerrar' : 'Cancelar'}
           </button>
+
+          {/* Otra compra para la misma cotización (hasta 10 envíos activos). */}
+          {guia && !cotCancelada && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={nuevoEnvio}
+              disabled={!puedeNuevo}
+              title={topeAlcanzado
+                ? `Máximo ${window.skydropxLogica.MAX_ENVIOS_POR_COTIZACION} envíos activos por cotización`
+                : 'Cotizar y comprar otro envío para esta cotización'}
+            >
+              <Icon name="plus" size={13} /> Nuevo envío
+            </button>
+          )}
 
           {!guia && (
             <>
@@ -1533,17 +1735,20 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
               </button>
               <button
                 className="btn btn-primary btn-sm"
-                disabled={!tarifaSel || generando || cotizando || !datosGuiaCompletos}
-                title={!datosGuiaCompletos
-                  ? 'Completa Referencia (Destino) y Tipo de paquete / Contenido (Paquete) antes de generar la guía'
-                  : undefined}
+                disabled={!tarifaSel || generando || cotizando || !datosGuiaCompletos || cotCancelada}
+                title={cotCancelada
+                  ? 'Cotización cancelada: no genera guías'
+                  : !datosGuiaCompletos
+                    ? 'Completa Referencia (Destino) y Tipo de paquete / Contenido (Paquete) antes de generar la guía'
+                    : undefined}
                 onClick={() => {
                   const t = tarifas.find(x => x.id === tarifaSel);
                   if (!t) return;
                   // El saldo restante se calcula solo si se pudo leer: con saldo
                   // desconocido es mejor no decir nada que dar una cifra inventada.
                   const hay = saldo?.saldo != null;
-                  const restante = hay ? saldo.saldo - t.total : null;
+                  const totalEnvio = totalDe(t);  // tarifa + seguro
+                  const restante = hay ? saldo.saldo - totalEnvio : null;
                   // Cuando no alcanza se dice "faltan X" en vez de "quedarían
                   // $-X": fmt.mxn antepone el signo de pesos al número, así que
                   // un negativo saldría como "$-89.50" y además se lee peor.
@@ -1554,13 +1759,19 @@ function SkydropxEnvioModal({ cot, user, envio, onClose, onGuiaGenerada }) {
                       : ` Saldo Skydropx: ${window.fmt.mxn(saldo.saldo)} → faltan ${window.fmt.mxn(-restante)}.` +
                         ' El saldo NO alcanza: Skydropx puede rechazar la guía.';
                   const lineaBultos = cantidadBultos > 1 ? ` Se generarán ${cantidadBultos} bultos/guías en este envío.` : '';
+                  // Con compras previas se dice cuál es esta y lo que ya se gastó en la cotización.
+                  const lineaEnvios = envios.length > 0
+                    ? ` Es el envío ${numeroActual} de esta cotización (${activos} de ${window.skydropxLogica.MAX_ENVIOS_POR_COTIZACION} activos; ya llevas ${window.fmt.mxn(window.skydropxLogica.costoAcumulado(envios))} en guías).`
+                    : '';
                   const valorSeguro = window.skydropxLogica.valorDeclarado(paquete.declared_value);
                   const lineaSeguro = valorSeguro > 0
-                    ? ` Seguro: ${window.fmt.mxn(valorSeguro)} por bulto.`
+                    ? ` Seguro: ${window.fmt.mxn(valorSeguro)} por bulto (cuesta ${window.fmt.mxn(seguroEnvio)}, ya incluido en el total).`
                     : ' SIN seguro.';
                   askConfirm(
-                    `¿Generar la guía de ${codigo} con ${t.carrier} por ${window.fmt.mxn(t.total)}?` +
+                    `¿Generar la guía de ${codigo} con ${t.carrier} por ${window.fmt.mxn(totalEnvio)}` +
+                    (seguroEnvio > 0 ? ` (tarifa ${window.fmt.mxn(t.total)} + seguro ${window.fmt.mxn(seguroEnvio)})` : '') + '?' +
                     lineaBultos +
+                    lineaEnvios +
                     lineaSeguro +
                     lineaSaldo +
                     (esProduccion ? ' El envío se contrata en producción y se cobra. No se puede cancelar desde el panel.' : ''),

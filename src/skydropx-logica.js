@@ -15,6 +15,24 @@
     return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : VALOR_DECLARADO_DEFAULT;
   }
 
+  // Costo del seguro: SIEMPRE el 1 % del monto asegurado, sea el default (2500) o el que
+  // capture el usuario. Es por bulto y se suma al total de la tarifa (que cubre todo el envío).
+  const SEGURO_PORCENTAJE = 0.01;
+  const redondea = n => Math.round(n * 100) / 100;
+
+  function costoSeguro(valor, bultos) {
+    const n = Math.max(1, Math.floor(Number(bultos)) || 1);
+    return redondea(valorDeclarado(valor) * SEGURO_PORCENTAJE * n);
+  }
+
+  // Total que se paga por el envío: tarifa + seguro. Una tarifa sin precio (0 o inválida)
+  // se queda en 0 en vez de mostrar solo el seguro como si fuera el precio.
+  function totalConSeguro(totalTarifa, valor, bultos) {
+    const total = Number(totalTarifa);
+    if (!Number.isFinite(total) || total <= 0) return 0;
+    return redondea(total + costoSeguro(valor, bultos));
+  }
+
   // Un solo lugar para armar el paquete: cotizar y generar guía deben mandar
   // exactamente los mismos campos, o el rate_id de la cotización podría no
   // coincidir con lo que se está empaquetando de verdad.
@@ -66,7 +84,7 @@
 
   // La recolección se agenda por shipment. `listo` = todas sus guías ya tienen
   // tracking: antes de eso Skydropx rechaza la recolección ("El estado del
-  // envío no es exitoso").
+  // envío no es exitoso"). `numeroEnvio` = compra de la cotización a la que pertenece.
   function shipmentsDeBultos(bultos) {
     const grupos = new Map();
     (bultos || []).forEach((b) => {
@@ -76,9 +94,83 @@
     });
     return [...grupos.entries()].map(([shipmentId, lista]) => ({
       shipmentId,
+      numeroEnvio: lista[0].numeroEnvio || 1,
       bultos: lista,
       listo: lista.every(b => !!b.tracking),
     }));
+  }
+
+  // ---------- Varios envíos (compras) por cotización ----------
+  // Un «envío» es una ronda cotizar → comprar; con varios bultos son varias guías
+  // (filas de skydropx_envios) con el mismo numero_envio. Mismo tope que
+  // MAX_ENVIOS_POR_COTIZACION en api_zeutica1/skydropx_envios.py (el backend manda).
+  const MAX_ENVIOS_POR_COTIZACION = 10;
+
+  const esCancelada = (estatus) => ['canceled', 'cancelled'].includes(String(estatus || '').trim().toLowerCase());
+
+  // Filas de GET /skydropx/envios (en cualquier orden) → un objeto por envío, del 1 en adelante.
+  // `principal` = la guía que resume el envío (la primera con rastreo). Un envío cuyas guías
+  // están todas canceladas queda `cancelado` y no cuenta para el tope.
+  function agruparEnvios(filas) {
+    const ordenadas = [...(Array.isArray(filas) ? filas : [])].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+    const grupos = new Map();
+    ordenadas.forEach((f) => {
+      const numero = Number(f.numero_envio) > 0 ? Number(f.numero_envio) : 1;
+      if (!grupos.has(numero)) grupos.set(numero, []);
+      grupos.get(numero).push(f);
+    });
+    return [...grupos.entries()].sort((a, b) => a[0] - b[0]).map(([numero, lista]) => {
+      const bultos = lista.map((e, i) => ({
+        numero: i + 1,
+        tracking: e.tracking_number || '',
+        etiqueta: e.etiqueta_url || '',
+        shipmentId: e.shipment_id || '',
+        packageId: e.package_id || '',
+        numeroEnvio: numero,
+        cancelado: esCancelada(e.estatus),
+      }));
+      const principal = lista.find(e => e.tracking_number) || lista[0];
+      const conCosto = lista.find(e => Number(e.costo) > 0);
+      return {
+        numero,
+        bultos,
+        carrier: principal.carrier || '',
+        servicio: principal.servicio || '',
+        costo: conCosto ? Number(conCosto.costo) : 0,
+        tracking: principal.tracking_number || '',
+        etiqueta: principal.etiqueta_url || (lista.find(e => e.etiqueta_url) || {}).etiqueta_url || '',
+        ordenDetalle: principal.orden_detalle_url || '',
+        estatus_texto: principal.estatus_texto || '',
+        estatus_tono: principal.estatus_tono || 'info',
+        estatus_descripcion: principal.estatus_descripcion || '',
+        cancelado: bultos.every(b => b.cancelado),
+      };
+    });
+  }
+
+  const enviosActivos = (envios) => (envios || []).filter(e => !e.cancelado).length;
+
+  // ¿Se puede comprar otro envío? Los cancelados no cuentan (se pueden reponer).
+  const puedeNuevoEnvio = (envios) => enviosActivos(envios) < MAX_ENVIOS_POR_COTIZACION;
+
+  // Número que llevará el siguiente envío: el backend numera sobre todos, cancelados incluidos.
+  const siguienteNumeroEnvio = (envios) => (envios || []).reduce((m, e) => Math.max(m, e.numero), 0) + 1;
+
+  // Lo gastado en guías de esta cotización (tarifa + seguro de cada envío no cancelado).
+  const costoAcumulado = (envios) =>
+    redondea((envios || []).filter(e => !e.cancelado).reduce((s, e) => s + (Number(e.costo) || 0), 0));
+
+  // Bultos con los que se puede trabajar (recolección): los de envíos no cancelados.
+  const bultosVigentes = (envios) =>
+    (envios || []).flatMap(e => e.bultos.filter(b => !b.cancelado));
+
+  // ¿Algún envío vigente sigue sin etiqueta? Activa el auto-refresco del modal.
+  const faltaEtiquetaEnEnvios = (envios) =>
+    (envios || []).some(e => !e.cancelado && (e.bultos.length === 0 || e.bultos.some(b => !b.cancelado && !b.etiqueta)));
+
+  // Agrega o reemplaza un envío (por número) y deja la lista ordenada.
+  function conEnvio(envios, envio) {
+    return [...(envios || []).filter(e => e.numero !== envio.numero), envio].sort((a, b) => a.numero - b.numero);
   }
 
   const CAMPOS_DIRECCION = ['country_code', 'postal_code', 'area_level1', 'area_level2', 'area_level3',
@@ -187,6 +279,13 @@
     return inicio < fin && horario.hora_inicio <= inicio && fin <= horario.hora_fin;
   }
 
+  // Peso por bulto de un envío: el que se capturó al comprarlo (cada envío puede llevar otra
+  // caja) o, si no se guardó (envío viejo o de otro navegador), el del formulario actual.
+  function pesoDeEnvio(pesosPorEnvio, numeroEnvio, pesoActual) {
+    const guardado = Number((pesosPorEnvio || {})[numeroEnvio]);
+    return guardado > 0 ? guardado : Number(pesoActual);
+  }
+
   // Payload de POST /skydropx/recolecciones. El peso total sale de las guías
   // de ESE shipment (todas los bultos llevan la misma medida en este modal).
   function armarRecoleccion({ shipment, fecha, inicio, fin, pesoPorBulto, usuario }) {
@@ -204,11 +303,24 @@
 
   const mod = {
     VALOR_DECLARADO_DEFAULT,
+    SEGURO_PORCENTAJE,
     valorDeclarado,
+    costoSeguro,
+    totalConSeguro,
     construirParcela,
     bultosDesdePaquetes,
     bultosDesdeEnviosGuardados,
     shipmentsDeBultos,
+    MAX_ENVIOS_POR_COTIZACION,
+    agruparEnvios,
+    enviosActivos,
+    puedeNuevoEnvio,
+    siguienteNumeroEnvio,
+    costoAcumulado,
+    bultosVigentes,
+    faltaEtiquetaEnEnvios,
+    conEnvio,
+    pesoDeEnvio,
     aplicarDireccion,
     faltantesParaGuardarDireccion,
     armarPlantillaDireccion,

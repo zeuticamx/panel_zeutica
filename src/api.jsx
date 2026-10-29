@@ -545,6 +545,17 @@ const api = {
       body: JSON.stringify({ vendido: 1, codigo_cotizacion: codigo }),
     });
   },
+  // Cancelar = inactivar (no se elimina). El usuario sale del token. La respuesta puede traer
+  // `aviso` si la cotización ya tenía guías de Skydropx (cancelar no las cancela).
+  async cancelarCotizacion(codigo, motivo) {
+    return tryFetch(`/zeutica/cotizaciones/${encodeURIComponent(codigo)}/cancelar`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo: motivo || null }),
+    });
+  },
+  async reactivarCotizacion(codigo) {
+    return tryFetch(`/zeutica/cotizaciones/${encodeURIComponent(codigo)}/reactivar`, { method: 'POST' });
+  },
   async relacionFactura(records, usuario) {
     const u = usuario || api.usuario;
     const payload = Array.isArray(records)

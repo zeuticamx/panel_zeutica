@@ -106,3 +106,63 @@ test('armarRegistroRelacion: arma el registro y limpia la factura vacía', () =>
     forma_pago: '03 - SPEI', metodo_pago: '03 - SPEI', fecha_pago: '2026-10-02',
   });
 });
+
+// ===== Cancelación de cotizaciones =====
+const viva = { codigo_cotizacion: 'ZTC-1', usuario: 'ana', vendido: 0, relacion_factura: null, cancelada: 0, fecha_vencimiento: '2026-12-01 10:00:00' };
+
+test('puedeCancelar: autor o gerencia sobre una cotización viva', () => {
+  assert.equal(logica.puedeCancelar(viva, 'ana', false).ok, true);
+  assert.equal(logica.puedeCancelar(viva, 'ANA', false).ok, true);
+  assert.equal(logica.puedeCancelar(viva, 'gerencia', true).ok, true);
+  const ajena = logica.puedeCancelar(viva, 'beto', false);
+  assert.equal(ajena.ok, false);
+  assert.match(ajena.motivo, /autor o gerencia/);
+});
+
+test('puedeCancelar: no si está cancelada, vendida o con factura', () => {
+  assert.equal(logica.puedeCancelar({ ...viva, cancelada: 1 }, 'ana', true).ok, false);
+  assert.equal(logica.puedeCancelar({ ...viva, vendido: 1 }, 'ana', true).ok, false);
+  assert.equal(logica.puedeCancelar({ ...viva, relacion_factura: ' F-1 ' }, 'ana', true).ok, false);
+  assert.equal(logica.puedeCancelar({ ...viva, relacion_factura: '  ' }, 'ana', false).ok, true);
+});
+
+test('puedeReactivar: solo canceladas, autor o gerencia', () => {
+  const cancelada = { ...viva, cancelada: 1 };
+  assert.equal(logica.puedeReactivar(cancelada, 'ana', false).ok, true);
+  assert.equal(logica.puedeReactivar(cancelada, 'gerencia', true).ok, true);
+  assert.equal(logica.puedeReactivar(cancelada, 'beto', false).ok, false);
+  assert.equal(logica.puedeReactivar(viva, 'ana', true).ok, false);
+});
+
+test('puedeEnviar: una cancelada no cotiza ni compra guías', () => {
+  assert.equal(logica.puedeEnviar(viva), true);
+  assert.equal(logica.puedeEnviar({ ...viva, cancelada: 1 }), false);
+  assert.equal(logica.puedeEnviar({ ...viva, cancelada: '1' }), false);
+});
+
+test('coincideConPestana: las canceladas solo salen en Canceladas y Todas', () => {
+  const hoy = '2026-10-29';
+  const cancelada = { ...viva, cancelada: 1 };
+  const vencida = { ...viva, fecha_vencimiento: '2026-09-01' };
+  const vendida = { ...viva, vendido: 1 };
+  for (const p of ['vigentes', 'vencidas', 'abiertas', 'vendidas']) {
+    assert.equal(logica.coincideConPestana(cancelada, p, hoy), false, p);
+  }
+  assert.equal(logica.coincideConPestana(cancelada, 'canceladas', hoy), true);
+  assert.equal(logica.coincideConPestana(cancelada, 'todos', hoy), true);
+  assert.equal(logica.coincideConPestana(viva, 'canceladas', hoy), false);
+  assert.equal(logica.coincideConPestana(viva, 'vigentes', hoy), true);
+  assert.equal(logica.coincideConPestana(vencida, 'vencidas', hoy), true);
+  assert.equal(logica.coincideConPestana(vencida, 'vigentes', hoy), false);
+  assert.equal(logica.coincideConPestana(vencida, 'abiertas', hoy), true); // Abiertas incluye vencidas
+  assert.equal(logica.coincideConPestana(vendida, 'vendidas', hoy), true);
+  assert.equal(logica.coincideConPestana({ ...viva, fecha_vencimiento: null }, 'vigentes', hoy), true);
+});
+
+test('esAbiertaVigente excluye vendidas, vencidas y canceladas', () => {
+  const hoy = '2026-10-29';
+  assert.equal(logica.esAbiertaVigente(viva, hoy), true);
+  assert.equal(logica.esAbiertaVigente({ ...viva, cancelada: 1 }, hoy), false);
+  assert.equal(logica.esAbiertaVigente({ ...viva, vendido: 1 }, hoy), false);
+  assert.equal(logica.esAbiertaVigente({ ...viva, fecha_vencimiento: '2026-01-01' }, hoy), false);
+});
