@@ -217,10 +217,10 @@ function PageMercadoAds({ user }) {
     },
   );
 
-  const aplicar = (p) => askConfirm(Z.textoConfirmacion(p), async () => {
-    const accion = p.diagnostico.accion;
+  const aplicar = (p, manualAccion) => askConfirm(manualAccion ? Z.textoConfirmacionManual(p, manualAccion) : Z.textoConfirmacion(p), async () => {
+    const accion = manualAccion || p.diagnostico.accion;
     setAplicando(a => ({ ...a, [p.item_id]: true }));
-    const r = await window.api.zentorAplicar(p.item_id, accion, consulta.desde, consulta.hasta);
+    const r = await window.api.zentorAplicar(p.item_id, accion, consulta.desde, consulta.hasta, !!manualAccion);
     setAplicando(a => { const n = { ...a }; delete n[p.item_id]; return n; });
     if (r.ok) toast.success(accion === 'pausar' ? 'Anuncio pausado' : 'Anuncio reactivado', p.item_id);
     else if (r.status === 409 || r.status === 404) toast.warn('Nada que aplicar', r.detalle || r.error);
@@ -371,6 +371,7 @@ function PageMercadoAds({ user }) {
                 const estado = Z.estadoAnuncio(p.estado);
                 const ocupado = !!aplicando[p.item_id];
                 const aplicable = d.aplicable;
+                const manual = Z.accionManual(p, estadoMotor);
                 const puede = gerencia && Z.puedeAplicar(p, estadoMotor) && !ocupado;
                 return (
                   <tr key={p.item_id}>
@@ -397,6 +398,13 @@ function PageMercadoAds({ user }) {
                         </button>
                       ) : (
                         <span className="zt-sin-aplicar" title="Mercado Ads no permite cambiar la puja desde aquí">Solo recomendación</span>
+                      )}
+                      {gerencia && !aplicable && manual && (
+                        <button className="btn btn-sm btn-ghost" style={{ marginTop: 4, display: 'block' }} disabled={ocupado || motorEnPausa}
+                          title={motorEnPausa ? 'El motor está en pausa' : 'Decisión manual, sin depender del motor'}
+                          onClick={() => aplicar(p, manual)}>
+                          {ocupado ? <><span className="spinner"/> Aplicando...</> : manual === 'activar' ? 'Reactivar manualmente' : 'Pausar manualmente'}
+                        </button>
                       )}
                     </td>
                   </tr>

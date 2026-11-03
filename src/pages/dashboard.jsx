@@ -1,14 +1,24 @@
 // ===== Zeutica — Dashboard Pagina =====
-const { useState: ds_uS, useEffect: ds_uE, useMemo: ds_uM } = React;
+// Todo el cálculo (ventas activas, utilidad, mes contra mes anterior, resumen financiero) vive en
+// src/dashboard-metricas.js, con test. Aquí solo se carga y se pinta; un dato que no existe se muestra «—», nunca 0.
+const { useState: ds_uS, useEffect: ds_uE, useMemo: ds_uM, useRef: ds_uR } = React;
+
+// Pesos, o «—» si no hay dato (window.fmt.mxn(null) daría $0.00).
+const ds_mxn = (n) => (n === null || n === undefined ? '—' : window.fmt.mxn(n));
 
 function exportarDashboardCSV(ventas, periodo) {
+  const M = window.dashboardMetricas;
   const headers = ['Fecha','Producto','Comprador','Plataforma','Cantidad','Precio Unit.','Total','Utilidad'];
-  const rows = ventas.map(v => [
-    v.fecha, v.producto, v.nombreComprador ?? '', v.plataforma ?? '',
-    v.cantidad ?? 0, v.precio ?? 0,
-    ((v.cantidad || 0) * (v.precio || 0)).toFixed(2),
-    (v.utilidad_total ?? ((v.cantidad || 0) * (v.precio || 0) * 0.28)).toFixed(2)
-  ]);
+  // Solo ventas activas; la utilidad va vacía si el registro no la trae (no se estima).
+  const rows = M.ventasActivas(ventas).map(v => {
+    const u = M.utilidadVenta(v);
+    return [
+      v.fecha ?? v.fecha_registro ?? '', v.producto, v.nombreComprador ?? '', v.plataforma ?? '',
+      v.cantidad ?? 0, v.precio ?? 0,
+      M.montoVenta(v).toFixed(2),
+      u === null ? '' : u.toFixed(2)
+    ];
+  });
   const csv = [headers, ...rows]
     .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
     .join('\n');
@@ -16,39 +26,19 @@ function exportarDashboardCSV(ventas, periodo) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `ventas_${periodo}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `ventas_${periodo}_${M.hoyLocal()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function getDateRange(periodo) {
-  const today = new Date();
-  const f2 = today.toISOString().slice(0, 10);
-  let f1;
-  if (periodo === 'hoy') {
-    f1 = f2;
-  } else if (periodo === '7d') {
-    const d = new Date(today);
-    d.setDate(d.getDate() - 6);
-    f1 = d.toISOString().slice(0, 10);
-  } else if (periodo === 'año') {
-    f1 = new Date(today.getFullYear(), 0, 1).toISOString().slice(0, 10);
-  } else {
-    f1 = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  }
-  return { f1, f2 };
-}
-
-function esMismoMes(fecha, year, month) {
-  const d = new Date(fecha);
-  return d.getFullYear() === year && d.getMonth() === month;
-}
-
 function PageDashboard({ user }) {
-  const { Sparkline, BarChart, HBarChart, Donut, LineChart } = window.Charts;
+  const M = window.dashboardMetricas;
+  const { BarChart, HBarChart, Donut, LineChart } = window.Charts;
   const [loading, setLoading] = ds_uS(true);
   const [ventas, setVentas] = ds_uS([]);
   const [productos, setProductos] = ds_uS([]);
+  const [errorVentas, setErrorVentas] = ds_uS(null);
+  const [errorProd, setErrorProd] = ds_uS(null);
   const [gastos, setGastos] = ds_uS([]);
   const [compras, setCompras] = ds_uS([]);
   // Ventas del mes en curso, independientes del selector de periodo: el resumen
@@ -57,32 +47,43 @@ function PageDashboard({ user }) {
   const [loadingFin, setLoadingFin] = ds_uS(true);
   const [errorFin, setErrorFin] = ds_uS(null);
   const [periodo, setPeriodo] = ds_uS('mes');
+  const [version, setVersion] = ds_uS(0);
+  // Cada carga sube su contador: la respuesta de una consulta vieja (cambio rápido de periodo) se descarta.
+  const reqVentas = ds_uR(0);
+  const reqFin = ds_uR(0);
 
   ds_uE(() => {
     (async () => {
+      const mio = ++reqVentas.current;
       setLoading(true);
-      const { f1, f2 } = getDateRange(periodo);
+      const { f1, f2 } = M.rangoPeriodo(periodo);
       const [v, p] = await Promise.all([
         window.api.ventasMes(f1, f2),
         window.api.productos(),
       ]);
+      if (mio !== reqVentas.current) return;
+      // listaConError deja ok/error pegados al array; sin esto un fallo se vería como «sin ventas» o «sin alertas».
+      setErrorVentas(v && v.ok === false ? v.error : null);
+      setErrorProd(p && p.ok === false ? p.error : null);
       setVentas(Array.isArray(v) ? v : []);
       setProductos(Array.isArray(p) ? p : []);
       setLoading(false);
     })();
-  }, [periodo]);
+  }, [periodo, version]);
 
   const cargarFinanzas = async () => {
+    const mio = ++reqFin.current;
     setLoadingFin(true);
     setErrorFin(null);
-    const { f1, f2 } = getDateRange('mes');
+    const { f1, f2 } = M.rangoPeriodo('mes');
     const [g, c, v] = await Promise.all([
       window.api.gastos(),
       window.api.compras(),
       window.api.ventasMes(f1, f2),
     ]);
-    // listaConError deja ok/error pegados al array; sin esto el fallo sería invisible.
-    const fallo = [g, c, v].find(x => x && x.ok === false);
+    if (mio !== reqFin.current) return;
+    // 404 = todavía no hay registros (el backend de compras lo responde así): es una lista vacía, no un error.
+    const fallo = [g, c, v].find(x => x && x.ok === false && x.status !== 404);
     setGastos(Array.isArray(g) ? g : []);
     setCompras(Array.isArray(c) ? c : []);
     setVentasMesActual(Array.isArray(v) ? v : []);
@@ -90,116 +91,17 @@ function PageDashboard({ user }) {
     setLoadingFin(false);
   };
 
-  ds_uE(() => { cargarFinanzas(); }, []);
+  ds_uE(() => { cargarFinanzas(); }, [version]);
 
-  // Serie diaria + comparación contra el mes anterior, común a gastos y compras.
-  const resumenMensual = (registros, campoFecha, monto) => {
-    const now = new Date();
-    const y = now.getFullYear(), m = now.getMonth();
-    const pm = m === 0 ? 11 : m - 1;
-    const py = m === 0 ? y - 1 : y;
-    const delMes = registros.filter(r => esMismoMes(r[campoFecha], y, m));
-    const delMesAnterior = registros.filter(r => esMismoMes(r[campoFecha], py, pm));
-    const total = delMes.reduce((s, r) => s + monto(r), 0);
-    const totalAnterior = delMesAnterior.reduce((s, r) => s + monto(r), 0);
-    const delta = totalAnterior > 0 ? ((total - totalAnterior) / totalAnterior) * 100 : 0;
-
-    const byDay = {};
-    delMes.forEach(r => {
-      const d = new Date(r[campoFecha]).toISOString().slice(0, 10);
-      byDay[d] = (byDay[d] || 0) + monto(r);
-    });
-    const spark = Object.entries(byDay)
-      .sort((a, b) => new Date(a[0]) - new Date(b[0]))
-      .map(([, v]) => Math.round(v));
-
-    return { delMes, total, totalAnterior, delta, spark };
-  };
-
-  const montoGasto  = g => Number(g.total ?? ((g.costo || 0) * (g.cantidad || 0))) || 0;
-  const montoCompra = c => Number(c.total ?? ((c.costo_total || 0) * (c.stock_bodega || 0))) || 0;
-
-  const gastosMetrics = ds_uM(() => {
-    const base = resumenMensual(gastos, 'fecha_registro', montoGasto);
-    const porConcepto = {};
-    base.delMes.forEach(g => {
-      const k = g.descripcion || g.concepto || 'Sin descripción';
-      porConcepto[k] = (porConcepto[k] || 0) + montoGasto(g);
-    });
-    const top = Object.entries(porConcepto).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    return { ...base, top };
-  }, [gastos]);
-
-  const comprasMetrics = ds_uM(() => {
-    const base = resumenMensual(compras, 'fecha_registro', montoCompra);
-    const porProveedor = {};
-    base.delMes.forEach(c => {
-      const k = c.proveedor || 'Sin proveedor';
-      porProveedor[k] = (porProveedor[k] || 0) + montoCompra(c);
-    });
-    const top = Object.entries(porProveedor).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    return {
-      ...base,
-      top,
-      proveedores: new Set(base.delMes.map(c => c.proveedor).filter(Boolean)).size,
-      facturas: new Set(base.delMes.map(c => c.num_factura).filter(Boolean)).size,
-      unidades: base.delMes.reduce((s, c) => s + (Number(c.stock_bodega) || 0), 0),
-    };
-  }, [compras]);
-
+  const gastosMetrics = ds_uM(() => M.gastosMes(gastos), [gastos]);
+  const comprasMetrics = ds_uM(() => M.comprasMes(compras), [compras]);
   // Resumen financiero del mes en curso. Las compras se reportan aparte del
   // resultado operativo: son inversión en inventario, no gasto del periodo.
-  const finanzas = ds_uM(() => {
-    const ingresos = ventasMesActual.reduce(
-      (s, v) => s + (Number(v.total) || ((v.cantidad || 0) * (v.precio || 0))), 0);
-    const utilidadBruta = ventasMesActual.reduce(
-      (s, v) => s + (Number(v.utilidad_total) || ((v.cantidad || 0) * (v.precio || 0) * 0.28)), 0);
-    const gastosOp = gastosMetrics.total;
-    const comprasMes = comprasMetrics.total;
-    const resultadoOperativo = utilidadBruta - gastosOp;
-    const flujoNeto = ingresos - gastosOp - comprasMes;
-    return {
-      ingresos,
-      utilidadBruta,
-      gastosOp,
-      comprasMes,
-      resultadoOperativo,
-      flujoNeto,
-      margenBruto: ingresos > 0 ? (utilidadBruta / ingresos) * 100 : 0,
-      pesoGasto: ingresos > 0 ? (gastosOp / ingresos) * 100 : 0,
-      pesoCompra: ingresos > 0 ? (comprasMes / ingresos) * 100 : 0,
-      numVentas: ventasMesActual.length,
-    };
-  }, [ventasMesActual, gastosMetrics, comprasMetrics]);
-
-  const metrics = ds_uM(() => {
-    const totalUnidades = ventas.reduce((s, v) => s + (v.cantidad || 0), 0);
-    const totalMonto = ventas.reduce((s, v) => s + (Number(v.total) || 0), 0);
-    const utilidad = ventas.reduce((s, v) => s + (Number(v.utilidad_total) || ((v.cantidad || 0) * (v.precio || 0) * 0.28)), 0);
-    const plataforma = {};
-    ventas.forEach(v => { plataforma[v.plataforma] = (plataforma[v.plataforma] || 0) + 1; });
-    const platArr = Object.entries(plataforma).sort((a,b) => b[1] - a[1]);
-    const prodAgg = {};
-    ventas.forEach(v => { prodAgg[v.producto] = (prodAgg[v.producto] || 0) + (v.cantidad || 0); });
-    const topProductos = Object.entries(prodAgg).sort((a,b) => b[1] - a[1]).slice(0, 5);
-
-    const byDay = {};
-    ventas.forEach(v => {
-      const d = new Date(v.fecha).toISOString().slice(0,10);
-      byDay[d] = (byDay[d] || 0) + ((v.cantidad || 0) * (v.precio || 0));
-    });
-    const days = Object.entries(byDay).sort((a,b) => new Date(a[0]) - new Date(b[0])).slice(-14)
-      .map(([d, v]) => ({ label: new Date(d).toLocaleDateString('es-MX', { day: '2-digit' }), v: Math.round(v) }));
-
-    return {
-      totalUnidades, totalMonto, utilidad,
-      utilidadPct: totalMonto > 0 ? (utilidad / totalMonto) * 100 : 0,
-      ticketProm: ventas.length ? totalMonto / ventas.length : 0,
-      platArr, topProductos,
-      numVentas: ventas.length,
-      days,
-    };
-  }, [ventas]);
+  const finanzas = ds_uM(() => M.resumenFinanciero(ventasMesActual, gastosMetrics, comprasMetrics),
+    [ventasMesActual, gastosMetrics, comprasMetrics]);
+  const metrics = ds_uM(() => M.metricasVentas(ventas), [ventas]);
+  const ultimas = ds_uM(() => M.ultimasVentas(ventas), [ventas]);
+  const alertas = ds_uM(() => M.alertasStock(productos), [productos]);
 
   if (loading) {
     return (
@@ -213,9 +115,14 @@ function PageDashboard({ user }) {
   }
 
   const platColors = ['var(--c1)','var(--c2)','var(--c3)','var(--c4)'];
-  const donutData = metrics.platArr.map(([label, value], i) => ({ label, value, color: platColors[i % 4] }));
+  const donutData = metrics.plataformas.map(([label, value], i) => ({ label, value, color: platColors[i % 4] }));
 
-  const sparkData = metrics.days.map(d => d.v);
+  const sparkVentas = metrics.days.map(d => d.v);
+  const etiquetaPeriodo = periodo === 'hoy' ? 'de hoy' : periodo === '7d' ? 'de 7 días' : periodo === 'año' ? 'del año' : 'del mes';
+
+  // Gastos y compras comparan contra el mes anterior; sin mes anterior (o sin datos aún) no hay comparación.
+  const labelMes = (texto, delta) => delta === null ? `sin mes anterior · ${texto}` : `${texto} · vs mes anterior`;
+  const pendienteFin = loadingFin;
 
   return (
     <div className="page">
@@ -240,26 +147,49 @@ function PageDashboard({ user }) {
         </div>
       </div>
 
+      {errorVentas && (
+        <div className="card" style={{ marginBottom: 16, border: '1px solid var(--danger)' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ color: 'var(--danger)', fontSize: 13 }}>No se pudieron cargar las ventas: {errorVentas}</div>
+            <button className="btn btn-secondary btn-sm" onClick={() => setVersion(v => v + 1)}><Icon name="refresh" size={13}/> Reintentar</button>
+          </div>
+        </div>
+      )}
+
       <div className="dash-kpis">
-        <Kpi icon="cash" label="Ventas del mes" value={window.fmt.mxn(metrics.totalMonto)} delta={12.4} deltaLabel="vs mes anterior" spark={sparkData}/>
-        <Kpi icon="cash" label="OPER. PROF." value={window.fmt.mxn(finanzas.resultadoOperativo)} delta={8.1} deltaLabel={`margen ${metrics.utilidadPct.toFixed(1)}%`} spark={sparkData} color="var(--c5)"/>
-        <Kpi icon="pkg" label="Unidades vendidas" value={window.fmt.int(metrics.totalUnidades)} delta={-3.2} deltaLabel="vs mes anterior" spark={sparkData} color="var(--c2)"/>
-        <Kpi icon="tag" label="Ticket promedio" value={window.fmt.mxn(metrics.ticketProm)} delta={5.7} deltaLabel={`${metrics.numVentas} transacciones`} spark={sparkData} color="var(--c4)"/>
-        <Kpi icon="wallet" label="Gastos del mes" value={window.fmt.mxn(gastosMetrics.total)} delta={gastosMetrics.delta} deltaLabel={`${gastosMetrics.delMes.length} registros`} spark={gastosMetrics.spark.length ? gastosMetrics.spark : [0,0]} color="var(--danger)" invert/>
-        <Kpi icon="transfer" label="Compras del mes" value={window.fmt.mxn(comprasMetrics.total)} delta={comprasMetrics.delta} deltaLabel={`${comprasMetrics.facturas} facturas · ${comprasMetrics.proveedores} proveedores`} spark={comprasMetrics.spark.length ? comprasMetrics.spark : [0,0]} color="var(--c4)" invert/>
+        <Kpi icon="cash" label={`Ventas ${etiquetaPeriodo}`} value={ds_mxn(metrics.totalMonto)} delta={null} deltaLabel={`${metrics.transacciones} ventas`} spark={sparkVentas}/>
+        <Kpi icon="cash" label="Utilidad estimada" value={ds_mxn(metrics.utilidad)} delta={null}
+          deltaLabel={metrics.utilidad === null && metrics.transacciones > 0 ? 'sin utilidad registrada' : `margen ${M.textoPorcentaje(metrics.utilidadPct)}`}
+          color="var(--c5)"/>
+        <Kpi icon="pkg" label="Unidades vendidas" value={window.fmt.int(metrics.totalUnidades)} delta={null} deltaLabel={etiquetaPeriodo} color="var(--c2)"/>
+        <Kpi icon="tag" label="Ticket promedio" value={ds_mxn(metrics.ticket)} delta={null} deltaLabel={`${metrics.transacciones} ventas`} color="var(--c4)"/>
+        <Kpi icon="wallet" label="Gastos del mes" value={loadingFin ? '…' : ds_mxn(gastosMetrics.total)} delta={loadingFin ? null : gastosMetrics.delta}
+          deltaLabel={loadingFin ? '' : labelMes(`${gastosMetrics.delMes.length} registros`, gastosMetrics.delta)}
+          spark={gastosMetrics.spark} color="var(--danger)" invert/>
+        <Kpi icon="transfer" label="Compras del mes" value={loadingFin ? '…' : ds_mxn(comprasMetrics.total)} delta={loadingFin ? null : comprasMetrics.delta}
+          deltaLabel={loadingFin ? '' : labelMes(`${comprasMetrics.facturas} facturas · ${comprasMetrics.proveedores} proveedores`, comprasMetrics.delta)}
+          spark={comprasMetrics.spark} color="var(--c4)" invert/>
       </div>
+      {(metrics.canceladas > 0 || (metrics.utilidad !== null && metrics.sinUtilidad > 0)) && (
+        <p style={{ fontSize: 11, color: 'var(--fg-2)', margin: '8px 2px 0', lineHeight: 1.5 }}>
+          {metrics.canceladas > 0 && <>{metrics.canceladas} partida(s) cancelada(s) no se cuentan. </>}
+          {metrics.utilidad !== null && metrics.sinUtilidad > 0 && <>{metrics.sinUtilidad} partida(s) sin utilidad registrada: la utilidad suma solo las que la traen.</>}
+        </p>
+      )}
 
       <div className="dash-grid">
         <div className="card">
           <div className="card-header">
             <div>
               <h3 className="card-title">Evolución de ventas</h3>
-              <p className="card-subtitle">Últimos 14 días — monto en MXN</p>
+              <p className="card-subtitle">Últimos 14 días con ventas — monto en MXN</p>
             </div>
             <span className="badge badge-brand"><span className="badge-dot"/> En vivo</span>
           </div>
           <div className="card-body">
-            <LineChart data={metrics.days}/>
+            {metrics.days.length === 0
+              ? <div className="empty" style={{ padding: 32 }}>Sin ventas en el periodo</div>
+              : <LineChart data={metrics.days}/>}
           </div>
         </div>
 
@@ -268,16 +198,18 @@ function PageDashboard({ user }) {
             <h3 className="card-title">Ventas por plataforma</h3>
           </div>
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-            <Donut data={donutData}/>
-            <div className="legend" style={{ width: '100%' }}>
-              {donutData.map((d, i) => (
-                <div key={i} className="legend-row">
-                  <span className="legend-dot" style={{ background: d.color }}/>
-                  <span className="legend-label">{d.label}</span>
-                  <span className="legend-val">{d.value}</span>
-                </div>
-              ))}
-            </div>
+            {donutData.length === 0 ? <div className="empty" style={{ padding: 32 }}>Sin ventas en el periodo</div> : <>
+              <Donut data={donutData}/>
+              <div className="legend" style={{ width: '100%' }}>
+                {donutData.map((d, i) => (
+                  <div key={i} className="legend-row">
+                    <span className="legend-dot" style={{ background: d.color }}/>
+                    <span className="legend-label">{d.label}</span>
+                    <span className="legend-val">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>}
           </div>
         </div>
       </div>
@@ -288,58 +220,59 @@ function PageDashboard({ user }) {
             <h3 className="card-title">Top 5 productos</h3>
           </div>
           <div className="card-body">
-            <HBarChart data={metrics.topProductos.map(([l,v], i) => ({
-              label: l, value: v,
-              color: [`var(--c1)`,`var(--c2)`,`var(--c3)`,`var(--c4)`,`var(--c5)`][i]
-            }))}/>
+            {metrics.topProductos.length === 0
+              ? <div className="empty" style={{ padding: 20 }}>Sin ventas en el periodo</div>
+              : <HBarChart data={metrics.topProductos.map(([l,v], i) => ({
+                  label: l, value: v,
+                  color: [`var(--c1)`,`var(--c2)`,`var(--c3)`,`var(--c4)`,`var(--c5)`][i]
+                }))}/>}
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Alertas de stock</h3>
-            <button className="btn btn-ghost btn-sm">Ver todo <Icon name="chevRight" size={12}/></button>
+            {alertas.total > 0 && <span className="badge badge-danger"><span className="badge-dot"/> {alertas.total}</span>}
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            {(() => {
-              const alertas = productos
-                .filter(p => (p.stock_bodega ?? 0) < (p.stock_minimo ?? 0))
-                .slice(0, 5);
-              if (alertas.length === 0) {
-                return <div className="empty" style={{ padding: 32 }}>Sin alertas de stock</div>;
-              }
-              return alertas.map((p, i) => (
-                <div key={p.sku || i} className="activity-item" style={{ padding: '12px 20px' }}>
-                  <div className="activity-dot" style={{ background: p.stock_bodega < p.stock_minimo * 0.3 ? 'var(--danger)' : 'var(--warn)' }}/>
-                  <div className="activity-body">
-                    <div className="activity-title">{p.nombre}</div>
-                    <div className="activity-meta mono">{p.sku} · {p.ubicacion}</div>
-                  </div>
-                  <div className="activity-amt" style={{ color: p.stock_bodega < p.stock_minimo * 0.3 ? 'var(--danger)' : 'var(--warn)' }}>
-                    {p.stock_bodega} <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>/ {p.stock_minimo}</span>
-                  </div>
+            {errorProd ? (
+              <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--danger)', fontSize: 13 }}>No se pudo cargar el inventario: {errorProd}</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => setVersion(v => v + 1)}><Icon name="refresh" size={13}/> Reintentar</button>
+              </div>
+            ) : alertas.items.length === 0 ? (
+              <div className="empty" style={{ padding: 32 }}>Sin alertas de stock</div>
+            ) : alertas.items.map((p, i) => (
+              <div key={p.sku || i} className="activity-item" style={{ padding: '12px 20px' }}>
+                <div className="activity-dot" style={{ background: p.critico ? 'var(--danger)' : 'var(--warn)' }}/>
+                <div className="activity-body">
+                  <div className="activity-title">{p.nombre}</div>
+                  <div className="activity-meta mono">{p.sku} · {p.ubicacion}</div>
                 </div>
-              ));
-            })()}
+                <div className="activity-amt" style={{ color: p.critico ? 'var(--danger)' : 'var(--warn)' }}>
+                  {p.stock} <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>/ {p.minimo}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Últimas ventas</h3>
-            <span className="badge"><span className="badge-dot" style={{ background: 'var(--success)' }}/> {ventas.length}</span>
+            <span className="badge"><span className="badge-dot" style={{ background: 'var(--success)' }}/> {metrics.transacciones}</span>
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            {ventas.length === 0 ? (
+            {ultimas.length === 0 ? (
               <div className="empty" style={{ padding: 32 }}>Sin ventas registradas</div>
-            ) : ventas.slice(0, 5).map((v, i) => (
-              <div key={v.id_venta || i} className="activity-item" style={{ padding: '12px 20px' }}>
+            ) : ultimas.map((v, i) => (
+              <div key={v.id || i} className="activity-item" style={{ padding: '12px 20px' }}>
                 <div className="activity-dot" style={{ background: 'var(--brand)' }}/>
                 <div className="activity-body">
-                  <div className="activity-title truncate">{v.producto}</div>
-                  <div className="activity-meta">{v.nombreComprador} · {v.plataforma}</div>
+                  <div className="activity-title truncate">{v.titulo}</div>
+                  <div className="activity-meta">{[v.comprador, v.plataforma].filter(Boolean).join(' · ') || '—'}</div>
                 </div>
-                <div className="activity-amt">{window.fmt.mxn((v.cantidad || 0) * (v.precio || 0))}</div>
+                <div className="activity-amt">{ds_mxn(v.monto)}</div>
               </div>
             ))}
           </div>
@@ -379,18 +312,20 @@ function PageDashboard({ user }) {
             </div>
             <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, alignItems: 'start' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                <FinRow label="Ingresos por ventas" value={finanzas.ingresos} nota={`${finanzas.numVentas} transacciones`}/>
-                <FinRow label="Utilidad bruta estimada" value={finanzas.utilidadBruta} nota={`margen ${finanzas.margenBruto.toFixed(1)}%`} color="var(--c3)"/>
-                <FinRow label="(−) Gastos operativos" value={-finanzas.gastosOp} nota={`${finanzas.pesoGasto.toFixed(1)}% de la venta`} color="var(--danger)"/>
+                <FinRow label="Ingresos por ventas" value={finanzas.ingresos} nota={`${finanzas.numVentas} ventas`}/>
+                <FinRow label="Utilidad bruta" value={finanzas.utilidadBruta} nota={`margen ${M.textoPorcentaje(finanzas.margenBruto)}`} color="var(--c3)"/>
+                <FinRow label="(−) Gastos operativos" value={-finanzas.gastosOp} nota={`${M.textoPorcentaje(finanzas.pesoGasto)} de la venta`} color="var(--danger)"/>
                 <FinRow label="Resultado operativo" value={finanzas.resultadoOperativo} nota="utilidad bruta − gastos" fuerte
-                  color={finanzas.resultadoOperativo >= 0 ? 'var(--success)' : 'var(--danger)'}/>
+                  color={finanzas.resultadoOperativo === null ? 'var(--fg-1)' : finanzas.resultadoOperativo >= 0 ? 'var(--success)' : 'var(--danger)'}/>
                 <div style={{ borderTop: '1px solid var(--line)', margin: '4px 0' }}/>
-                <FinRow label="(−) Compras a proveedores" value={-finanzas.comprasMes} nota={`inversión en inventario · ${finanzas.pesoCompra.toFixed(1)}% de la venta`} color="var(--c4)"/>
-                <FinRow label="Flujo neto estimado" value={finanzas.flujoNeto} nota="ventas − gastos − compras" fuerte
+                <FinRow label="(−) Compras a proveedores" value={-finanzas.comprasMes} nota={`inversión en inventario · ${M.textoPorcentaje(finanzas.pesoCompra)} de la venta`} color="var(--c4)"/>
+                <FinRow label="Flujo neto" value={finanzas.flujoNeto} nota="ventas − gastos − compras" fuerte
                   color={finanzas.flujoNeto >= 0 ? 'var(--success)' : 'var(--danger)'}/>
                 <p style={{ fontSize: 11, color: 'var(--fg-2)', margin: '4px 0 0', lineHeight: 1.5 }}>
-                  La utilidad usa <code>utilidad_total</code> de cada venta; si el registro no la trae, se estima con un margen del 28%.
-                  Las compras se muestran fuera del resultado operativo porque son inventario, no gasto del mes.
+                  La utilidad suma <code>utilidad_total</code> de cada venta activa; no se estima ningún margen.
+                  {finanzas.utilidadBruta === null && finanzas.numVentas > 0 && ' Las ventas del mes no traen utilidad registrada: no hay utilidad bruta ni resultado operativo.'}
+                  {finanzas.utilidadBruta !== null && finanzas.sinUtilidad > 0 && ` ${finanzas.sinUtilidad} partida(s) sin utilidad registrada no suman.`}
+                  {' '}Las compras se muestran fuera del resultado operativo porque son inventario, no gasto del mes.
                 </p>
               </div>
               <div style={{ display: 'grid', gap: 16 }}>
@@ -424,16 +359,14 @@ function PageDashboard({ user }) {
                 <tbody>
                   {gastosMetrics.delMes.length === 0 ? (
                     <tr><td colSpan={6}><div className="empty" style={{ padding: 32 }}>Sin gastos registrados este mes</div></td></tr>
-                  ) : [...gastosMetrics.delMes]
-                    .sort((a, b) => new Date(b.fecha_registro) - new Date(a.fecha_registro))
-                    .map((g, i) => (
+                  ) : gastosMetrics.detalle.map((g, i) => (
                       <tr key={g.id ?? i}>
                         <td className="td-muted">{g.fecha_registro ? window.fmt.date(g.fecha_registro) : '—'}</td>
                         <td style={{ fontWeight: 500 }}>{g.descripcion || g.concepto || '—'}</td>
                         <td className="td-muted">{g.usuario_registro || g.usuario || '—'}</td>
                         <td className="td-right mono">{window.fmt.int(g.cantidad ?? 0)}</td>
                         <td className="td-right mono">{window.fmt.mxn(g.costo ?? 0)}</td>
-                        <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(montoGasto(g))}</td>
+                        <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(M.montoGasto(g))}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -457,9 +390,7 @@ function PageDashboard({ user }) {
                 <tbody>
                   {comprasMetrics.delMes.length === 0 ? (
                     <tr><td colSpan={8}><div className="empty" style={{ padding: 32 }}>Sin compras registradas este mes</div></td></tr>
-                  ) : [...comprasMetrics.delMes]
-                    .sort((a, b) => new Date(b.fecha_registro) - new Date(a.fecha_registro))
-                    .map((c, i) => (
+                  ) : comprasMetrics.detalle.map((c, i) => (
                       <tr key={c.id ?? i}>
                         <td className="td-muted">{c.fecha_registro ? window.fmt.date(c.fecha_registro) : '—'}</td>
                         <td className="mono td-muted" style={{ fontSize: 12 }}>{c.sku}</td>
@@ -468,7 +399,7 @@ function PageDashboard({ user }) {
                         <td className="mono td-muted">{c.num_factura || '—'}</td>
                         <td className="td-right mono">{window.fmt.int(c.stock_bodega ?? 0)}</td>
                         <td className="td-right mono">{window.fmt.mxn(c.costo_total ?? 0)}</td>
-                        <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(montoCompra(c))}</td>
+                        <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(M.montoCompra(c))}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -481,6 +412,7 @@ function PageDashboard({ user }) {
   );
 }
 
+// `value` null = sin dato: se muestra «—», no $0.00.
 function FinRow({ label, value, nota, color = 'var(--fg-1)', fuerte = false }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
@@ -489,14 +421,16 @@ function FinRow({ label, value, nota, color = 'var(--fg-1)', fuerte = false }) {
         {nota && <span style={{ color: 'var(--fg-3)', fontSize: 11, marginLeft: 6 }}>{nota}</span>}
       </span>
       <span className="mono" style={{ color, fontWeight: fuerte ? 700 : 500, fontSize: fuerte ? 15 : 13, whiteSpace: 'nowrap' }}>
-        {value < 0 ? `−${window.fmt.mxn(Math.abs(value))}` : window.fmt.mxn(value)}
+        {value === null || value === undefined ? '—' : value < 0 ? `−${window.fmt.mxn(Math.abs(value))}` : window.fmt.mxn(value)}
       </span>
     </div>
   );
 }
 
+// `delta` null = no hay comparación real: no se pinta flecha ni porcentaje, solo la nota.
 function Kpi({ icon, label, value, delta, deltaLabel, spark, color = 'var(--brand)', invert = false }) {
-  const rose = delta >= 0;
+  const hayDelta = delta !== null && delta !== undefined;
+  const rose = hayDelta && delta >= 0;
   const good = invert ? !rose : rose;
   return (
     <div className="kpi" style={{ borderTop: `2px solid ${color}` }}>
@@ -504,17 +438,23 @@ function Kpi({ icon, label, value, delta, deltaLabel, spark, color = 'var(--bran
         <span className="kpi-icon" style={{ background: `color-mix(in oklch, ${color} 16%, transparent)`, color }}>
           <Icon name={icon} size={14}/>
         </span>
-        <div style={{ width: 64, opacity: 0.85 }}>
-          <window.Charts.Sparkline data={spark} color={color} w={64} h={22}/>
-        </div>
+        {spark && spark.length > 1 && (
+          <div style={{ width: 64, opacity: 0.85 }}>
+            <window.Charts.Sparkline data={spark} color={color} w={64} h={22}/>
+          </div>
+        )}
       </div>
       <div className="kpi-value">{value}</div>
       <div className="kpi-label" style={{ marginBottom: 2 }}>{label}</div>
-      <div className={`kpi-delta ${good ? 'up' : 'down'}`}>
-        <Icon name={rose ? 'arrowUp' : 'arrowDown'} size={12}/>
-        <span>{rose ? '+' : ''}{delta.toFixed ? delta.toFixed(1) : delta}%</span>
-        <span style={{ color: 'var(--fg-2)', marginLeft: 4 }}>{deltaLabel}</span>
-      </div>
+      {hayDelta ? (
+        <div className={`kpi-delta ${good ? 'up' : 'down'}`}>
+          <Icon name={rose ? 'arrowUp' : 'arrowDown'} size={12}/>
+          <span>{window.dashboardMetricas.textoDelta(delta)}%</span>
+          <span style={{ color: 'var(--fg-2)', marginLeft: 4 }}>{deltaLabel}</span>
+        </div>
+      ) : (
+        <div className="kpi-delta" style={{ color: 'var(--fg-2)' }}>{deltaLabel}</div>
+      )}
     </div>
   );
 }

@@ -23,6 +23,21 @@ test('validarReparto exige celda, cantidad entera y dentro de lo pendiente', () 
   assert.ok(L.validarReparto({ warehouse_id: 'A-1', cantidad: '3', cama: '-1' }, 6).error);
 });
 
+test('validarReparto exige múltiplo exacto cuando se conoce el múltiplo de la celda', () => {
+  const f = (c) => ({ warehouse_id: 'A-1', cantidad: c, cama: '0' });
+  assert.ok(L.validarReparto(f('7'), 10, 5).error.includes('múltiplo de 5'));
+  assert.deepStrictEqual(L.validarReparto(f('10'), 10, 5).datos.cantidad, 10);
+  assert.deepStrictEqual(L.validarReparto(f('7'), 10, 1).datos.cantidad, 7); // Oficina ×1
+});
+
+test('equivalenteCajas muestra las cajas o avisa si no es múltiplo', () => {
+  assert.strictEqual(L.equivalenteCajas('30', 10), '= 3 cajas × 10 pzas');
+  assert.strictEqual(L.equivalenteCajas('5', 5), '= 1 caja × 5 pzas');
+  assert.strictEqual(L.equivalenteCajas('7', 5), 'No es múltiplo de 5');
+  assert.strictEqual(L.equivalenteCajas('7', 1), null);
+  assert.strictEqual(L.equivalenteCajas('', 5), null);
+});
+
 test('validarReparto arma el payload con la celda recortada y cama 0 por defecto', () => {
   assert.deepStrictEqual(
     L.validarReparto({ warehouse_id: ' A-1 ', cantidad: '4', cama: '' }, 6),

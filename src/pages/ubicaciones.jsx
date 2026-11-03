@@ -144,13 +144,15 @@ function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
   const abrir = (item) => { setAbierto(item.id); setForm(L.formularioInicial(item)); };
 
   const ubicar = async (item) => {
-    const v = L.validarReparto(form, item.pendiente);
+    const v = L.validarReparto(form, item.pendiente, window.ubicacionesLogica.obtenerMultiplo(item.sku, form.warehouse_id));
     if (v.error) { toast.error('Revisa la ubicación', v.error); return; }
     setGuardando(true);
     const r = await window.api.ubicarCompra(item.id, v.datos);
     setGuardando(false);
     if (r.ok) {
-      toast.success('Ubicación creada', `${v.datos.cantidad} de ${item.sku} en ${v.datos.warehouse_id}`);
+      const cajas = r.data?.cajas;
+      const detalle = `${v.datos.cantidad} pzas${cajas != null ? ` (${cajas} cajas)` : ''} de ${item.sku} en ${v.datos.warehouse_id}`;
+      toast.success(r.data?.tarjeta_nueva === false ? 'Sumado a la tarjeta existente' : 'Tarjeta creada', detalle);
       setAbierto(null);
       await cargar();
       onCambio(item.sku);
@@ -217,9 +219,12 @@ function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
                     <input className="input" list="ubi-celdas" value={form.warehouse_id} autoFocus
                       onChange={e => setForm({ ...form, warehouse_id: e.target.value })}/>
                   </label>
-                  <label style={{ fontSize: 12 }}>Cantidad
+                  <label style={{ fontSize: 12 }}>Cantidad (piezas)
                     <input className="input" type="number" min="1" max={item.pendiente} value={form.cantidad}
                       onChange={e => setForm({ ...form, cantidad: e.target.value })}/>
+                    <span className="td-muted" style={{ display: 'block', fontSize: 11 }}>
+                      {L.equivalenteCajas(form.cantidad, window.ubicacionesLogica.obtenerMultiplo(item.sku, form.warehouse_id)) || ' '}
+                    </span>
                   </label>
                   <label style={{ fontSize: 12 }}>Cama
                     <input className="input" type="number" min="0" value={form.cama}

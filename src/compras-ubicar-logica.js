@@ -17,18 +17,33 @@
   }
 
   // Valida lo capturado y arma el body de POST /compras/{id}/ubicar.
-  function validarReparto(form, pendiente) {
+  // `multiplo` (piezas por caja de la celda elegida, opcional) anticipa el 422 del backend:
+  // la cantidad va en piezas y debe ser múltiplo exacto. Manda el backend.
+  function validarReparto(form, pendiente, multiplo) {
     const celda = String(form?.warehouse_id ?? '').trim();
     if (!celda) return { error: 'Indica la ubicación' };
     const cantidad = Number(form?.cantidad);
     if (!Number.isInteger(cantidad) || cantidad <= 0) return { error: 'La cantidad debe ser un entero mayor a 0' };
     if (cantidad > Number(pendiente)) return { error: `Solo quedan ${pendiente} por ubicar` };
+    const m = Number(multiplo);
+    if (Number.isInteger(m) && m > 1 && cantidad % m !== 0) {
+      return { error: `Las piezas deben ser múltiplo de ${m} (piezas por caja de este SKU)` };
+    }
     const cama = form?.cama === '' || form?.cama == null ? 0 : Number(form.cama);
     if (!Number.isInteger(cama) || cama < 0) return { error: 'La cama debe ser un entero de 0 o más' };
     return { datos: { warehouse_id: celda, cantidad, cama } };
   }
 
-  const mod = { contarPendientes, formularioInicial, validarReparto };
+  // Texto «= X cajas × M» para mostrar bajo el campo; null si no hay cantidad válida o el múltiplo es 1.
+  function equivalenteCajas(cantidad, multiplo) {
+    const n = Number(cantidad);
+    const m = Number(multiplo);
+    if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(m) || m <= 1) return null;
+    if (n % m !== 0) return `No es múltiplo de ${m}`;
+    return `= ${n / m} ${n / m === 1 ? 'caja' : 'cajas'} × ${m} pzas`;
+  }
+
+  const mod = { contarPendientes, formularioInicial, validarReparto, equivalenteCajas };
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.comprasUbicarLogica = mod;
 })(typeof self !== 'undefined' ? self : this);

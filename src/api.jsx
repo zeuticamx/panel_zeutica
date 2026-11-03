@@ -1021,8 +1021,9 @@ const api = {
     return tryFetch('/zeutica/mercado-ads/motor', { method: 'PUT', body: JSON.stringify({ estado_motor }) });
   },
   // accion: 'pausar' | 'activar'. desde/hasta = el rango que se está viendo (el backend revalida contra él).
-  async zentorAplicar(item_id, accion, desde, hasta) {
-    return tryFetch('/zeutica/mercado-ads/acciones/aplicar', { method: 'POST', body: JSON.stringify({ item_id, accion, desde, hasta }), timeout: 60000 });
+  // manual = true: pausa/reactivación a criterio de gerencia, sin exigir que el motor la recomiende.
+  async zentorAplicar(item_id, accion, desde, hasta, manual = false) {
+    return tryFetch('/zeutica/mercado-ads/acciones/aplicar', { method: 'POST', body: JSON.stringify({ item_id, accion, desde, hasta, manual }), timeout: 60000 });
   },
   async zentorEvaluar() {
     return tryFetch('/zeutica/mercado-ads/evaluar', { method: 'POST', timeout: 120000 });

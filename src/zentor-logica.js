@@ -173,7 +173,22 @@
     return `¿${verbo.charAt(0).toUpperCase() + verbo.slice(1)} el anuncio ${pub.item_id} (${pub.titulo || 'sin título'}) en Mercado Libre? ${d.motivo || ''}`.trim();
   }
 
+  // Pausa/reactivación manual: la acción contraria al estado actual del anuncio en MeLi, o null si el
+  // estado no se conoce o el motor está en pausa. Solo anticipa; manda el backend.
+  function accionManual(pub, estadoMotor) {
+    if (!pub || estadoMotor === 'pausa') return null;
+    if (pub.estado === 'active') return 'pausar';
+    if (pub.estado === 'paused') return 'activar';
+    return null;
+  }
+
+  function textoConfirmacionManual(pub, accion) {
+    const verbo = accion === 'activar' ? 'reactivar' : 'pausar';
+    return `¿${verbo.charAt(0).toUpperCase() + verbo.slice(1)} manualmente el anuncio ${pub.item_id} (${pub.titulo || 'sin título'}) en Mercado Libre?`;
+  }
+
   const mod = {
+    accionManual, textoConfirmacionManual,
     ACCION, ESTADO_MOTOR, ESTADO_ANUNCIO, LIMITES, DIAS_POR_DEFECTO, DIAS_MAXIMOS,
     accionInfo, estadoAnuncio, puedeAplicar, filtrar, contarVistas,
     pct, moneda, entero, decimal, estadoAcos,
