@@ -404,6 +404,7 @@ function App() {
     punto_reorden: window.PagePuntoReorden,
     mercado_ads: window.PageMercadoAds,
     analisis_competencia: window.PageAnalisisCompetencia,
+    meli_stock: window.PageMeliStock,
     //pendientes:   window.PagePendientes,
     cleanest:     window.PageCleanest,
     compras:      window.PageCompras,

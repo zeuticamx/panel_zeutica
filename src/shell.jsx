@@ -52,6 +52,8 @@ const NAV = [
   { key: 'mercado_ads',      label: 'Mercado Ads',      icon: 'trend', seccion: 'comercial' },
   // Visible para todos: el cupo (1 análisis nuevo por usuario por semana) lo aplica el backend.
   { key: 'analisis_competencia', label: 'Análisis de Competencia ML', icon: 'search', seccion: 'comercial' },
+  // Visible y editable para cualquier sesión (decidido): ignorados, multiplicadores e interruptor del job de stock MeLi.
+  { key: 'meli_stock',       label: 'Stock MeLi',       icon: 'box', seccion: 'comercial' },
 ];
 
 const GERENCIA_USERS = ['gerencia', 'fparra'];

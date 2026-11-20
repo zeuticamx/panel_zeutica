@@ -642,6 +642,27 @@ const api = {
   async estadoJobMeliStock() {
     return tryFetch('/zeutica/jobs/meli-stock/status', { method: 'GET' });
   },
+  // Configuración del job de stock MeLi (página «Stock MeLi»; cualquier sesión puede ver y editar).
+  async meliStockConfig() {
+    return tryFetch('/zeutica/meli-stock/config');
+  },
+  // datos = { habilitado, dry_run, hora: 'HH:MM', version } (409 si la versión es vieja)
+  async meliStockGuardarConfig(datos) {
+    return tryFetch('/zeutica/meli-stock/config', { method: 'PUT', body: JSON.stringify(datos) });
+  },
+  async meliStockAgregarIgnorado(id_meli, nota) {
+    return tryFetch('/zeutica/meli-stock/ignorados', { method: 'POST', body: JSON.stringify({ id_meli, nota: nota || null }) });
+  },
+  async meliStockQuitarIgnorado(id_meli) {
+    return tryFetch(`/zeutica/meli-stock/ignorados/${encodeURIComponent(id_meli)}`, { method: 'DELETE' });
+  },
+  // multiplicador 1 equivale a quitarlo (el backend lo borra).
+  async meliStockGuardarMultiplicador(id_meli, multiplicador) {
+    return tryFetch(`/zeutica/meli-stock/multiplicadores/${encodeURIComponent(id_meli)}`, { method: 'PUT', body: JSON.stringify({ multiplicador }) });
+  },
+  async meliStockQuitarMultiplicador(id_meli) {
+    return tryFetch(`/zeutica/meli-stock/multiplicadores/${encodeURIComponent(id_meli)}`, { method: 'DELETE' });
+  },
   // Promociones MeLi en vivo (reemplaza al webhook n8n; con sesión).
   async promocionesMeli(forzar = false) {
     return tryFetch(`/zeutica/meli/promociones${forzar ? '?forzar=true' : ''}`, { method: 'GET' });

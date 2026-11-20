@@ -1,0 +1,26 @@
+/* ===== Stock MeLi (configuración del job) =====
+   Reutiliza .zt-switch / .zt-aviso de zentor.css (se carga antes en index.html). */
+.mst-titulo-fila { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mst-acciones-header { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.mst-job { margin-top: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.mst-fila { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.mst-fila-texto { min-width: 0; flex: 1 1 260px; }
+.mst-fila-titulo { font-size: 13px; font-weight: 600; color: var(--fg-0); }
+.mst-hora { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.mst-hora .input { width: 110px; }
+
+.mst-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; align-items: start; }
+@media (max-width: 1000px) { .mst-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.mst-agregar { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; padding: 0 20px 12px; }
+.mst-agregar .field { flex: 1 1 140px; min-width: 0; }
+.mst-agregar .field.mst-corto { flex: 0 0 110px; }
+.mst-error { padding: 0 20px 12px; }
+
+.mst-id { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; overflow-wrap: anywhere; }
+.mst-sub { font-size: 11px; color: var(--fg-2); }
+.mst-edit { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.mst-edit .input { width: 80px; }
+.mst-vacio { padding: 20px; }
+.mst-aviso { margin-top: 16px; }
