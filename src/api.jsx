@@ -474,6 +474,14 @@ const api = {
   async registrarTraspasoFba(payload) {
     return tryFetch('/zeutica/traspaso/fba', { method: 'POST', body: JSON.stringify(payload) });
   },
+  // Revierte un traspaso (BAJA/CLEAN) dentro de 15 días; `payload` = { motivo? }. El usuario sale del token.
+  async revertirTraspaso(id, payload) {
+    return tryFetch(`/zeutica/traspasos/${encodeURIComponent(id)}/revertir`, { method: 'POST', body: JSON.stringify(payload || {}) });
+  },
+  // Registro de reversiones: { total, registros: [{ id, stock_actual_id, sku, cantidad, almacen, usuario_original, fecha_original, usuario, fecha, motivo }] }.
+  async traspasosReversiones() {
+    return tryFetch('/zeutica/traspasos/reversiones');
+  },
   // Recibe el id numérico de la cotización (no el código ZTC-###);
   // devuelve un array de items {sku, nombre_producto, cantidad, precio_unitario, total_linea}.
   async cotizacionDetalle(id) {
@@ -718,6 +726,18 @@ const api = {
   // Saca la compra de la lista sin crear tarjetas.
   async compraSinUbicacion(id) {
     return tryFetch(`/zeutica/compras/${encodeURIComponent(id)}/sin-ubicacion`, { method: 'POST' });
+  },
+  // Envía piezas de una compra a venta directa (sin tarjeta): { cantidad, cliente_id, referencia?, nota? }.
+  async compraVentaDirecta(id, payload) {
+    return tryFetch(`/zeutica/compras/${encodeURIComponent(id)}/venta-directa`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // Envíos a venta directa vigentes: { total, registros: [{ id, compra_id, sku, cantidad, cliente, referencia, nota, usuario, fecha }] }.
+  async comprasVentaDirecta() {
+    return tryFetch('/zeutica/compras/venta-directa');
+  },
+  // Anula un envío a venta directa (solo gerencia): las piezas vuelven a estar pendientes.
+  async anularVentaDirecta(registroId) {
+    return tryFetch(`/zeutica/compras/venta-directa/${encodeURIComponent(registroId)}`, { method: 'DELETE' });
   },
   async eliminarUbicacion(id) {
     return tryFetch(`/zeutica/producto/eliminarUbi/${encodeURIComponent(id)}`, { method: 'DELETE' });

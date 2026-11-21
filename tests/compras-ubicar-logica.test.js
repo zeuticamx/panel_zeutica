@@ -38,6 +38,31 @@ test('equivalenteCajas muestra las cajas o avisa si no es múltiplo', () => {
   assert.strictEqual(L.equivalenteCajas('', 5), null);
 });
 
+test('formularioVentaDirecta propone todo lo pendiente y sin cliente', () => {
+  assert.deepStrictEqual(L.formularioVentaDirecta({ pendiente: 6 }),
+    { cliente_id: '', cantidad: '6', referencia: '', nota: '' });
+});
+
+test('validarVentaDirecta exige cliente del catálogo y cantidad entera dentro de lo pendiente', () => {
+  const f = (o) => ({ cliente_id: '7', cantidad: '3', referencia: '', nota: '', ...o });
+  assert.ok(L.validarVentaDirecta(f({ cliente_id: '' }), 6).error.includes('cliente'));
+  assert.ok(L.validarVentaDirecta(f({ cliente_id: 'abc' }), 6).error);
+  assert.ok(L.validarVentaDirecta(f({ cantidad: '0' }), 6).error);
+  assert.ok(L.validarVentaDirecta(f({ cantidad: '2.5' }), 6).error);
+  assert.ok(L.validarVentaDirecta(f({ cantidad: '7' }), 6).error.includes('6'));
+  assert.ok(L.validarVentaDirecta(f({ referencia: 'x'.repeat(256) }), 6).error);
+  assert.ok(L.validarVentaDirecta(f({ nota: 'x'.repeat(501) }), 6).error);
+});
+
+test('validarVentaDirecta arma el payload y omite textos vacíos', () => {
+  assert.deepStrictEqual(
+    L.validarVentaDirecta({ cliente_id: '7', cantidad: '3', referencia: '  ', nota: '' }, 6),
+    { datos: { cantidad: 3, cliente_id: 7 } });
+  assert.deepStrictEqual(
+    L.validarVentaDirecta({ cliente_id: 7, cantidad: '6', referencia: ' PO-1 ', nota: ' urgente ' }, 6),
+    { datos: { cantidad: 6, cliente_id: 7, referencia: 'PO-1', nota: 'urgente' } });
+});
+
 test('validarReparto arma el payload con la celda recortada y cama 0 por defecto', () => {
   assert.deepStrictEqual(
     L.validarReparto({ warehouse_id: ' A-1 ', cantidad: '4', cama: '' }, 6),

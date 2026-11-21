@@ -117,15 +117,23 @@ function PanelAuditoriaCelda({ estado, error, onReintentar, auditoria, celdaSel,
 
 // Compras recién ingresadas con piezas aún sin tarjeta. Cada línea se reparte en una o varias celdas;
 // al quedar todo ubicado (o marcarla «sin ubicación») deja de aparecer. El datalist #ubi-celdas lo pone la página.
-function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
+function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm, user }) {
   const toast = window.useToast();
   const L = window.comprasUbicarLogica;
+  const esGerencia = !!window.AppShell?.GERENCIA_USERS?.includes(user);
   const [estado, setEstado] = rp_uS('cargando'); // 'cargando' | 'ok' | 'error'
   const [error, setError] = rp_uS('');
   const [facturas, setFacturas] = rp_uS([]);
   const [abierto, setAbierto] = rp_uS(null); // id de la línea con el formulario abierto
+  const [modo, setModo] = rp_uS('ubicar');   // 'ubicar' | 'venta' (formulario de la línea abierta)
   const [form, setForm] = rp_uS(null);
   const [guardando, setGuardando] = rp_uS(false);
+  // Venta directa: catálogo de clientes (se carga al abrir el primer formulario) y lista de envíos vigentes.
+  const [clientes, setClientes] = rp_uS(null); // null = sin cargar
+  const [cargandoClientes, setCargandoClientes] = rp_uS(false);
+  const [verEnvios, setVerEnvios] = rp_uS(false);
+  const [envios, setEnvios] = rp_uS({ estado: 'cargando', error: '', lista: [] });
+  const [anulando, setAnulando] = rp_uS(null); // id del registro que se está anulando
 
   const cargar = async () => {
     setEstado(e => (e === 'ok' ? 'ok' : 'cargando'));
@@ -141,7 +149,55 @@ function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
   };
   rp_uE(() => { cargar(); }, []);
 
-  const abrir = (item) => { setAbierto(item.id); setForm(L.formularioInicial(item)); };
+  const abrir = (item) => { setAbierto(item.id); setModo('ubicar'); setForm(L.formularioInicial(item)); };
+
+  const cargarClientes = async () => {
+    setCargandoClientes(true);
+    const lista = await window.api.clientes();
+    setClientes(Array.isArray(lista) ? lista : []);
+    setCargandoClientes(false);
+  };
+  const abrirVenta = (item) => {
+    setAbierto(item.id); setModo('venta'); setForm(L.formularioVentaDirecta(item));
+    if (clientes === null && !cargandoClientes) cargarClientes();
+  };
+
+  const ventaDirecta = async (item) => {
+    const v = L.validarVentaDirecta(form, item.pendiente);
+    if (v.error) { toast.error('Revisa la venta directa', v.error); return; }
+    setGuardando(true);
+    const r = await window.api.compraVentaDirecta(item.id, v.datos);
+    setGuardando(false);
+    if (r.ok) {
+      toast.success('Enviado a venta directa', `${v.datos.cantidad} pzas de ${item.sku} para ${r.data?.cliente || 'el cliente'}`);
+      setAbierto(null);
+      await cargar();
+      if (verEnvios) cargarEnvios();
+    } else {
+      toast.error(`No se pudo enviar ${item.sku} a venta directa`, r.error);
+      if (r.status === 409 || r.status === 404) { setAbierto(null); cargar(); } // ya la resolvió alguien más
+    }
+  };
+
+  const cargarEnvios = async () => {
+    setEnvios(e => ({ ...e, estado: e.estado === 'ok' ? 'ok' : 'cargando' }));
+    const r = await window.api.comprasVentaDirecta();
+    if (r.ok) setEnvios({ estado: 'ok', error: '', lista: Array.isArray(r.data?.registros) ? r.data.registros : [] });
+    else setEnvios(e => ({ ...e, estado: 'error', error: r.error || 'Sin respuesta del servidor' }));
+  };
+  const alternarEnvios = () => { const v = !verEnvios; setVerEnvios(v); if (v) cargarEnvios(); };
+
+  const anular = (reg) => askConfirm(
+    `¿Anular el envío a venta directa de ${reg.cantidad} pzas de ${reg.sku} para ${reg.cliente}? Las piezas volverán a quedar pendientes de ubicar.`,
+    async () => {
+      setAnulando(reg.id);
+      const r = await window.api.anularVentaDirecta(reg.id);
+      setAnulando(null);
+      if (r.ok) toast.success('Venta directa anulada', `${reg.sku} · ${reg.cantidad} pzas`);
+      else toast.error('No se pudo anular', r.error);
+      await Promise.all([cargar(), cargarEnvios()]);
+    }
+  );
 
   const ubicar = async (item) => {
     const v = L.validarReparto(form, item.pendiente, window.ubicacionesLogica.obtenerMultiplo(item.sku, form.warehouse_id));
@@ -205,15 +261,53 @@ function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
                   {item.nombre && <span className="td-muted">{item.nombre}</span>}
                 </button>
                 <span className="mono" style={{ marginLeft: 'auto' }}>
-                  {item.pendiente} por ubicar{item.cantidad_ubicada > 0 ? ` (de ${item.cantidad})` : ''}
+                  {item.pendiente} por ubicar{(item.cantidad_ubicada > 0 || item.cantidad_venta_directa > 0) ? ` (de ${item.cantidad})` : ''}
                 </span>
-                <button className="btn btn-sm btn-primary" onClick={() => (abierto === item.id ? setAbierto(null) : abrir(item))}>
-                  {abierto === item.id ? 'Cancelar' : 'Ubicar'}
+                {item.cantidad_venta_directa > 0 && (
+                  <span className="badge badge-info" title="Piezas ya enviadas a venta directa">{item.cantidad_venta_directa} a venta directa</span>
+                )}
+                <button className="btn btn-sm btn-primary" onClick={() => (abierto === item.id && modo === 'ubicar' ? setAbierto(null) : abrir(item))}>
+                  {abierto === item.id && modo === 'ubicar' ? 'Cancelar' : 'Ubicar'}
+                </button>
+                <button className="btn btn-sm btn-secondary" onClick={() => (abierto === item.id && modo === 'venta' ? setAbierto(null) : abrirVenta(item))}
+                  title="Mercancía que se manda directo al cliente, sin pasar por una ubicación">
+                  {abierto === item.id && modo === 'venta' ? 'Cancelar' : 'Venta directa'}
                 </button>
                 <button className="btn btn-sm btn-ghost" onClick={() => sinUbicacion(item)}
-                  title="Sacar de la lista sin crear tarjetas">Sin ubicación</button>
+                  title="Sacar de la lista sin crear tarjetas ni registrar destino (SKU que no se almacena o ya ubicado a mano)">Sin ubicación</button>
               </div>
-              {abierto === item.id && form && (
+              {abierto === item.id && modo === 'venta' && form && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ fontSize: 12 }}>Cliente
+                    <select className="select" value={form.cliente_id} autoFocus
+                      onChange={e => setForm({ ...form, cliente_id: e.target.value })}>
+                      <option value="">{cargandoClientes ? 'Cargando clientes...' : 'Selecciona cliente...'}</option>
+                      {(clientes || []).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+                    {clientes !== null && clientes.length === 0 && (
+                      <span className="td-muted" style={{ display: 'block', fontSize: 11 }}>
+                        No hay clientes en el catálogo. <button type="button" className="btn btn-sm btn-ghost" onClick={cargarClientes}>Reintentar</button>
+                      </span>
+                    )}
+                  </label>
+                  <label style={{ fontSize: 12 }}>Cantidad (piezas)
+                    <input className="input" type="number" min="1" max={item.pendiente} value={form.cantidad}
+                      onChange={e => setForm({ ...form, cantidad: e.target.value })}/>
+                  </label>
+                  <label style={{ fontSize: 12 }}>Referencia (opcional)
+                    <input className="input" maxLength={255} value={form.referencia} placeholder="Pedido, cotización…"
+                      onChange={e => setForm({ ...form, referencia: e.target.value })}/>
+                  </label>
+                  <label style={{ fontSize: 12 }}>Nota (opcional)
+                    <input className="input" maxLength={500} value={form.nota}
+                      onChange={e => setForm({ ...form, nota: e.target.value })}/>
+                  </label>
+                  <button className="btn btn-sm btn-primary" disabled={guardando} onClick={() => ventaDirecta(item)}>
+                    {guardando ? <><span className="spinner"/> Guardando...</> : 'Enviar a venta directa'}
+                  </button>
+                </div>
+              )}
+              {abierto === item.id && modo === 'ubicar' && form && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <label style={{ fontSize: 12 }}>Celda
                     <input className="input" list="ubi-celdas" value={form.warehouse_id} autoFocus
@@ -239,11 +333,45 @@ function ComprasPorUbicar({ onCambio, onElegirSku, askConfirm }) {
           ))}
         </div>
       ))}
+      <div className="card-body" style={{ borderTop: '1px solid var(--border)' }}>
+        <button className="btn btn-sm btn-ghost" onClick={alternarEnvios}>
+          <Icon name={verEnvios ? 'chevUp' : 'chevDown'} size={12}/> Enviadas a venta directa
+        </button>
+        {verEnvios && envios.estado === 'cargando' && <div style={{ marginTop: 8 }}><span className="spinner"/></div>}
+        {verEnvios && envios.estado === 'error' && (
+          <div style={{ marginTop: 8 }}>
+            <div className="crm-error">No se pudo cargar la lista. {envios.error}</div>
+            <button className="btn btn-sm btn-primary" style={{ marginTop: 8 }} onClick={cargarEnvios}>
+              <Icon name="refresh" size={12}/> Reintentar
+            </button>
+          </div>
+        )}
+        {verEnvios && envios.estado === 'ok' && envios.lista.length === 0 && (
+          <div className="td-muted" style={{ fontSize: 13, marginTop: 8 }}>Aún no hay envíos a venta directa.</div>
+        )}
+        {verEnvios && envios.estado === 'ok' && envios.lista.map(reg => (
+          <div key={reg.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '6px 0' }}>
+            <span className="mono">{reg.sku}</span>
+            <span>{reg.cantidad} pzas → {reg.cliente}</span>
+            {reg.referencia && <span className="td-muted">Ref. {reg.referencia}</span>}
+            {reg.nota && <span className="td-muted">{reg.nota}</span>}
+            <span className="td-muted" style={{ marginLeft: 'auto', fontSize: 12 }}>
+              {String(reg.fecha || '').slice(0, 10)} · {reg.usuario}
+            </span>
+            {esGerencia && (
+              <button className="btn btn-sm btn-ghost" disabled={anulando === reg.id} onClick={() => anular(reg)}
+                title="Solo gerencia: las piezas vuelven a quedar pendientes de ubicar">
+                {anulando === reg.id ? <span className="spinner"/> : 'Anular'}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function PageUbicaciones() {
+function PageUbicaciones({ user }) {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
   const [productos, setProductos] = rp_uS([]);
@@ -621,6 +749,7 @@ function PageUbicaciones() {
       </div>
 
       <ComprasPorUbicar
+        user={user}
         askConfirm={askConfirm}
         onElegirSku={cargarUbicaciones}
         onCambio={(sku) => { cargarDisposicion(); if (selSku === sku) cargarUbicaciones(sku); else if (!selSku) cargarTarjetas(); }}

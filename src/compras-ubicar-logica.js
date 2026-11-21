@@ -43,7 +43,31 @@
     return `= ${n / m} ${n / m === 1 ? 'caja' : 'cajas'} × ${m} pzas`;
   }
 
-  const mod = { contarPendientes, formularioInicial, validarReparto, equivalenteCajas };
+  // Venta directa: mercancía comprada para mandarse al cliente sin tarjeta de ubicación.
+  function formularioVentaDirecta(item) {
+    return { cliente_id: '', cantidad: String(item?.pendiente ?? ''), referencia: '', nota: '' };
+  }
+
+  // Valida y arma el body de POST /compras/{id}/venta-directa (mismos límites que el backend; manda el backend).
+  function validarVentaDirecta(form, pendiente) {
+    const clienteId = Number(form?.cliente_id);
+    if (form?.cliente_id === '' || form?.cliente_id == null || !Number.isInteger(clienteId) || clienteId <= 0) {
+      return { error: 'Elige el cliente del catálogo' };
+    }
+    const cantidad = Number(form?.cantidad);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) return { error: 'La cantidad debe ser un entero mayor a 0' };
+    if (cantidad > Number(pendiente)) return { error: `Solo quedan ${pendiente} por asignar` };
+    const referencia = String(form?.referencia ?? '').trim();
+    const nota = String(form?.nota ?? '').trim();
+    if (referencia.length > 255) return { error: 'La referencia admite máximo 255 caracteres' };
+    if (nota.length > 500) return { error: 'La nota admite máximo 500 caracteres' };
+    const datos = { cantidad, cliente_id: clienteId };
+    if (referencia) datos.referencia = referencia;
+    if (nota) datos.nota = nota;
+    return { datos };
+  }
+
+  const mod = { contarPendientes, formularioInicial, validarReparto, equivalenteCajas, formularioVentaDirecta, validarVentaDirecta };
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.comprasUbicarLogica = mod;
 })(typeof self !== 'undefined' ? self : this);
