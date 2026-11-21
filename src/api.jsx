@@ -898,6 +898,14 @@ const api = {
   async colaCambiarRecurrencia(id, valor) {
     return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}/recurrencia`, { method: 'POST', body: JSON.stringify({ valor: valor || null }) });
   },
+  // Cronómetro de fparra (solo gerencia; fparra mismo recibe 403). El KPI y las duraciones los calcula el backend.
+  async pendientesTiempos(incluirIntercambiadas = false) {
+    return tryFetch(`/zeutica/pendientes/tiempos${incluirIntercambiadas ? '?incluir_intercambiadas=true' : ''}`);
+  },
+  // valor=false quita la marca de «Intercambiado».
+  async pendienteIntercambiar(id, valor = true) {
+    return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}/intercambiar`, { method: 'POST', body: JSON.stringify({ valor }) });
+  },
   // Solo notifica por Telegram (backend no toca DB en estos dos). Payload completo del schema `pendientes`.
   async notificarPendienteTomado(id, payload = {}) {
     return tryFetch(`/zeutica/pendientes-tomar/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(payload) });

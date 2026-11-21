@@ -474,8 +474,150 @@ function RegistroTableCard({ title, data, loading, deletingId, onEdit, onDelete 
   );
 }
 
-function PageGerencia() {
+// ---- Tiempos de fparra (cronómetro) ----
+// Muestra lo que calcula el backend (GET /pendientes/tiempos): tiempo corrido desde que fparra toma la
+// tarea hasta que la termina. «Intercambiado» = gerencia ya la revisó: sale de la lista y del KPI.
+function TiemposFparra() {
   const toast = window.useToast();
+  const T = window.pendientesTiempo;
+  const [askConfirm, ConfirmModal] = window.useConfirm();
+  const [data, setData]       = gm_uS(null);
+  const [loading, setLoading] = gm_uS(true);
+  const [error, setError]     = gm_uS(null);
+  const [incluir, setIncluir] = gm_uS(false);
+  const [actingId, setActingId] = gm_uS(null);
+  const reqRef = gm_uR(0);
+
+  const load = gm_uC(async (conLoading = true) => {
+    const mia = ++reqRef.current;
+    if (conLoading) setLoading(true);
+    const r = await window.api.pendientesTiempos(incluir);
+    if (mia !== reqRef.current) return;      // respuesta vieja: se descarta
+    setLoading(false);
+    if (!r.ok) { setError(r.error || 'No se pudieron cargar los tiempos'); return; }
+    setError(null);
+    setData(r.data);
+  }, [incluir]);
+
+  gm_uE(() => {
+    load();
+    const id = setInterval(() => load(false), 30000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const cambiar = (t, valor) => {
+    const msg = valor
+      ? `Marcar como «Intercambiado» la tarea "${t.actividad}". Dejará de mostrarse y de sumar en el KPI.`
+      : `Quitar la marca de «Intercambiado» a "${t.actividad}". Volverá a sumar en el KPI.`;
+    askConfirm(msg, async () => {
+      setActingId(t.id);
+      const r = await window.api.pendienteIntercambiar(t.id, valor);
+      setActingId(null);
+      if (!r.ok) {
+        toast.error('No se pudo actualizar', r.error);
+        if (r.status === 404 || r.status === 409) load(false);
+        return;
+      }
+      toast.success(valor ? 'Marcada como intercambiada' : 'Marca quitada', t.actividad || '');
+      load(false);
+    });
+  };
+
+  const kpi = data?.kpi;
+  const tareas = data?.tareas || [];
+  const usuarios = (data?.usuarios || T.USUARIOS_CRONOMETRO).join(', ');
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      {ConfirmModal}
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <h3 className="card-title">Tiempos de {usuarios}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={incluir} onChange={e => setIncluir(e.target.checked)}/>
+            Ver intercambiadas
+          </label>
+          {loading && <div className="spinner" style={{ width: 16, height: 16 }}/>}
+          <button className="btn btn-ghost btn-sm" onClick={() => load()} disabled={loading}>
+            <Icon name="refresh" size={13}/> Actualizar
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="empty" style={{ padding: 40 }}>
+          <div className="empty-icon" style={{ color: 'var(--danger)' }}><Icon name="close"/></div>
+          <div style={{ color: 'var(--danger)', fontWeight: 600 }}>No se pudieron cargar los tiempos</div>
+          <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 4 }}>{error}</div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: 14 }} onClick={() => load()}>
+            <Icon name="refresh" size={13}/> Reintentar
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="dash-kpis" style={{ padding: '0 16px' }}>
+            <window.MiniStat label="Tiempo sin intercambiar" value={kpi ? T.formatearDuracion(kpi.segundos_sin_intercambiar) : '—'} icon="clock" tone={kpi && kpi.segundos_sin_intercambiar > 0 ? 'warn' : undefined}/>
+          </div>
+          <div className="td-muted" style={{ fontSize: 12, padding: '0 16px 8px' }}>
+            {kpi ? T.notaKpi(kpi) : ''} · Tiempo corrido (incluye noches y fines de semana).
+          </div>
+          <div className="table-wrap">
+            {tareas.length === 0 && !loading ? (
+              <div className="empty" style={{ padding: 40 }}>
+                <div className="empty-icon"><Icon name="ok"/></div>
+                <div>Sin tareas por revisar</div>
+              </div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Tarea</th><th>Prioridad</th><th>Inicio</th><th>Fin</th><th>Duración</th>
+                    <th style={{ textAlign: 'right' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tareas.map(t => (
+                    <tr key={t.id} style={t.intercambiado ? { opacity: 0.6 } : undefined}>
+                      <td>{t.actividad}</td>
+                      <td><span className={`badge badge-${prioTone(t.prioridad)}`}><span className="badge-dot"/> {t.prioridad || '—'}</span></td>
+                      <td className="td-muted">{T.formatearMarca(t.inicio)}</td>
+                      <td className="td-muted">{t.en_curso ? <span className="badge badge-info">En curso</span> : T.formatearMarca(t.fin)}</td>
+                      <td className="mono">{T.formatearDuracion(t.duracion_segundos)}{t.en_curso && t.duracion_segundos != null ? ' …' : ''}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          {t.intercambiado ? (
+                            <>
+                              <span className="badge badge-success" title={`${t.intercambiado_por || ''} · ${T.formatearMarca(t.fecha_intercambiado)}`}>Intercambiada</span>
+                              <button className="btn btn-ghost btn-sm" disabled={actingId != null} onClick={() => cambiar(t, false)}>Deshacer</button>
+                            </>
+                          ) : (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              disabled={t.en_curso || actingId != null}
+                              title={t.en_curso ? 'La tarea sigue en curso' : 'Marcar como revisada'}
+                              onClick={() => cambiar(t, true)}
+                            >
+                              {actingId === t.id ? 'Marcando…' : 'Intercambiado'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PageGerencia({ user }) {
+  const toast = window.useToast();
+  // fparra también es gerencia, pero no revisa sus propios tiempos (el backend lo rechaza igual).
+  const veTiempos = window.pendientesTiempo.puedeRevisarTiempos(user, !!window.AppShell?.GERENCIA_USERS?.includes(user));
   const [data, setData]         = gm_uS([]);   // estado Pendiente
   const [dataProc, setDataProc] = gm_uS([]);   // estado En proceso
   const [dataComp, setDataComp] = gm_uS([]);   // estado Completado
@@ -590,6 +732,8 @@ function PageGerencia() {
         <window.MiniStat label="Última actualización" value={lastUpdate ? window.fmt.datetime(lastUpdate.toISOString()) : '—'} icon="eye"/>
         <window.MiniStat label="Estado" value={loading ? 'Cargando…' : data.length === 0 ? 'Sin pendientes' : 'Activo'} icon="ok" tone={data.length === 0 ? 'success' : 'warn'}/>
       </div>
+
+      {veTiempos && <TiemposFparra/>}
 
       <RegistroTableCard
         title="Registro de pendientes"

@@ -26,6 +26,22 @@ const apNivelNum = (p) => {
   return k === 'alta' ? 1 : k === 'media' ? 2 : 3;
 };
 
+// Cronómetro en vivo de la tarea abierta (solo llega `segundosTranscurridos` para usuarios cronometrados).
+// El servidor da la base; aquí solo se suma lo que pasa desde que llegó la respuesta.
+function TiempoEnCurso({ base }) {
+  const [recibido] = ap_uS(() => Date.now());
+  const [ahora, setAhora] = ap_uS(() => Date.now());
+  ap_uE(() => {
+    const id = setInterval(() => setAhora(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const seg = window.pendientesTiempo.segundosEnVivo(base, recibido, ahora);
+  if (seg == null) return null;
+  const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = seg % 60;
+  const p = (n) => String(n).padStart(2, '0');
+  return <span className="mono" title="Tiempo desde que tomaste la tarea">⏱ {p(h)}:{p(m)}:{p(s)}</span>;
+}
+
 function DetalleFila({ etiqueta, valor }) {
   if (valor == null || valor === '') return null;
   return (
@@ -245,8 +261,11 @@ function PageAccionesPendientes({ user }) {
               <span className={`badge badge-${apPrioTone(t.prioridad)}`} style={{ fontSize: 12 }}>
                 <span className="badge-dot"/> {t.prioridad || 'Sin prioridad'}
               </span>
-              <span className="badge badge-info" style={{ fontSize: 12 }}>
-                <span className="badge-dot"/> En proceso
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {t.segundosTranscurridos != null && <TiempoEnCurso key={t.id} base={t.segundosTranscurridos}/>}
+                <span className="badge badge-info" style={{ fontSize: 12 }}>
+                  <span className="badge-dot"/> En proceso
+                </span>
               </span>
             </div>
 
