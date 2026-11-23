@@ -17,7 +17,7 @@ function LoginScreen({ onLogin }) {
     setLoading(false);
     if (res.ok) {
       toast.success('Bienvenido', res.live ? 'Sesión iniciada en producción' : 'Sesión iniciada (modo demo)');
-      onLogin({ user: res.user, token: res.token, id_usuario: res.id_usuario, live: res.live });
+      onLogin({ user: res.user, token: res.token, id_usuario: res.id_usuario, nivel: res.nivel, live: res.live });
     } else {
       setErr(res.error || 'Error de autenticación');
     }

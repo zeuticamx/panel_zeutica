@@ -1,6 +1,12 @@
 // ===== Zeutica — Usuarios =====
 const { useState: usr_uS, useEffect: usr_uE } = React;
 
+const CUENTA_BLANK = { nombre_usuario: '', password: '', nivel: 'ventas' };
+const NIVELES_CUENTA = [
+  { v: 'ventas', t: 'Ventas', d: 'Usuario normal de operación' },
+  { v: 'developer', t: 'Developer', d: 'Ve todo, pero no cambia lo exclusivo de gerencia' },
+];
+
 const NUEVO_BLANK = { nombres: '', apellido_paterno: '', apellido_materno: '', edad: '', curp: '', nss: '', usuario: '', activo: true };
 
 function normalizeEmpleado(f) {
@@ -16,6 +22,80 @@ function normalizeEmpleado(f) {
   };
 }
 
+// Cuentas y niveles: lista con selector de nivel (solo gerencia cambia; developer solo mira)
+function CuentasNiveles({ puedeEditar }) {
+  const toast = window.useToast();
+  const [cuentas, setCuentas] = usr_uS(null);
+  const [error, setError] = usr_uS('');
+  const [guardando, setGuardando] = usr_uS('');
+  const reqRef = React.useRef(0);
+
+  const cargar = async () => {
+    const req = ++reqRef.current;
+    setError('');
+    const r = await window.api.cuentasUsuarios();
+    if (req !== reqRef.current) return; // respuesta vieja
+    if (r.ok) setCuentas(Array.isArray(r.data) ? r.data : []);
+    else { setCuentas([]); setError(r.detalle || r.error || 'No se pudieron cargar las cuentas'); }
+  };
+  usr_uE(() => { cargar(); }, []);
+
+  const cambiar = async (c, nivel) => {
+    if (nivel === c.nivel) return;
+    setGuardando(c.nombre_usuario);
+    const r = await window.api.cambiarNivelUsuario(c.nombre_usuario, nivel);
+    setGuardando('');
+    if (r.ok) toast.success('Nivel actualizado', `${c.nombre_usuario}: ${nivel}`);
+    else toast.error('No se pudo cambiar el nivel', r.detalle || r.error);
+    cargar(); // ante 404/409 o éxito, la BD manda
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">
+        <h3 className="card-title">Cuentas y niveles</h3>
+        <button className="btn btn-secondary btn-sm" onClick={cargar}>Actualizar</button>
+      </div>
+      {cuentas === null ? (
+        <div className="empty" style={{ padding: 30 }}><span className="spinner" style={{ marginRight: 8 }} /> Cargando cuentas...</div>
+      ) : error ? (
+        <div className="empty" style={{ padding: 30 }}>
+          <div>{error}</div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={cargar}>Reintentar</button>
+        </div>
+      ) : cuentas.length === 0 ? (
+        <div className="empty" style={{ padding: 30 }}>Sin cuentas registradas</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Usuario</th><th>Nivel</th></tr></thead>
+            <tbody>
+              {cuentas.map(c => (
+                <tr key={c.id}>
+                  <td>{c.nombre_usuario}</td>
+                  <td>
+                    {c.editable && puedeEditar ? (
+                      <select className="input" style={{ maxWidth: 180 }} value={c.nivel}
+                        disabled={guardando === c.nombre_usuario}
+                        onChange={e => cambiar(c, e.target.value)}>
+                        {NIVELES_CUENTA.map(n => <option key={n.v} value={n.v}>{n.t}</option>)}
+                      </select>
+                    ) : (
+                      <span className="badge" title={c.editable ? '' : 'Se define en USUARIOS_GERENCIA del servidor'}>
+                        {c.nivel === 'gerencia' ? 'Gerencia' : (NIVELES_CUENTA.find(n => n.v === c.nivel)?.t || c.nivel)}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PageUsuarios() {
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
@@ -28,6 +108,13 @@ function PageUsuarios() {
   const [showNuevo, setShowNuevo] = usr_uS(false);
   const [nuevoForm, setNuevoForm] = usr_uS(NUEVO_BLANK);
   const [savingNuevo, setSavingNuevo] = usr_uS(false);
+  // Alta de cuentas de acceso: solo gerencia (el backend lo exige igual)
+  const esGerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
+  const [showCuenta, setShowCuenta] = usr_uS(false);
+  const [cuentaForm, setCuentaForm] = usr_uS(CUENTA_BLANK);
+  const [savingCuenta, setSavingCuenta] = usr_uS(false);
+  const [showNiveles, setShowNiveles] = usr_uS(false);
+  const [versionNiveles, setVersionNiveles] = usr_uS(0); // fuerza recarga al crear una cuenta
 
   usr_uE(() => {
     (async () => {
@@ -83,6 +170,26 @@ function PageUsuarios() {
     }
   };
 
+  const crearCuenta = async () => {
+    const nombre = cuentaForm.nombre_usuario.trim();
+    if (!nombre) { toast.error('Campo requerido', 'Ingresa el nombre de usuario'); return; }
+    if (cuentaForm.password.length < 8) { toast.error('Contraseña muy corta', 'Mínimo 8 caracteres'); return; }
+    setSavingCuenta(true);
+    const r = await window.api.crearUsuario({ nombre_usuario: nombre, password: cuentaForm.password, nivel: cuentaForm.nivel });
+    setSavingCuenta(false);
+    if (r.ok) {
+      toast.success('Cuenta creada', `${nombre} (${cuentaForm.nivel}). Ahora puedes registrar al empleado con ese usuario.`);
+      // Deja listo el alta del empleado con la cuenta recién creada
+      setNuevoForm({ ...NUEVO_BLANK, usuario: nombre });
+      setCuentaForm(CUENTA_BLANK);
+      setShowCuenta(false);
+      setShowNuevo(true);
+      setVersionNiveles(v => v + 1);
+    } else {
+      toast.error('Error al crear la cuenta', r.detalle || r.error);
+    }
+  };
+
   const filtered = usuarios.filter(u =>
     !q || Object.values(u).join(' ').toLowerCase().includes(q.toLowerCase())
   );
@@ -105,13 +212,70 @@ function PageUsuarios() {
           <h2 className="section-title">Usuarios</h2>
           <p className="section-subtitle">Gestión de empleados y accesos al sistema.</p>
         </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+        <button className={`btn btn-sm ${showNiveles ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setShowNiveles(v => !v)}>
+          <Icon name="users" size={13} /> {showNiveles ? 'Ocultar niveles' : 'Niveles'}
+        </button>
+        {esGerencia && (
+          <button
+            className={`btn btn-sm ${showCuenta ? 'btn-secondary' : 'btn-primary'}`}
+            onClick={() => { setShowCuenta(v => !v); setCuentaForm(CUENTA_BLANK); }}
+          >
+            <Icon name={showCuenta ? 'x' : 'lock'} size={13} /> {showCuenta ? 'Cancelar' : 'Nueva cuenta'}
+          </button>
+        )}
         <button
           className={`btn btn-sm ${showNuevo ? 'btn-secondary' : 'btn-primary'}`}
           onClick={() => { setShowNuevo(v => !v); setNuevoForm(NUEVO_BLANK); setEditando(null); setForm({}); }}
         >
           <Icon name={showNuevo ? 'x' : 'plus'} size={13} /> {showNuevo ? 'Cancelar' : 'Nuevo empleado'}
         </button>
+        </div>
       </div>
+
+      {showNiveles && <CuentasNiveles key={versionNiveles} puedeEditar={esGerencia} />}
+
+      {showCuenta && esGerencia && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <h3 className="card-title">Nueva cuenta de acceso</h3>
+          </div>
+          <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div className="field">
+              <label className="field-label">Usuario *</label>
+              <input className="input" autoComplete="off" value={cuentaForm.nombre_usuario}
+                onChange={e => setCuentaForm(f => ({ ...f, nombre_usuario: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label className="field-label">Contraseña * (mín. 8)</label>
+              <input className="input" type="password" autoComplete="new-password" value={cuentaForm.password}
+                onChange={e => setCuentaForm(f => ({ ...f, password: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label className="field-label">Nivel *</label>
+              <select className="input" value={cuentaForm.nivel}
+                onChange={e => setCuentaForm(f => ({ ...f, nivel: e.target.value }))}>
+                {NIVELES_CUENTA.map(n => <option key={n.v} value={n.v}>{n.t}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 4 }}>
+                {NIVELES_CUENTA.find(n => n.v === cuentaForm.nivel)?.d}
+              </div>
+            </div>
+          </div>
+          <div className="card-footer">
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowCuenta(false)}>Cancelar</button>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={savingCuenta || !cuentaForm.nombre_usuario.trim() || cuentaForm.password.length < 8}
+              onClick={() => askConfirm(`¿Crear la cuenta "${cuentaForm.nombre_usuario.trim()}" con nivel ${cuentaForm.nivel}?`, crearCuenta)}
+            >
+              {savingCuenta
+                ? <><span className="spinner" /> Creando...</>
+                : <><Icon name="check" size={13} /> Crear cuenta</>}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showNuevo && (
         <div className="card" style={{ marginBottom: 16 }}>

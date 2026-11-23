@@ -328,7 +328,7 @@ const api = {
       api.token = r.data.access_token;
       api.usuario = usuario;
       api.id_usuario = r.data.id_usuario;
-      return { ok: true, token: r.data.access_token, user: usuario, id_usuario: r.data.id_usuario, live: true };
+      return { ok: true, token: r.data.access_token, user: usuario, id_usuario: r.data.id_usuario, nivel: r.data.nivel || 'ventas', live: true };
     }
     // El servidor contestó y rechazó: ese motivo manda, no el login demo.
     // El fallback mock solo aplica cuando no hubo respuesta (status 0).
@@ -344,7 +344,7 @@ const api = {
       const ok = valid.some(c => c.u === usuario.toLowerCase() && c.p === password);
       if (ok) {
         api.usuario = usuario.toLowerCase();
-        return { ok: true, token: 'mock-token-' + Date.now(), user: usuario.toLowerCase(), live: false };
+        return { ok: true, token: 'mock-token-' + Date.now(), user: usuario.toLowerCase(), nivel: usuario.toLowerCase() === 'gerencia' ? 'gerencia' : 'ventas', live: false };
       }
       // Sin backend: se dice explícitamente, para no confundirlo con un rechazo real.
       return { ok: false, error: `${r.error} (modo demo: usa gerencia / ventas / demo)`, status: 0 };
@@ -1100,6 +1100,21 @@ const api = {
   },
   async editarEmpleadoUsuario(payload) {
     return tryFetch('/zeutica/empleados-editados', { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  // Niveles asignables + nivel efectivo de la sesión (para sesiones guardadas antes de existir los niveles).
+  async nivelesUsuario() {
+    return tryFetch('/zeutica/usuarios/niveles');
+  },
+  // Cuentas con su nivel (gerencia y developer leen; solo gerencia cambia)
+  async cuentasUsuarios() {
+    return tryFetch('/zeutica/usuarios/lista');
+  },
+  async cambiarNivelUsuario(nombre, nivel) {
+    return tryFetch(`/zeutica/usuarios/${encodeURIComponent(nombre)}/nivel`, { method: 'PUT', body: JSON.stringify({ nivel }) });
+  },
+  // Alta de cuenta de acceso (solo gerencia): { nombre_usuario, password, nivel: 'ventas'|'developer' }
+  async crearUsuario(payload) {
+    return tryFetch('/zeutica/usuarios/nuevo', { method: 'POST', body: JSON.stringify(payload) });
   },
   async crearEmpleadoUsuario(payload) {
     return tryFetch('/zeutica/empleado/nuevo', { method: 'POST', body: JSON.stringify(payload) });

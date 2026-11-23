@@ -280,6 +280,18 @@ function App() {
   const [crmRegistroOpen, setCrmRegistroOpen] = a_uS(false); // registro CRM desde Ctrl+K
   const toast = window.useToast();
 
+  // Nivel de la sesión (gerencia / developer / ventas) antes de pintar nada que lo consulte.
+  window.AppShell.aplicarNivel(auth?.user, auth?.nivel);
+  // Sesión guardada antes de existir los niveles: se pide el nivel una vez.
+  a_uE(() => {
+    if (!auth || auth.nivel) return;
+    let vivo = true;
+    window.api.nivelesUsuario().then(r => {
+      if (vivo && r.ok) setAuth(a => (a ? { ...a, nivel: r.data.mi_nivel || 'ventas' } : a));
+    });
+    return () => { vivo = false; };
+  }, [auth?.user, auth?.nivel]);
+
   a_uE(() => { if (auth) { try { sessionStorage.setItem('zeutica-auth', JSON.stringify(auth)); } catch {} } }, [auth]);
   // Un 401 de la API (token vencido) cierra la sesión una sola vez y avisa.
   a_uE(() => {

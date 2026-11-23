@@ -56,11 +56,23 @@ const NAV = [
   { key: 'meli_stock',       label: 'Stock MeLi',       icon: 'box', seccion: 'comercial' },
 ];
 
-const GERENCIA_USERS = ['gerencia', 'fparra'];
+// Sin lista en el código: el nivel lo decide el backend (gerencia = USUARIOS_GERENCIA del .env; developer y
+// ventas = usuarios.nivel) y llega en el login. GERENCIA_USERS se conserva como arreglo (muchas páginas
+// hacen GERENCIA_USERS.includes(user)) pero solo contiene al usuario de la sesión si es gerencia.
+// Manda el backend; esto solo decide qué se muestra.
+const GERENCIA_USERS = [];
+let NIVEL_ACTUAL = 'ventas';
 
+function aplicarNivel(user, nivel) {
+  NIVEL_ACTUAL = ['gerencia', 'developer'].includes(nivel) ? nivel : 'ventas';
+  GERENCIA_USERS.length = 0;
+  if (user && NIVEL_ACTUAL === 'gerencia') GERENCIA_USERS.push(user);
+}
+
+// developer ve las pantallas exclusivas de gerencia (el backend le deja leer, no cambiar)
 function canSee(item, user) {
   if (!item.gerencia) return true;
-  return GERENCIA_USERS.includes(user);
+  return NIVEL_ACTUAL === 'gerencia' || NIVEL_ACTUAL === 'developer';
 }
 
 function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
@@ -76,20 +88,20 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
       <nav className="sidebar-nav">
         <div className="sidebar-section">General</div>
         {NAV.slice(0, 6).map((n) => (
-          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
+          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Tu nivel de usuario no puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Comercial</div>
         {NAV.filter(n => n.seccion === 'comercial').map((n) => (
-          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
+          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Tu nivel de usuario no puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Operación</div>
         {/* Índices por posición en NAV: al agregar un item en Operación, mueve también Finanzas. */}
         {NAV.slice(6, 18).map((n) => (
-          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
+          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Tu nivel de usuario no puede ver esta sección')}/>
         ))}
         <div className="sidebar-section">Finanzas</div>
         {NAV.slice(18, 22).map((n) => (
-          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Solo gerencia puede ver esta sección')}/>
+          <NavItem key={n.key} item={n} active={current === n.key} onClick={() => setCurrent(n.key)} canSee={canSee(n, user)} onBlock={() => toast.warn('Acceso restringido', 'Tu nivel de usuario no puede ver esta sección')}/>
         ))}
       </nav>
 
@@ -102,7 +114,7 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
           <div className="sidebar-avatar">{(user || '?').slice(0,2).toUpperCase()}</div>
           <div className="sidebar-user-body">
             <div className="sidebar-user-name">{user}</div>
-            <div className="sidebar-user-role">{GERENCIA_USERS.includes(user) ? 'Administrador' : 'Operaciones'}</div>
+            <div className="sidebar-user-role">{{ gerencia: 'Administrador', developer: 'Developer' }[NIVEL_ACTUAL] || 'Operaciones'}</div>
           </div>
           <Icon name="logout" size={14}/>
         </div>
@@ -114,7 +126,7 @@ function Sidebar({ current, setCurrent, user, onLogout, live, mobileOpen }) {
 function NavItem({ item, active, onClick, canSee, onBlock }) {
   if (!canSee) {
     return (
-      <button className="nav-item nav-item-locked" onClick={onBlock} title="Solo gerencia">
+      <button className="nav-item nav-item-locked" onClick={onBlock} title="Sin acceso">
         <Icon name={item.icon} size={15}/>
         <span>{item.label}</span>
         <Icon name="lock" size={12} className="nav-lock"/>
@@ -218,4 +230,4 @@ function Topbar({ current, user, onOpenNotifs, notifCount, onCmd, onMenuToggle, 
   );
 }
 
-window.AppShell = { NAV, Sidebar, Topbar, canSee, GERENCIA_USERS };
+window.AppShell = { NAV, Sidebar, Topbar, canSee, GERENCIA_USERS, aplicarNivel, nivelActual: () => NIVEL_ACTUAL };
