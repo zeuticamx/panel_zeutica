@@ -243,13 +243,46 @@
     return p;
   }
 
-  // Editar/borrar un seguimiento: su autor, el dueño actual del cliente (`vendedor` en
-  // /crm/seguimientos) o gerencia. Espejo de _interaccion_autorizada del backend.
-  function puedeEditarSeguimiento(s, usuario, gerencia) {
-    if (!s) return false;
+  const minus = (v) => String(v ?? '').trim().toLowerCase();
+
+  // ¿Es de otra persona? (ni el autor —`autor`, o `vendedor` en eventos— ni el dueño actual del cliente).
+  function esAjeno(item, usuario) {
+    const yo = minus(usuario);
+    if (!item || !yo) return false;
+    return ![item.autor, item.vendedor].some(v => minus(v) === yo);
+  }
+
+  // Editar/cerrar/reprogramar una actividad CRM: cualquier sesión, también las ajenas (queda registro).
+  // Developer es solo lectura: únicamente lo suyo. Gerencia siempre. Espejo de clasificar_cambio del
+  // backend, que es el que manda.
+  function puedeEditarSeguimiento(s, usuario, gerencia, nivel) {
+    if (!s || !minus(usuario)) return false;
     if (gerencia) return true;
-    const yo = String(usuario ?? '').trim().toLowerCase();
-    return !!yo && [s.autor, s.vendedor].some(v => String(v ?? '').trim().toLowerCase() === yo);
+    if (nivel === 'developer') return !esAjeno(s, usuario);
+    return true;
+  }
+
+  // Eliminar: solo su autor (`autor`; en eventos `vendedor`) o gerencia. Espejo del backend.
+  function puedeEliminarActividad(item, usuario, gerencia) {
+    if (!item) return false;
+    if (gerencia) return true;
+    const yo = minus(usuario);
+    return !!yo && minus(item.autor ?? item.vendedor) === yo;
+  }
+
+  // Agrega la versión leída para que el backend responda 409 si otra persona ya cambió la actividad.
+  // Un payload vacío («Sin cambios») se queda vacío.
+  function conVersion(payload, original) {
+    const p = { ...(payload || {}) };
+    if (Object.keys(p).length && original && original.version != null) p.version = Number(original.version);
+    return p;
+  }
+
+  // «Editado por X · fecha» o '' si nadie la ha editado.
+  function textoEditado(item) {
+    if (!item || !item.editado_por) return '';
+    const cuando = item.fecha_editado ? ` · ${String(item.fecha_editado).replace('T', ' ').slice(0, 16)}` : '';
+    return `Editado por ${item.editado_por}${cuando}`;
   }
 
   // Valor normalizado para comparar: el backend manda null donde el form tiene ''.
@@ -319,7 +352,8 @@
     etapa, tipo, tipoEvento, etiquetaEtapa, etiquetaTipo, etiquetaTipoEvento, etiquetaResultado,
     fechaISO, hoyISO, sumarDias, rangoPreset, textoAtraso,
     validarInteraccion, armarPayloadInteraccion, validarEvento, armarPayloadEvento,
-    puedeEditarSeguimiento, validarSeguimientoEdicion, armarPayloadSeguimientoEdicion,
+    puedeEditarSeguimiento, puedeEliminarActividad, esAjeno, conVersion, textoEditado,
+    validarSeguimientoEdicion, armarPayloadSeguimientoEdicion,
     aInputLocal, aLas9, claveDia, mismoDia, lunesSemana, diasGrillaMes, diasSemana,
     rangoVista, moverAncla, tituloRango,
     enlaceContacto, queryString, puntosSerie, etiquetaMesEnCurso,

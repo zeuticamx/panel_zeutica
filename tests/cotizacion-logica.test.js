@@ -156,6 +156,10 @@ test('coincideConPestana: las canceladas solo salen en Canceladas y Todas', () =
   assert.equal(logica.coincideConPestana(vencida, 'vigentes', hoy), false);
   assert.equal(logica.coincideConPestana(vencida, 'abiertas', hoy), true); // Abiertas incluye vencidas
   assert.equal(logica.coincideConPestana(vendida, 'vendidas', hoy), true);
+  // Vendida con fecha vencida: solo en Vendidas, nunca en Vencidas.
+  const vendidaVencida = { ...vencida, vendido: 1 };
+  assert.equal(logica.coincideConPestana(vendidaVencida, 'vencidas', hoy), false);
+  assert.equal(logica.coincideConPestana(vendidaVencida, 'vendidas', hoy), true);
   assert.equal(logica.coincideConPestana({ ...viva, fecha_vencimiento: null }, 'vigentes', hoy), true);
 });
 

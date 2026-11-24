@@ -141,12 +141,45 @@ test('etiquetaMesEnCurso nombra el mes de la descarga', () => {
 
 const SEG = { id: 9, autor: 'luis', vendedor: 'ana', resultado: 'contesto', notas: 'Llamar', proxima_accion: 'Enviar cotización', proxima_fecha: '2026-09-20' };
 
-test('puedeEditarSeguimiento: autor, dueño actual o gerencia', () => {
+test('puedeEditarSeguimiento: cualquier sesión puede aplicar cambios; developer solo lo suyo', () => {
   assert.equal(crm.puedeEditarSeguimiento(SEG, 'luis', false), true);   // autor
   assert.equal(crm.puedeEditarSeguimiento(SEG, 'ANA', false), true);    // dueño actual, sin importar mayúsculas
-  assert.equal(crm.puedeEditarSeguimiento(SEG, 'pedro', false), false);
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'pedro', false), true);  // ajeno: ahora también (queda registro)
   assert.equal(crm.puedeEditarSeguimiento(SEG, 'pedro', true), true);   // gerencia
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'pedro', false, 'developer'), false); // developer: solo lectura
+  assert.equal(crm.puedeEditarSeguimiento(SEG, 'luis', false, 'developer'), true);   // lo suyo sí
   assert.equal(crm.puedeEditarSeguimiento(null, 'luis', false), false);
+  assert.equal(crm.puedeEditarSeguimiento(SEG, '', false), false);
+});
+
+test('puedeEliminarActividad: solo el autor o gerencia', () => {
+  assert.equal(crm.puedeEliminarActividad(SEG, 'luis', false), true);   // autor
+  assert.equal(crm.puedeEliminarActividad(SEG, 'ana', false), false);   // dueña pero no autora
+  assert.equal(crm.puedeEliminarActividad(SEG, 'pedro', true), true);   // gerencia
+  assert.equal(crm.puedeEliminarActividad({ vendedor: 'ana' }, 'ANA', false), true); // evento: el autor es `vendedor`
+  assert.equal(crm.puedeEliminarActividad({ vendedor: 'ana' }, 'luis', false), false);
+  assert.equal(crm.puedeEliminarActividad(null, 'ana', true), false);
+});
+
+test('esAjeno: ni autor ni dueño', () => {
+  assert.equal(crm.esAjeno(SEG, 'luis'), false);
+  assert.equal(crm.esAjeno(SEG, 'Ana'), false);
+  assert.equal(crm.esAjeno(SEG, 'pedro'), true);
+  assert.equal(crm.esAjeno(SEG, ''), false);
+});
+
+test('conVersion agrega la versión leída solo si hay cambios', () => {
+  assert.deepEqual(crm.conVersion({ notas: 'x' }, { version: 3 }), { notas: 'x', version: 3 });
+  assert.deepEqual(crm.conVersion({}, { version: 3 }), {});                       // «Sin cambios» no se manda
+  assert.deepEqual(crm.conVersion({ notas: 'x' }, { id: 1 }), { notas: 'x' });     // backend viejo: sin versión
+  assert.deepEqual(crm.conVersion({ seguimiento_cerrado: true }, { version: '5' }), { seguimiento_cerrado: true, version: 5 });
+});
+
+test('textoEditado muestra quién y cuándo, o vacío', () => {
+  assert.equal(crm.textoEditado({ editado_por: 'ana', fecha_editado: '2026-10-05T09:30:00' }), 'Editado por ana · 2026-10-05 09:30');
+  assert.equal(crm.textoEditado({ editado_por: 'ana' }), 'Editado por ana');
+  assert.equal(crm.textoEditado({ editado_por: null }), '');
+  assert.equal(crm.textoEditado(null), '');
 });
 
 test('armarPayloadSeguimientoEdicion manda solo lo que cambió', () => {

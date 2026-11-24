@@ -1,7 +1,8 @@
 // ===== Zeutica — CRM: dashboard de gerencia =====
 // Avance global del equipo: KPIs por tipo, embudo por etapa, actividad diaria,
 // resumen y pipeline por vendedor y bitácora filtrable (vendedor, fechas, tipo).
-// Los endpoints de métricas responden 403 a quien no sea gerencia.
+// Lectura abierta a todo el equipo (métricas, vendedores, bitácora). Descargar Excel es solo de
+// gerencia; eliminar una interacción, solo de su autor o gerencia (el backend lo exige igual).
 const { useState: crg_uS, useEffect: crg_uE } = React;
 
 function CrmEmbudo({ embudo }) {
@@ -40,6 +41,7 @@ function CrmEmbudo({ embudo }) {
 }
 
 function PageCrmGerencia() {
+  const esGerencia = window.crmEsGerencia();
   const L = window.crmLogica;
   const toast = window.useToast();
   const [askConfirm, ConfirmModal] = window.useConfirm();
@@ -246,10 +248,12 @@ function PageCrmGerencia() {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header">
           <h3 className="card-title">Bitácora <span className="td-muted">({window.fmt.int(bitacora.total)})</span></h3>
-          <button className="btn btn-secondary btn-sm" disabled={exportando} onClick={exportarExcel}
-            title="Descarga solo las interacciones del mes en curso, con los filtros de vendedor y tipo">
-            {exportando ? <><span className="spinner"/> Generando...</> : <><Icon name="download" size={13}/> Descargar Excel ({L.etiquetaMesEnCurso()})</>}
-          </button>
+          {esGerencia && (
+            <button className="btn btn-secondary btn-sm" disabled={exportando} onClick={exportarExcel}
+              title="Descarga solo las interacciones del mes en curso, con los filtros de vendedor y tipo">
+              {exportando ? <><span className="spinner"/> Generando...</> : <><Icon name="download" size={13}/> Descargar Excel ({L.etiquetaMesEnCurso()})</>}
+            </button>
+          )}
         </div>
         <div className="table-wrap">
           <table className="table">
@@ -264,7 +268,9 @@ function PageCrmGerencia() {
                   <td className="td-muted">{L.etiquetaResultado(i.resultado) || '—'}</td>
                   <td className="td-muted crm-notas-celda">{i.notas || '—'}</td>
                   <td className="td-muted">{i.proxima_fecha ? `${window.fmt.date(i.proxima_fecha)}${i.seguimiento_cerrado ? ' ✓' : ''}` : '—'}</td>
-                  <td><button className="btn btn-ghost btn-sm" title="Eliminar" onClick={() => eliminar(i)}><Icon name="trash" size={12}/></button></td>
+                  <td>{L.puedeEliminarActividad(i, window.api.usuario, esGerencia) && (
+                    <button className="btn btn-ghost btn-sm" title="Eliminar" onClick={() => eliminar(i)}><Icon name="trash" size={12}/></button>
+                  )}</td>
                 </tr>
               ))}
               {!cargando && bitacora.items.length === 0 && <tr><td colSpan={8} className="td-muted">Sin interacciones con estos filtros.</td></tr>}

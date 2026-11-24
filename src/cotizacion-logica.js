@@ -115,7 +115,8 @@
       case 'canceladas': return cancelada;
       case 'todos': return true;
       case 'vigentes': return !cancelada && esVigente(c, hoy);
-      case 'vencidas': return !cancelada && !esVigente(c, hoy);
+      // Una vendida ya se cerró: no cuenta como vencida aunque pase su fecha.
+      case 'vencidas': return !cancelada && !c.vendido && !esVigente(c, hoy);
       case 'abiertas': return !cancelada && !c.vendido;
       case 'vendidas': return !cancelada && !!c.vendido;
       default: return !cancelada;

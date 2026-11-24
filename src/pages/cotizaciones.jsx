@@ -1161,7 +1161,7 @@ function PageCotizaciones({ user }) {
                       // Se recorta a YYYY-MM-DD para que fmt.date la arme como fecha
                       // local: pasarle "2026-09-15 12:12:43" depende del navegador.
                       const fecha = window.fmt.date(String(c.fecha_vencimiento).slice(0, 10));
-                      return esVigente(c)
+                      return (c.vendido || esVigente(c))
                         ? fecha
                         : <span style={{ color: 'var(--danger)' }} title="Cotización vencida">{fecha}</span>;
                     })()}

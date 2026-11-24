@@ -37,7 +37,7 @@ const NAV = [
   //{ key: 'pendientes',   label: 'Cuentas Pendientes',icon: 'clock', gerencia: true },
   { key: 'cleanest',     label: 'CleanestChoice',   icon: 'stars' },
   { key: 'compras',      label: 'Compras',          icon: 'cart', gerencia: true },
-  { key: 'cobranza',     label: 'Monitor Cobranza', icon: 'eye' },
+  { key: 'cobranza',     label: 'Monitor Cobranza', icon: 'eye', gerencia: true },
   { key: 'cuentaspagar', label: 'Cuentas por Pagar',icon: 'cash', gerencia: true },
   { key: 'usuarios',    label: 'Usuarios',         icon: 'users', gerencia: true },
   { key: 'contrasena',  label: 'Contraseña',       icon: 'lock' },  
@@ -46,7 +46,7 @@ const NAV = [
   { key: 'gerencia',             label: 'Monitor Gerencia',             icon: 'chart', gerencia: true },
   // CRM: van al final para no mover los índices de slice() del Sidebar; se pintan por `seccion`.
   { key: 'crm_seguimientos', label: 'Mis Seguimientos', icon: 'clock', seccion: 'comercial' },
-  { key: 'crm_gerencia',     label: 'CRM Gerencia',     icon: 'trend', gerencia: true, seccion: 'comercial' },
+  { key: 'crm_gerencia',     label: 'CRM Zeutica',     icon: 'trend',  seccion: 'comercial' },
   { key: 'comisiones',       label: 'Comisiones',       icon: 'cash', seccion: 'comercial' },
   // Visible para todos (solo lectura); aplicar, reglas y motor los protege el backend (gerencia).
   { key: 'mercado_ads',      label: 'Mercado Ads',      icon: 'trend', seccion: 'comercial' },

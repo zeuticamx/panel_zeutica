@@ -56,13 +56,16 @@ function CrmEventoModal({ inicial, onClose, onSaved }) {
     setError(''); setSaving(true);
     const payload = L.armarPayloadEvento(form);
     const r = editando
-      ? await window.api.crmEditarEvento(inicial.id, { ...payload, cliente_id: undefined })
+      ? await window.api.crmEditarEvento(inicial.id, { ...payload, cliente_id: undefined, version: inicial.version })
       : await window.api.crmCrearEvento(payload);
     setSaving(false);
     if (r.ok) {
       toast.success(editando ? 'Evento actualizado' : 'Evento agendado', titulo.trim());
       onSaved?.(r.data);
       onClose();
+    } else if (r.status === 409) {
+      toast.warn('Alguien lo modificó antes que tú', 'Se recargó el calendario; vuelve a aplicar tu cambio');
+      onSaved?.(); onClose();
     } else setError(r.error);
   };
 
@@ -179,6 +182,7 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
         inicio: new Date(String(e.inicio).replace(' ', 'T')),
         fin: e.fin ? new Date(String(e.fin).replace(' ', 'T')) : null,
         todo_dia: !!e.todo_dia, estado: e.estado || 'pendiente',
+        version: e.version, editado_por: e.editado_por, fecha_editado: e.fecha_editado,
       }));
     const segs = verSeg ? (datos.seguimientos || [])
       .filter(s => !tipoFiltro || s.tipo === tipoFiltro)
@@ -190,6 +194,7 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
           titulo: s.titulo || 'Dar seguimiento', descripcion: s.descripcion,
           inicio: new Date(+m[0], +m[1] - 1, +m[2], 9, 0), fin: null,
           todo_dia: true, estado: 'pendiente',
+          version: s.version, editado_por: s.editado_por, fecha_editado: s.fecha_editado,
         };
       }) : [];
     return [...evs, ...segs].sort((a, b) => a.inicio - b.inicio);
@@ -206,6 +211,8 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
   }, [items]);
 
   const refrescar = () => onChanged?.();
+  // Cualquiera aplica cambios sobre lo de otros (queda registro); developer solo lo suyo. El backend manda.
+  const puedeEditarIt = (it) => L.puedeEditarSeguimiento(it, window.api.usuario, window.crmEsGerencia(), window.AppShell.nivelActual());
 
   const horaCorta = (d) => d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
 
@@ -220,6 +227,7 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
       id: it.id, tipo: it.tipo, titulo: it.titulo, descripcion: it.descripcion || '',
       cliente_id: it.cliente_id, cliente: it.cliente, todo_dia: it.todo_dia,
       inicioInput: L.aInputLocal(it.inicio), finInput: it.fin ? L.aInputLocal(it.fin) : '',
+      version: it.version,
     });
   };
 
@@ -243,8 +251,9 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
       ...prev,
       eventos: prev.eventos.map(e => e.id === id ? { ...e, inicio: payload.inicio, fin: payload.fin || e.fin } : e),
     }));
-    const r = await window.api.crmEditarEvento(id, payload);
+    const r = await window.api.crmEditarEvento(id, L.conVersion(payload, it));
     if (r.ok) { toast.success('Evento movido', L.claveDia(nuevoIni)); refrescar(); }
+    else if (r.status === 409) { toast.warn('Alguien lo modificó antes que tú', 'Se recargó el calendario'); refrescar(); }
     else { toast.error('No se pudo mover', r.error); refrescar(); }
   };
 
@@ -257,8 +266,9 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
       seguimientos: (prev.seguimientos || []).map(s =>
         s.seguimiento_id === seguimientoId ? { ...s, proxima_fecha: diaDestinoISO } : s),
     }));
-    const r = await window.api.crmEditarInteraccion(seguimientoId, { proxima_fecha: diaDestinoISO });
+    const r = await window.api.crmEditarInteraccion(seguimientoId, L.conVersion({ proxima_fecha: diaDestinoISO }, actual));
     if (r.ok) { toast.success('Seguimiento reprogramado', diaDestinoISO); refrescar(); }
+    else if (r.status === 409) { toast.warn('Alguien lo modificó antes que tú', 'Se recargó el calendario'); refrescar(); }
     else { toast.error('No se pudo reprogramar', r.error); refrescar(); }
   };
 
@@ -293,13 +303,15 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
 
   const marcarHecho = async (it) => {
     if (it.kind === 'seguimiento') {
-      const r = await window.api.crmEditarInteraccion(it.seguimiento_id, { seguimiento_cerrado: true });
+      const r = await window.api.crmEditarInteraccion(it.seguimiento_id, L.conVersion({ seguimiento_cerrado: true }, it));
       if (r.ok) { toast.success('Seguimiento cerrado', it.cliente || ''); refrescar(); }
+      else if (r.status === 409) { toast.warn('Alguien lo modificó antes que tú', 'Se recargó el calendario'); refrescar(); }
       else toast.error('No se pudo cerrar', r.error);
       return;
     }
-    const r = await window.api.crmEditarEvento(it.id, { estado: 'hecho' });
+    const r = await window.api.crmEditarEvento(it.id, L.conVersion({ estado: 'hecho' }, it));
     if (r.ok) { toast.success('Evento cerrado', it.titulo); refrescar(); }
+    else if (r.status === 409) { toast.warn('Alguien lo modificó antes que tú', 'Se recargó el calendario'); refrescar(); }
     else toast.error('No se pudo cerrar', r.error);
   };
 
@@ -420,7 +432,7 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
                   </div>
                 </div>
                 <div className="cal-row-acciones" onClick={e => e.stopPropagation()}>
-                  {it.estado === 'pendiente' && (
+                  {it.estado === 'pendiente' && puedeEditarIt(it) && (
                     <>
                       <button className="btn btn-ghost btn-sm" title="Un día antes" onClick={() => desplazar(it, -1)}>‹</button>
                       <button className="btn btn-ghost btn-sm" title="Un día después" onClick={() => desplazar(it, 1)}>›</button>
@@ -429,10 +441,10 @@ function CrmCalendario({ vendedor, version, onRegistrar, onFicha, onChanged }) {
                   {it.kind === 'seguimiento' && (
                     <button className="btn btn-ghost btn-sm" title="Agendar como cita" onClick={() => convertirSeguimiento(it)}>📅</button>
                   )}
-                  {it.estado === 'pendiente' && (
+                  {it.estado === 'pendiente' && puedeEditarIt(it) && (
                     <button className="btn btn-ghost btn-sm" title="Marcar hecho" onClick={() => marcarHecho(it)}><Icon name="check" size={13}/></button>
                   )}
-                  {it.kind === 'evento' && (
+                  {it.kind === 'evento' && L.puedeEliminarActividad(it, window.api.usuario, window.crmEsGerencia()) && (
                     <button className="btn btn-ghost btn-sm" title="Eliminar" onClick={() => eliminar(it)}><Icon name="x" size={13}/></button>
                   )}
                 </div>

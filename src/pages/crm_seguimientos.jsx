@@ -1,12 +1,18 @@
 // ===== Zeutica — CRM: Mis Seguimientos (vista del vendedor) =====
 // Pestañas: Seguimientos (vencidos / hoy / próximos 7 días), Mi cartera (etapa en
-// línea) y Mi bitácora. El vendedor solo ve lo suyo (lo filtra el backend por token);
-// gerencia ve todo y puede filtrar por vendedor.
+// línea) y bitácora. Seguimientos, bitácora y calendario son del equipo: todos ven todo y
+// pueden filtrar por vendedor. Cualquiera puede editar/cerrar un seguimiento ajeno (queda
+// «editado por» y bitácora en el servidor; developer solo lo suyo); eliminar, solo su autor
+// o gerencia. La cartera de clientes sigue siendo «mi cartera» (gerencia ve todas).
 const { useState: crs_uS, useEffect: crs_uE, useCallback: crs_uC, useRef: crs_uR } = React;
 
 function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, onEditar, onEliminar, ocupado, vencido }) {
   const L = window.crmLogica;
-  const puedeEditar = L.puedeEditarSeguimiento(s, window.api.usuario, gerencia);
+  const nivel = window.AppShell.nivelActual();
+  const puedeEditar = L.puedeEditarSeguimiento(s, window.api.usuario, gerencia, nivel);
+  const puedeEliminar = L.puedeEliminarActividad(s, window.api.usuario, gerencia);
+  const ajeno = L.esAjeno(s, window.api.usuario);
+  const editado = L.textoEditado(s);
   const cliente = { id: s.cliente_id, nombre: s.cliente, telefono: s.telefono, email: s.email };
   return (
     <div className={`crm-seg ${vencido ? 'crm-seg-vencido' : ''}`}>
@@ -14,29 +20,32 @@ function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, onEdit
         <div className="crm-seg-cliente">
           <b className="truncate">{s.cliente || `Cliente #${s.cliente_id}`}</b>
           <window.CrmEtapaBadge etapa={s.etapa}/>
-          {gerencia && <span className="td-muted">· {s.vendedor}</span>}
+          <span className="td-muted">· {s.vendedor}{ajeno ? ' (equipo)' : ''}</span>
         </div>
         <div className="crm-seg-accion">
           <span>{L.tipo(s.tipo)?.emoji}</span>
           <span className="truncate">{s.proxima_accion || 'Dar seguimiento'}{s.notas ? <span className="td-muted"> — {s.notas}</span> : null}</span>
         </div>
+        {editado && <div className="td-muted" style={{ fontSize: 11 }}>{editado}</div>}
       </div>
       <div className={`crm-seg-cuando ${vencido ? 'danger' : ''}`}>
         {vencido || s.dias_atraso === 0 ? L.textoAtraso(s.dias_atraso) : window.fmt.date(s.proxima_fecha)}
       </div>
       <window.CrmAccionesRapidas cliente={cliente} onRegistrar={onRegistrar}/>
-      <button className="btn btn-ghost btn-sm" title="Marcar como hecho sin registrar interacción" onClick={() => onHecho(s)}>
-        <Icon name="check" size={13}/>
-      </button>
       {puedeEditar && (
         <>
-          <button className="btn btn-ghost btn-sm" title="Editar seguimiento" disabled={ocupado} onClick={() => onEditar(s)}>
+          <button className="btn btn-ghost btn-sm" title="Marcar como hecho sin registrar interacción" disabled={ocupado} onClick={() => onHecho(s)}>
+            <Icon name="check" size={13}/>
+          </button>
+          <button className="btn btn-ghost btn-sm" title={ajeno ? 'Editar seguimiento de otra persona (queda registro)' : 'Editar seguimiento'} disabled={ocupado} onClick={() => onEditar(s)}>
             <Icon name="edit" size={13}/>
           </button>
-          <button className="btn btn-ghost btn-sm crm-seg-borrar" title="Eliminar seguimiento" disabled={ocupado} onClick={() => onEliminar(s)}>
-            <Icon name="trash" size={13}/>
-          </button>
         </>
+      )}
+      {puedeEliminar && (
+        <button className="btn btn-ghost btn-sm crm-seg-borrar" title="Eliminar seguimiento" disabled={ocupado} onClick={() => onEliminar(s)}>
+          <Icon name="trash" size={13}/>
+        </button>
       )}
     </div>
   );
@@ -64,10 +73,11 @@ function CrmSeguimientoEditarModal({ seg, onClose, onSaved, onGone }) {
     const invalido = L.validarSeguimientoEdicion(form, seg, hoy);
     if (invalido) { setError(invalido); return; }
     setError(''); setSaving(true);
-    const r = await window.api.crmEditarInteraccion(seg.id, payload);
+    const r = await window.api.crmEditarInteraccion(seg.id, L.conVersion(payload, seg));
     setSaving(false);
     if (r.ok) { toast.success('Seguimiento actualizado', seg.cliente); onSaved(); onClose(); return; }
     if (r.status === 404) { toast.error('El seguimiento ya no existe', seg.cliente); onGone(); onClose(); return; }
+    if (r.status === 409) { toast.warn('Alguien lo modificó antes que tú', 'Se recargó el seguimiento; vuelve a aplicar tu cambio'); onGone(); onClose(); return; }
     setError(r.error);
   };
 
@@ -240,11 +250,12 @@ function CrmBitacoraPropia({ vendedor, version, onFicha }) {
       {error && <div className="crm-error" style={{ margin: 16 }}>{error}</div>}
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Fecha</th><th>Cliente</th><th>Tipo</th><th>Resultado</th><th>Notas</th><th>Próximo</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Tipo</th><th>Resultado</th><th>Notas</th><th>Próximo</th></tr></thead>
           <tbody>
             {items.map(i => (
               <tr key={i.id}>
                 <td className="mono td-muted" style={{ whiteSpace: 'nowrap' }}>{window.fmt.datetime(i.fecha)}</td>
+                <td className="td-muted">{i.vendedor}</td>
                 <td style={{ cursor: 'pointer', fontWeight: 500 }} onClick={() => onFicha(i.cliente_id)}>{i.cliente}</td>
                 <td>{L.tipo(i.tipo)?.emoji} {L.etiquetaTipo(i.tipo)}</td>
                 <td className="td-muted">{L.etiquetaResultado(i.resultado) || '—'}</td>
@@ -252,7 +263,7 @@ function CrmBitacoraPropia({ vendedor, version, onFicha }) {
                 <td className="td-muted">{i.proxima_fecha ? `${window.fmt.date(i.proxima_fecha)}${i.seguimiento_cerrado ? ' ✓' : ''}` : '—'}</td>
               </tr>
             ))}
-            {!cargando && items.length === 0 && <tr><td colSpan={6} className="td-muted">Sin interacciones en los últimos 30 días.</td></tr>}
+            {!cargando && items.length === 0 && <tr><td colSpan={7} className="td-muted">Sin interacciones en los últimos 30 días.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -281,15 +292,22 @@ function PageCrmSeguimientos() {
   const [borrandoId, setBorrandoId] = crs_uS(null);  // evita doble clic mientras se elimina
   const [version, setVersion] = crs_uS(0);         // sube tras guardar para recargar pestañas
   const [vendedor, setVendedor] = crs_uS('');
-  const [vendedores, setVendedores] = crs_uS([]);
+  const [vendedores, setVendedores] = crs_uS([]);          // lista de gerencia (GET /crm/vendedores)
+  const [vendedoresVistos, setVendedoresVistos] = crs_uS([]);  // el resto: quienes aparecen en los seguimientos
 
-  crs_uE(() => { if (gerencia) window.api.crmVendedores().then(setVendedores); }, [gerencia]);
+  crs_uE(() => { if (gerencia) window.api.crmVendedores().then(r => setVendedores(Array.isArray(r) ? r : (r?.data || []))); }, [gerencia]);
 
   const cargar = crs_uC(async () => {
     setCargando(true);
     const r = await window.api.crmSeguimientos(vendedor || undefined);
     setCargando(false);
-    if (r.ok) { setSeg(r.data); setError(''); } else setError(r.error);
+    if (r.ok) {
+      setSeg(r.data); setError('');
+      if (!vendedor) {
+        const nombres = new Set([...r.data.vencidos, ...r.data.hoy, ...r.data.proximos].map(x => x.vendedor).filter(Boolean));
+        setVendedoresVistos([...nombres].sort((a, b) => String(a).localeCompare(String(b))));
+      }
+    } else setError(r.error);
   }, [vendedor]);
   crs_uE(() => { cargar(); }, [cargar, version]);
 
@@ -299,8 +317,9 @@ function PageCrmSeguimientos() {
   const marcarHecho = async (s) => {
     const quitar = (lista) => lista.filter(x => x.id !== s.id);
     setSeg(prev => ({ ...prev, vencidos: quitar(prev.vencidos), hoy: quitar(prev.hoy), proximos: quitar(prev.proximos) }));
-    const r = await window.api.crmEditarInteraccion(s.id, { seguimiento_cerrado: true });
+    const r = await window.api.crmEditarInteraccion(s.id, window.crmLogica.conVersion({ seguimiento_cerrado: true }, s));
     if (r.ok) toast.success('Seguimiento cerrado', s.cliente);
+    else if (r.status === 409) { toast.warn('Alguien lo modificó antes que tú', 'Se recargó la lista; revisa y vuelve a cerrarlo'); cargar(); }
     else { toast.error('No se pudo cerrar el seguimiento', r.error); cargar(); }
   };
 
@@ -327,16 +346,14 @@ function PageCrmSeguimientos() {
       {ConfirmModal}
       <div className="section-header">
         <div>
-          <h2 className="section-title">{gerencia ? 'Seguimientos del equipo' : 'Mis Seguimientos'}</h2>
-          <p className="section-subtitle">Contactos pendientes, tu cartera y la bitácora de llamadas, correos, WhatsApp y reuniones.</p>
+          <h2 className="section-title">Seguimientos del equipo</h2>
+          <p className="section-subtitle">Contactos pendientes del equipo, tu cartera y la bitácora de llamadas, correos, WhatsApp y reuniones. Lo que cambies de otra persona queda registrado.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {gerencia && (
-            <select className="select" style={{ width: 160 }} value={vendedor} onChange={e => setVendedor(e.target.value)}>
-              <option value="">Todos los vendedores</option>
-              {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
-          )}
+          <select className="select" style={{ width: 160 }} value={vendedor} onChange={e => setVendedor(e.target.value)}>
+            <option value="">Todos los vendedores</option>
+            {(gerencia ? vendedores : vendedoresVistos).map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
           <button className="btn btn-primary btn-sm" onClick={() => abrirRegistro(null, '')}>
             <Icon name="plus" size={13}/> Registrar interacción
           </button>
@@ -350,7 +367,7 @@ function PageCrmSeguimientos() {
       </div>
 
       <div className="tabs" style={{ marginTop: 16 }}>
-        {[['seguimientos', 'Seguimientos'], ['prospectos', 'Prospectos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', gerencia ? 'Bitácora' : 'Mi bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
+        {[['seguimientos', 'Seguimientos'], ['prospectos', 'Prospectos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', 'Bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -370,7 +387,7 @@ function PageCrmSeguimientos() {
           ? <window.PageProspectos embedded onConverted={refrescar}/>
           : <div className="empty" style={{ padding: 40 }}>Prospectos no disponible (revisa la versión del archivo).</div>
       )}
-      {tab === 'cartera' && <CrmCartera gerencia={gerencia} vendedor={vendedor || undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId}/>}
+      {tab === 'cartera' && <CrmCartera gerencia={gerencia} vendedor={gerencia ? (vendedor || undefined) : undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId}/>}
       {tab === 'bitacora' && <CrmBitacoraPropia vendedor={vendedor || undefined} version={version} onFicha={setFichaId}/>}
       {tab === 'calendario' && (
         window.CrmCalendario
