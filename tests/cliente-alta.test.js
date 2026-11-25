@@ -22,7 +22,7 @@ test('armarPayloadCliente convierte números y envía uso_cfdi y dias_credito', 
   }, 'tester');
   assert.equal(p.nombre, 'Cliente X');
   assert.equal(p.telefono, 3312345678);
-  assert.equal(p.cp, 44100);
+  assert.equal(p.cp, '44100'); // el CP viaja como texto: un entero pierde el cero inicial
   assert.equal(p.uso_cfdi, 'G03');
   assert.equal(p.monto_credito, 5000);
   assert.equal(p.dias_credito, 30);
@@ -33,7 +33,7 @@ test('armarPayloadCliente convierte números y envía uso_cfdi y dias_credito', 
 test('armarPayloadCliente usa 0 en numéricos inválidos y usuario vacío por defecto', () => {
   const p = alta.armarPayloadCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', telefono: 'abc', cp: '' });
   assert.equal(p.telefono, 0);
-  assert.equal(p.cp, 0);
+  assert.equal(p.cp, '');
   assert.equal(p.dias_credito, 0);
   assert.equal(p.usuario, '');
 });
@@ -99,7 +99,9 @@ test('ida y vuelta: editar sin cambios reenvía los mismos datos del cliente', (
     direccion: 'D', rfc: 'R', cp: 44100, regimen: '601', uso_cfdi: 'G03', frecuencia: 'Mensual',
     credito: true, monto_credito: 100, dias_credito: 7,
   };
-  const { id, ...esperado } = c;
+  // El panel agrega los campos del domicilio (vacíos para un cliente viejo) y el CP como texto.
+  const { id, ...resto } = c;
+  const esperado = { ...resto, cp: '44100', calle: '', numero: '', interior: '', colonia: '', municipio: '', estado: '' };
   const { usuario, id: idEnviado, usocdfi, ...enviado } = alta.armarPayloadEdicion(alta.clienteAFormulario(c), c.id, 'u');
   assert.equal(idEnviado, 3);
   assert.equal(usocdfi, 'G03');
@@ -135,7 +137,58 @@ test('armarPayloadProspectoEdicion sin cambios devuelve {} y recorta el nombre',
 test('armarPayloadProspectoEdicion convierte números, usa uso_cfdi y detecta el crédito', () => {
   const original = { nombre: 'A', usocfdi: 'G01', cp: 44100 };
   const form = { ...alta.clienteAFormulario(original), uso_cfdi: 'G03', cp: '44200', credito: true, monto_credito: '5000' };
-  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original), { uso_cfdi: 'G03', cp: 44200, credito: true, monto_credito: 5000 });
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original), { uso_cfdi: 'G03', cp: '44200', credito: true, monto_credito: 5000 });
+});
+
+// ---------- Domicilio estructurado ----------
+
+const DOM = { calle: 'Av. Juárez', numero: '100', interior: '', colonia: 'Centro', cp: '44100', municipio: 'Guadalajara', estado: 'Jalisco' };
+
+test('validarCliente: domicilio vacío es válido; con algo capturado exige todo menos el interior', () => {
+  assert.equal(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A' }), null);
+  assert.equal(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', ...DOM }), null);
+  assert.match(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', ...DOM, colonia: '' }), /falta colonia/);
+  assert.match(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', calle: 'X' }), /Completa el domicilio/);
+  assert.match(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', ...DOM, municipio: 'Mérida' }), /no pertenece a Jalisco/);
+});
+
+test('un CP suelto (dato fiscal de clientes viejos) no exige el resto del domicilio', () => {
+  assert.equal(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', cp: '44100' }), null);
+  assert.match(alta.validarCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', cp: '123' }), /5 dígitos/);
+});
+
+test('armarPayloadCliente manda los campos del domicilio y el CP como texto', () => {
+  const p = alta.armarPayloadCliente({ ...alta.CLIENTE_BLANK, nombre: 'A', ...DOM, calle: ' Av. Juárez ' }, 'u');
+  assert.deepEqual(
+    { calle: p.calle, numero: p.numero, interior: p.interior, colonia: p.colonia, cp: p.cp, municipio: p.municipio, estado: p.estado },
+    DOM);
+});
+
+test('clienteAFormulario: la dirección libre vieja solo se conserva mientras no haya domicilio estructurado', () => {
+  assert.equal(alta.clienteAFormulario({ nombre: 'A', direccion: 'Calle 1, Col. X' }).direccion, 'Calle 1, Col. X');
+  const nuevo = alta.clienteAFormulario({ nombre: 'A', direccion: 'Av. Juárez 100, Col. Centro', ...DOM });
+  assert.equal(nuevo.direccion, '');
+  assert.equal(nuevo.estado, 'Jalisco');
+});
+
+test('clienteAFormulario recupera el cero inicial de un CP numérico viejo y trata 0 como vacío', () => {
+  assert.equal(alta.clienteAFormulario({ nombre: 'A', cp: 1000 }).cp, '01000');
+  assert.equal(alta.clienteAFormulario({ nombre: 'A', cp: 0 }).cp, '');
+  assert.equal(alta.clienteAFormulario({ nombre: 'A', cp: '01000' }).cp, '01000');
+});
+
+test('armarPayloadProspectoEdicion manda solo los campos del domicilio que cambiaron', () => {
+  const original = { nombre: 'A', ...DOM, direccion: 'Av. Juárez 100, Col. Centro, CP 44100, Guadalajara, Jalisco' };
+  const form = { ...alta.clienteAFormulario(original), estado: 'Yucatán', municipio: 'Mérida' };
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(form, original), { estado: 'Yucatán', municipio: 'Mérida' });
+  assert.deepEqual(alta.armarPayloadProspectoEdicion(alta.clienteAFormulario(original), original), {});
+});
+
+test('ida y vuelta de un cliente con domicilio: no reenvía la dirección compuesta', () => {
+  const c = { id: 3, nombre: 'N', ...DOM, direccion: 'Av. Juárez 100, Col. Centro, CP 44100, Guadalajara, Jalisco' };
+  const p = alta.armarPayloadEdicion(alta.clienteAFormulario(c), 3, 'u');
+  assert.equal(p.direccion, '');
+  assert.equal(p.cp, '44100');
 });
 
 test('armarPayloadProspectoEdicion solo incluye vendedor si cambió (sin distinguir mayúsculas)', () => {

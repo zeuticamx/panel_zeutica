@@ -13,6 +13,53 @@ async function guardarClienteNuevo(form) {
 
 
 
+// Domicilio estructurado (calle, número, interior, colonia, CP, estado y municipio). Lo comparten Clientes,
+// el alta rápida de Cotizaciones y Prospectos (window.DomicilioFields). Estado y municipio son listas del
+// catálogo SEPOMEX (domicilio-logica.js): al cambiar el estado se vacía el municipio si ya no le pertenece.
+// Vacío por completo es válido; con algo capturado todo es obligatorio salvo el interior (lo valida
+// clienteAlta.validarCliente y, en última instancia, el backend).
+function DomicilioFields({ form, set }) {
+  const DL = window.domicilioLogica;
+  const municipios = DL.municipiosDe(form.estado);
+  const cambiarEstado = (estado) => {
+    set('estado', estado);
+    if (form.municipio && !DL.municipioCanonico(estado, form.municipio)) set('municipio', '');
+  };
+  return (
+    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div className="field-label" style={{ gridColumn: '1 / -1', fontWeight: 600, marginBottom: -4 }}>
+        Domicilio <span className="td-muted" style={{ fontWeight: 400 }}>— si capturas alguno, completa todos menos el interior</span>
+      </div>
+      <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Calle</label>
+        <input className="input" value={form.calle} maxLength={DL.LIMITES.calle} onChange={e => set('calle', e.target.value)} placeholder="Av. Juárez"/></div>
+      <div className="field"><label className="field-label">Número</label>
+        <input className="input" value={form.numero} maxLength={DL.LIMITES.numero} onChange={e => set('numero', e.target.value)} placeholder="100 o S/N"/></div>
+      <div className="field"><label className="field-label">Interior <span className="td-muted">(opcional)</span></label>
+        <input className="input" value={form.interior} maxLength={DL.LIMITES.interior} onChange={e => set('interior', e.target.value)} placeholder="Int. 4"/></div>
+      <div className="field"><label className="field-label">Colonia</label>
+        <input className="input" value={form.colonia} maxLength={DL.LIMITES.colonia} onChange={e => set('colonia', e.target.value)} placeholder="Centro"/></div>
+      <div className="field"><label className="field-label">Código postal</label>
+        <input className="input" inputMode="numeric" maxLength={5} value={form.cp} onChange={e => set('cp', e.target.value.replace(/\D/g, '').slice(0, 5))} placeholder="44100"/></div>
+      <div className="field"><label className="field-label">Estado</label>
+        <select className="select" value={form.estado} onChange={e => cambiarEstado(e.target.value)}>
+          <option value="">Selecciona un estado...</option>
+          {DL.ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
+        </select></div>
+      <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Municipio / alcaldía</label>
+        <select className="select" value={form.municipio} disabled={!form.estado} onChange={e => set('municipio', e.target.value)}>
+          <option value="">{form.estado ? 'Selecciona un municipio...' : 'Primero elige el estado'}</option>
+          {municipios.map(m => <option key={m} value={m}>{m}</option>)}
+        </select></div>
+      {form.direccion && (
+        <div className="field-hint" style={{ gridColumn: '1 / -1', fontSize: 12 }}>
+          <strong>Dirección anterior (referencia):</strong> {form.direccion}. Se reemplaza al capturar el domicilio de arriba.
+        </div>
+      )}
+    </div>
+  );
+}
+window.DomicilioFields = DomicilioFields;
+
 function ClienteFormFields({ form, set }) {
   return (
     <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -28,8 +75,6 @@ function ClienteFormFields({ form, set }) {
         <input className="input" type="number" value={form.telefono} onChange={e => set('telefono', e.target.value)} placeholder="3312345678"/></div>
       <div className="field"><label className="field-label">RFC</label>
         <input className="input" value={form.rfc} onChange={e => set('rfc', e.target.value)} onFocus={() => { if (!form.rfc) set('rfc', 'XAXX010101000'); }} placeholder="XAXX010101000"/></div>
-      <div className="field"><label className="field-label">CP</label>
-        <input className="input" type="number" value={form.cp} onChange={e => set('cp', e.target.value)} placeholder="44100"/></div>
       <div className="field">
         <label className="field-label">Régimen fiscal</label>
         <select className="select" value={form.regimen} onChange={e => set('regimen', e.target.value)}>
@@ -50,8 +95,7 @@ function ClienteFormFields({ form, set }) {
       </div>
       <div className="field"><label className="field-label">Frecuencia de compra</label>
         <input className="input" value={form.frecuencia} onChange={e => set('frecuencia', e.target.value)} placeholder="Mensual / Semanal"/></div>
-      <div className="field" style={{ gridColumn: '1 / -1' }}><label className="field-label">Dirección</label>
-        <input className="input" value={form.direccion} onChange={e => set('direccion', e.target.value)} placeholder="Calle, número, colonia, CP"/></div>
+      <DomicilioFields form={form} set={set}/>
       <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 13 }}>
           <input type="checkbox" checked={form.credito} onChange={e => set('credito', e.target.checked)}/>
@@ -141,7 +185,8 @@ function ClienteEditarModal({ cliente, onSaved, onClose }) {
 
   const guardar = async () => {
     setError('');
-    if (!form.nombre.trim()) { setError('El nombre del cliente es obligatorio'); return; }
+    const invalido = window.clienteAlta.validarCliente(form);
+    if (invalido) { setError(invalido); return; }
     setSaving(true);
     const payload = window.clienteAlta.armarPayloadEdicion(form, cliente.id, window.api.usuario);
     const r = await window.api.editarCliente(payload);
@@ -191,6 +236,7 @@ function PageClientes() {
   const [editingCliente, setEditingCliente] = rp_uS(null);
   const [crmCliente, setCrmCliente] = rp_uS(null); // cliente con el modal de registro CRM abierto
   const [verEliminados, setVerEliminados] = rp_uS(false); // solo gerencia: lista de bajas para restaurar
+  const [soloSinDomicilio, setSoloSinDomicilio] = rp_uS(false); // clientes que aún no migran al domicilio estructurado
   const esGerencia = window.AppShell.GERENCIA_USERS.includes(window.api.usuario);
 
   const cargar = async () => setCli(verEliminados ? await window.api.clientesEliminados() : await window.api.clientes());
@@ -232,7 +278,12 @@ function PageClientes() {
     else toast.error('No se pudo restaurar el cliente', r.error);
   };
 
-  const filtered = cli.filter(c => !q || `${c.nombre} ${c.email} ${c.ciudad}`.toLowerCase().includes(q.toLowerCase()));
+  // La migración del domicilio es gradual: el equipo captura los campos nuevos al editar cada cliente.
+  const sinDomicilio = (c) => !window.domicilioLogica.tieneDomicilioEstructurado(c);
+  const pendientesDomicilio = cli.filter(sinDomicilio).length;
+  const filtered = cli
+    .filter(c => !q || `${c.nombre} ${c.email} ${c.ciudad}`.toLowerCase().includes(q.toLowerCase()))
+    .filter(c => !soloSinDomicilio || sinDomicilio(c));
 
   return (
     <div className="page">
@@ -278,6 +329,13 @@ function PageClientes() {
             <span className="input-group-icon"><Icon name="search" size={14}/></span>
             <input className="input" placeholder="Buscar cliente..." value={q} onChange={e => setQ(e.target.value)}/>
           </div>
+          {!verEliminados && pendientesDomicilio > 0 && (
+            <button className={`btn btn-sm ${soloSinDomicilio ? 'btn-primary' : 'btn-secondary'}`}
+              title="Clientes que todavía tienen el domicilio en texto libre. Captura calle, número, colonia, CP, municipio y estado al editarlos."
+              onClick={() => setSoloSinDomicilio(v => !v)}>
+              Sin domicilio estructurado · {pendientesDomicilio}
+            </button>
+          )}
         </div>
         <div className="table-wrap">
           <table className="table">

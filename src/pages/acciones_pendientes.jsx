@@ -42,6 +42,80 @@ function TiempoEnCurso({ base }) {
   return <span className="mono" title="Tiempo desde que tomaste la tarea">⏱ {p(h)}:{p(m)}:{p(s)}</span>;
 }
 
+// Solo lectura para usuarios visores (p. ej. `ventas`): tareas en proceso de fparra con su contador.
+// Se refresca cada 15 s para que aparezca/desaparezca cuando fparra toma o termina una tarea.
+function CronometroVisor() {
+  const [tareas, setTareas] = ap_uS(null);
+  const [error, setError]   = ap_uS(null);
+  const [acumulado, setAcumulado] = ap_uS(null);
+  const reqRef = React.useRef(0);
+
+  const cargar = ap_uC(async () => {
+    const mia = ++reqRef.current;
+    const r = await window.api.pendientesCronometro();
+    if (mia !== reqRef.current) return;      // respuesta vieja: se descarta
+    if (!r.ok) { setError(r.error || 'No se pudo cargar el cronómetro'); return; }
+    setError(null);
+    setTareas(Array.isArray(r.data?.en_proceso) ? r.data.en_proceso : []);
+    setAcumulado(r.data?.acumulado || null);
+  }, []);
+
+  ap_uE(() => {
+    cargar();
+    const id = setInterval(cargar, 15000);
+    return () => clearInterval(id);
+  }, [cargar]);
+
+  return (
+    <section style={{ marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Tareas en proceso de fparra</h3>
+        <button className="btn btn-ghost btn-sm" onClick={cargar}><Icon name="refresh" size={13}/> Actualizar</button>
+      </div>
+      {!error && acumulado && (
+        <div className="card" style={{ padding: '12px 16px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 13 }}>Tiempo acumulado en tareas cerradas</span>
+          <span style={{ textAlign: 'right' }}>
+            <b className="mono">{window.pendientesTiempo.formatearDuracion(acumulado.segundos)}</b>
+            <span className="td-muted" style={{ fontSize: 12, display: 'block' }}>
+              {acumulado.tareas} tarea{acumulado.tareas === 1 ? '' : 's'}{acumulado.sin_dato ? ` · ${acumulado.sin_dato} sin dato` : ''}
+            </span>
+          </span>
+        </div>
+      )}
+      {error ? (
+        <div className="card" style={{ padding: 20, textAlign: 'center' }}>
+          <div style={{ color: 'var(--danger)', fontWeight: 600 }}>No se pudo cargar el cronómetro</div>
+          <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 4 }}>{error}</div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={cargar}>
+            <Icon name="refresh" size={13}/> Reintentar
+          </button>
+        </div>
+      ) : tareas == null ? (
+        <div className="empty" style={{ padding: 24 }}><div className="spinner" style={{ width: 20, height: 20, margin: '0 auto' }}/></div>
+      ) : tareas.length === 0 ? (
+        <div className="card td-muted" style={{ padding: 20, textAlign: 'center', fontSize: 13 }}>
+          fparra no tiene tareas en proceso.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {tareas.map((t) => (
+            <article key={t.id} className="card" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span className={`badge badge-${apPrioTone(t.prioridad)}`} style={{ fontSize: 11, flexShrink: 0 }}>
+                <span className="badge-dot"/> {t.prioridad || '—'}
+              </span>
+              <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14 }}>{t.actividad}</div>
+              {t.segundosTranscurridos != null
+                ? <TiempoEnCurso key={`${t.id}-${t.segundosTranscurridos}`} base={t.segundosTranscurridos}/>
+                : <span className="td-muted" style={{ fontSize: 12 }}>Sin cronómetro</span>}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DetalleFila({ etiqueta, valor }) {
   if (valor == null || valor === '') return null;
   return (
@@ -242,6 +316,8 @@ function PageAccionesPendientes({ user }) {
       </div>
 
       <div style={{ maxWidth: 640, margin: '24px auto 0' }}>
+        {window.pendientesTiempo.esVisor(user) && <CronometroVisor/>}
+
         {/* Estado: error */}
         {error && (
           <div className="card" style={{ padding: 40, textAlign: 'center' }}>

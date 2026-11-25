@@ -107,3 +107,10 @@ button.crm-resultado:hover { background: var(--bg-3); color: var(--fg-0); }
   .crm-ficha-datos { grid-template-columns: 1fr; }
   .crm-embudo-fila { grid-template-columns: 100px 1fr 40px 32px; }
 }
+.crm-cots { display: flex; flex-direction: column; gap: 8px; }
+.crm-cots-lista { display: flex; flex-direction: column; gap: 6px; }
+.crm-cot-fila { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border, #ccc); border-radius: 8px; }
+.crm-cot-cancelada { opacity: .7; }
+.crm-cot-fila-cancelada { opacity: .6; }
+.crm-cot-fila-cancelada .btn { opacity: 1; }
+.crm-chip[aria-pressed="true"] { background: var(--brand-bg); border-color: var(--brand); color: var(--fg-0); }

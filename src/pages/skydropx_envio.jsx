@@ -72,17 +72,25 @@ function skyGuardarEnvio(codigo, datos) {
 
 // Datos del cliente ya registrado (tabla `clientes`, cruzada por nombre desde
 // cotizaciones.jsx) para no pedirle al usuario CP/teléfono/domicilio que ya
-// existen. `direccion` es un solo campo de texto libre en esa tabla (no viene
-// separado en calle/colonia/municipio/estado), así que solo se usa para
-// precargar `street1`; el resto de las llaves de destino se dejan para que el
-// usuario las llene o las traiga de un envío anterior (localStorage).
+// existen. Los clientes con domicilio estructurado (calle, número, interior,
+// colonia, CP, municipio, estado) llenan también estado, municipio y colonia;
+// los viejos (solo `direccion`, texto libre) solo precargan `street1`, y el resto
+// de las llaves de destino se dejan para que el usuario las llene o las traiga
+// de un envío anterior (localStorage).
 function skyDefaultsDeCliente(cliente) {
   if (!cliente) return {};
-  return {
-    postal_code: cliente.cp != null ? String(cliente.cp) : '',
+  const base = {
+    postal_code: window.domicilioLogica.cpATexto(cliente.cp),
     phone: cliente.telefono != null ? String(cliente.telefono) : '',
     email: cliente.email || '',
-    street1: cliente.direccion || '',
+  };
+  if (!window.domicilioLogica.tieneDomicilioEstructurado(cliente)) return { ...base, street1: cliente.direccion || '' };
+  return {
+    ...base,
+    street1: [cliente.calle, cliente.numero].filter(Boolean).join(' ') + (cliente.interior ? ` Int. ${cliente.interior}` : ''),
+    area_level1: cliente.estado || '',
+    area_level2: cliente.municipio || '',
+    area_level3: cliente.colonia || '',
   };
 }
 

@@ -40,8 +40,6 @@ function PrFormFields({ form, set }) {
         <input className="input" type="number" value={form.telefono} onChange={e => set('telefono', e.target.value)} placeholder="3312345678"/></div>
       <div className="field"><label className="field-label">RFC</label>
         <input className="input" value={form.rfc} onChange={e => set('rfc', e.target.value)} placeholder="XAXX010101000"/></div>
-      <div className="field"><label className="field-label">CP</label>
-        <input className="input" type="number" value={form.cp} onChange={e => set('cp', e.target.value)} placeholder="44100"/></div>
       <div className="field">
         <label className="field-label">Régimen fiscal</label>
         <select className="select" value={form.regimen} onChange={e => set('regimen', e.target.value)}>
@@ -62,8 +60,7 @@ function PrFormFields({ form, set }) {
       </div>
       <div className="field"><label className="field-label">Frecuencia de compra</label>
         <input className="input" value={form.frecuencia} onChange={e => set('frecuencia', e.target.value)} placeholder="Mensual / Semanal"/></div>
-      <div className="field" style={{ gridColumn: '1 / -1' }}><label className="field-label">Dirección</label>
-        <input className="input" value={form.direccion} onChange={e => set('direccion', e.target.value)} placeholder="Calle, número, colonia, CP"/></div>
+      <window.DomicilioFields form={form} set={set}/>
       <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 13 }}>
           <input type="checkbox" checked={form.credito} onChange={e => set('credito', e.target.checked)}/>

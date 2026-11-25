@@ -583,10 +583,10 @@ const api = {
   async registrarComplementoPago(payload) {
     return tryFetch('/zeutica/complemento-pago', { method: 'POST', body: JSON.stringify(payload) });
   },
-  async actualizarSeguimiento(codigo_cotizacion, seguimiento, usuario) {
+  async actualizarSeguimiento(codigo_cotizacion, seguimiento, usuario, seguimiento_otros = null) {
     return tryFetch('/zeutica/cotizaciones/seguimiento', {
       method: 'POST',
-      body: JSON.stringify({ codigo_cotizacion, seguimiento, usuario: usuario || api.usuario }),
+      body: JSON.stringify({ codigo_cotizacion, seguimiento, seguimiento_otros, usuario: usuario || api.usuario }),
     });
   },
   async registrarVenta(payload) {
@@ -918,6 +918,10 @@ const api = {
   async colaCambiarRecurrencia(id, valor) {
     return tryFetch(`/zeutica/pendientes/${encodeURIComponent(id)}/recurrencia`, { method: 'POST', body: JSON.stringify({ valor: valor || null }) });
   },
+  // Solo lectura: tareas en proceso de fparra con su tiempo (usuarios visores, p. ej. ventas).
+  async pendientesCronometro() {
+    return tryFetch('/zeutica/pendientes/cronometro');
+  },
   // Cronómetro de fparra (solo gerencia; fparra mismo recibe 403). El KPI y las duraciones los calcula el backend.
   async pendientesTiempos(incluirIntercambiadas = false) {
     return tryFetch(`/zeutica/pendientes/tiempos${incluirIntercambiadas ? '?incluir_intercambiadas=true' : ''}`);
@@ -955,8 +959,14 @@ const api = {
   async crmEliminarInteraccion(id) {
     return tryFetch(`/zeutica/crm/interacciones/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
-  async crmSeguimientos(vendedor) {
-    return tryFetch(`/zeutica/crm/seguimientos${window.crmLogica.queryString({ vendedor })}`);
+  // filtros opcionales: { q, tipo: [], estado: [] } (las listas se repiten en la URL; el armado
+  // de q/tipo/estado sale de window.crmFiltros.armarParamsSeguimientos). Sin filtros = como antes.
+  async crmSeguimientos(vendedor, filtros = {}) {
+    return tryFetch(`/zeutica/crm/seguimientos${window.crmLogica.queryString({ ...filtros, vendedor })}`);
+  },
+  // Cotizaciones ligadas a un cliente (todos los estados, sin PDF). 404 si el cliente no existe.
+  async cotizacionesPorCliente(clienteId) {
+    return tryFetch(`/zeutica/cotizaciones/por-cliente/${encodeURIComponent(clienteId)}`);
   },
   async crmAgenda(params = {}) {
     return tryFetch(`/zeutica/crm/agenda${window.crmLogica.queryString(params)}`);

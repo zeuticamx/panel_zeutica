@@ -126,7 +126,46 @@
   // Cotizaciones que siguen vivas: no vendidas, no canceladas y vigentes (KPIs y pipeline).
   const esAbiertaVigente = (c, hoy) => !estaCancelada(c) && !c.vendido && esVigente(c, hoy);
 
+  // Seguimiento: catálogo cerrado (espejo de servicios/cotizacion_seguimiento.py; manda el backend).
+  // «OTROS» lleva un detalle de texto libre en seguimiento_otros.
+  const SEGUIMIENTOS = ['ESPERANDO', 'PAGADO', 'ENVIADO', 'ENTREGADO', 'OTROS'];
+  const SEGUIMIENTO_OTROS_MAX = 255;
+  const limpiarDetalle = t => String(t == null ? '' : t).split(/\s+/).filter(Boolean).join(' ');
+
+  // Estado de seguimiento de una cotización como {valor, otros}. Un texto libre anterior al
+  // catálogo se muestra como OTROS con ese texto (sin migrar la BD).
+  function seguimientoDe(c) {
+    const crudo = String(c?.seguimiento ?? '').trim();
+    if (!crudo) return { valor: '', otros: '' };
+    const mayus = crudo.toUpperCase();
+    if (SEGUIMIENTOS.includes(mayus)) {
+      return { valor: mayus, otros: mayus === 'OTROS' ? limpiarDetalle(c?.seguimiento_otros) : '' };
+    }
+    return { valor: 'OTROS', otros: limpiarDetalle(crudo).slice(0, SEGUIMIENTO_OTROS_MAX) };
+  }
+
+  function validarSeguimiento(valor, otros) {
+    if (!valor) return { ok: true, motivo: '' };
+    if (!SEGUIMIENTOS.includes(valor)) return { ok: false, motivo: 'Seguimiento inválido' };
+    if (valor !== 'OTROS') return { ok: true, motivo: '' };
+    const d = limpiarDetalle(otros);
+    if (!d) return { ok: false, motivo: 'Con OTROS escribe el detalle' };
+    if (d.length > SEGUIMIENTO_OTROS_MAX) return { ok: false, motivo: `Máximo ${SEGUIMIENTO_OTROS_MAX} caracteres` };
+    return { ok: true, motivo: '' };
+  }
+
+  const mismoSeguimiento = (a, b) =>
+    (a?.valor || '') === (b?.valor || '') &&
+    (a?.valor === 'OTROS' ? limpiarDetalle(a.otros) === limpiarDetalle(b?.otros) : true);
+
+  // Cuerpo para api.actualizarSeguimiento: sin valor = null (sin seguimiento).
+  const armarPayloadSeguimiento = (valor, otros) => ({
+    seguimiento: valor || null,
+    seguimiento_otros: valor === 'OTROS' ? limpiarDetalle(otros) : null,
+  });
+
   const mod = {
+    SEGUIMIENTOS, SEGUIMIENTO_OTROS_MAX, seguimientoDe, validarSeguimiento, mismoSeguimiento, armarPayloadSeguimiento,
     armarPayloadCotizacion, nombreArchivoCotizacion, armarRegistroRelacion,
     estaCancelada, puedeCancelar, puedeReactivar, puedeEnviar, esVigente, coincideConPestana, esAbiertaVigente,
   };

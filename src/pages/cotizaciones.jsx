@@ -56,7 +56,7 @@ const cotNormalizaFormaPago = (valor) => {
 const COT_COMENTARIOS = [
   'ENVIO GRATIS EN COMPRAS MAYORES A $7000.00 MAS IVA, TIEMPO DE ENTREGA DE 4-7 DIAS HABILES.',
   'EL ENVIO SE REALIZARA POR PAQUETERIA PAQUETE EXPRESS EN CASO DE REQUERIR UNA PAQUETERIA EN PARTICULAR ESTA SE COTIZARA DE MANERA ADICIONAL.',
-  'ENTREGA EN BODEGA, HORARIO DE 10AM A 2PM',
+  'ENTREGA EN BODEGA, HORARIO DE 10AM A 5:30PM',
   'OTROS...',
 ];
 
@@ -380,6 +380,13 @@ function PageCotizaciones({ user }) {
       comentario: comentarioFinal,
       usuario: user,
     });
+    // cliente_id va DESPUÉS de armarPayloadCotizacion (esa lógica no se toca). Es un entero
+    // (el backend usa StrictInt). Con homónimos no se adivina: se guarda sin liga y se avisa.
+    const liga = window.cotizacionesCliente.resolverClienteId(clientes, selectedCliente);
+    if (liga.motivo === 'ok') payload.cliente_id = liga.id;
+    else if (liga.motivo === 'homonimos') {
+      toast.warn('Cotización sin ligar al cliente', 'Hay más de un cliente con ese nombre; no aparecerá en su ficha del CRM');
+    }
 
     const r = await window.api.generaCotizacion(payload);
     setSubmitting(false);
@@ -491,17 +498,28 @@ function PageCotizaciones({ user }) {
     }
   };
 
-  const guardarSeguimiento = async (codigo) => {
-    const valor = seguimientoEdit[codigo];
-    if (valor === undefined) return;
-    const original = cots.find(c => c.codigo_cotizacion === codigo)?.seguimiento || '';
-    if (valor === original) return;
+  // Seguimiento: catálogo (select) + detalle libre si es OTROS. `seguimientoEdit[codigo]` es el
+  // borrador {valor, otros}; sin borrador se muestra lo guardado (cotizacionLogica.seguimientoDe).
+  const soltarBorradorSeguimiento = (codigo) =>
+    setSeguimientoEdit(prev => { const n = { ...prev }; delete n[codigo]; return n; });
+
+  const guardarSeguimiento = async (codigo, borrador) => {
+    const L = window.cotizacionLogica;
+    const cot = cots.find(c => c.codigo_cotizacion === codigo);
+    if (!cot || seguimientoSaving) return;
+    const v = L.validarSeguimiento(borrador.valor, borrador.otros);
+    if (!v.ok) { toast.error(v.motivo); return; }
+    if (L.mismoSeguimiento(L.seguimientoDe(cot), borrador)) { soltarBorradorSeguimiento(codigo); return; }
+    const p = L.armarPayloadSeguimiento(borrador.valor, borrador.otros);
     setSeguimientoSaving(codigo);
-    const r = await window.api.actualizarSeguimiento(codigo, valor, user);
+    const r = await window.api.actualizarSeguimiento(codigo, p.seguimiento, user, p.seguimiento_otros);
     setSeguimientoSaving(null);
     if (r.ok) {
-      setCots(prev => prev.map(c => c.codigo_cotizacion === codigo ? { ...c, seguimiento: valor } : c));
+      setCots(prev => prev.map(c => c.codigo_cotizacion === codigo
+        ? { ...c, seguimiento: p.seguimiento, seguimiento_otros: p.seguimiento_otros } : c));
+      soltarBorradorSeguimiento(codigo);
     } else {
+      soltarBorradorSeguimiento(codigo); // vuelve a lo guardado
       toast.error(`No se pudo guardar el seguimiento de ${codigo}`, r.error);
     }
   };
@@ -1207,17 +1225,48 @@ function PageCotizaciones({ user }) {
                     )}
                   </td>
                   <td style={{ minWidth: 150 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input
-                        className="input"
-                        style={{ fontSize: 12, padding: '4px 8px' }}
-                        value={seguimientoEdit[c.codigo_cotizacion] ?? c.seguimiento ?? ''}
-                        placeholder="Sin seguimiento"
-                        onChange={e => setSeguimientoEdit(prev => ({ ...prev, [c.codigo_cotizacion]: e.target.value }))}
-                        onBlur={() => guardarSeguimiento(c.codigo_cotizacion)}
-                      />
-                      {seguimientoSaving === c.codigo_cotizacion && <span className="spinner"/>}
-                    </div>
+                    {(() => {
+                      const L = window.cotizacionLogica;
+                      const codigo = c.codigo_cotizacion;
+                      const seg = seguimientoEdit[codigo] ?? L.seguimientoDe(c);
+                      const guardando = seguimientoSaving === codigo;
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <select
+                              className="input"
+                              style={{ fontSize: 12, padding: '4px 8px' }}
+                              value={seg.valor}
+                              disabled={guardando}
+                              onChange={e => {
+                                const valor = e.target.value;
+                                const borrador = { valor, otros: valor === 'OTROS' ? seg.otros : '' };
+                                setSeguimientoEdit(prev => ({ ...prev, [codigo]: borrador }));
+                                // OTROS espera su detalle; el resto se guarda al elegir.
+                                if (valor !== 'OTROS') guardarSeguimiento(codigo, borrador);
+                              }}
+                            >
+                              <option value="">Sin seguimiento</option>
+                              {L.SEGUIMIENTOS.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            {guardando && <span className="spinner"/>}
+                          </div>
+                          {seg.valor === 'OTROS' && (
+                            <input
+                              className="input"
+                              style={{ fontSize: 12, padding: '4px 8px' }}
+                              value={seg.otros}
+                              maxLength={L.SEGUIMIENTO_OTROS_MAX}
+                              placeholder="Detalle (obligatorio)"
+                              disabled={guardando}
+                              onChange={e => setSeguimientoEdit(prev => ({ ...prev, [codigo]: { valor: 'OTROS', otros: e.target.value } }))}
+                              onBlur={() => guardarSeguimiento(codigo, { valor: 'OTROS', otros: seg.otros })}
+                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     {(() => {

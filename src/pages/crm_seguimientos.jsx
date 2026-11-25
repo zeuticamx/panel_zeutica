@@ -4,7 +4,7 @@
 // pueden filtrar por vendedor. Cualquiera puede editar/cerrar un seguimiento ajeno (queda
 // «editado por» y bitácora en el servidor; developer solo lo suyo); eliminar, solo su autor
 // o gerencia. La cartera de clientes sigue siendo «mi cartera» (gerencia ve todas).
-const { useState: crs_uS, useEffect: crs_uE, useCallback: crs_uC, useRef: crs_uR } = React;
+const { useState: crs_uS, useEffect: crs_uE, useCallback: crs_uC, useRef: crs_uR, useMemo: crs_uM } = React;
 
 function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, onEditar, onEliminar, ocupado, vencido }) {
   const L = window.crmLogica;
@@ -225,56 +225,145 @@ function CrmCartera({ gerencia, vendedor, version, onRegistrar, onFicha }) {
   );
 }
 
+// Barra de filtros compartida por Seguimientos y Bitácora. Solo pinta; el estado vive en la pestaña.
+function CrmBarraFiltros({ q, onQ, grupos = [], atajos, fechas, hayFiltros, onLimpiar, mensaje }) {
+  return (
+    <div className="card crm-filtros" style={{ marginTop: 16 }}>
+      <div className="crm-filtro-fila">
+        <div className="input-group" style={{ maxWidth: 320, flex: 1 }}>
+          <span className="input-group-icon"><Icon name="search" size={14}/></span>
+          <input className="input" placeholder="Buscar cliente, notas o acción…" value={q} onChange={e => onQ(e.target.value)}/>
+        </div>
+        {atajos && (
+          <div className="crm-chips" role="group" aria-label="Rango rápido">
+            {atajos.opciones.map(o => (
+              <button key={o.key} type="button" className={`crm-chip ${atajos.activo === o.key ? 'active' : ''}`}
+                aria-pressed={atajos.activo === o.key} onClick={() => atajos.onElegir(o.key)}>{o.label}</button>
+            ))}
+          </div>
+        )}
+        {fechas && (
+          <>
+            <input type="date" className="input" style={{ width: 150 }} aria-label="Desde" value={fechas.desde} onChange={e => fechas.onChange('desde', e.target.value)}/>
+            <input type="date" className="input" style={{ width: 150 }} aria-label="Hasta" value={fechas.hasta} onChange={e => fechas.onChange('hasta', e.target.value)}/>
+          </>
+        )}
+        {hayFiltros && <button className="btn btn-ghost btn-sm" onClick={onLimpiar}>Limpiar filtros</button>}
+      </div>
+      {grupos.map(g => (
+        <div key={g.nombre} className="crm-chips" role="group" aria-label={g.nombre}>
+          <span className="td-muted" style={{ fontSize: 12 }}>{g.nombre}:</span>
+          {g.opciones.map(o => {
+            const activo = g.valores.includes(o.key);
+            return (
+              <button key={o.key} type="button" className={`crm-chip ${activo ? 'active' : ''}`}
+                aria-pressed={activo} onClick={() => g.onChange(window.crmFiltros.alternarValor(g.valores, o.key))}>{o.label}</button>
+            );
+          })}
+        </div>
+      ))}
+      {mensaje && <div className="crm-txt-danger" style={{ fontSize: 12 }}>{mensaje}</div>}
+    </div>
+  );
+}
+
+// Valor con espera de 300 ms: devuelve el texto "aplicado" que se manda al backend.
+function crsUsarDebounce(valor, ms = 300) {
+  const [v, setV] = crs_uS(valor);
+  crs_uE(() => { const t = setTimeout(() => setV(valor), valor ? ms : 0); return () => clearTimeout(t); }, [valor, ms]);
+  return v;
+}
+
 function CrmBitacoraPropia({ vendedor, version, onFicha }) {
   const L = window.crmLogica;
+  const F = window.crmFiltros;
+  const base = crs_uM(() => L.rangoPreset('30d'), []);
   const [items, setItems] = crs_uS([]);
   const [total, setTotal] = crs_uS(0);
   const [cargando, setCargando] = crs_uS(true);
   const [error, setError] = crs_uS('');
+  const [qInput, setQInput] = crs_uS('');
+  const [tipos, setTipos] = crs_uS([]);
+  const [resultados, setResultados] = crs_uS([]);
+  const [desde, setDesde] = crs_uS(base.desde);
+  const [hasta, setHasta] = crs_uS(base.hasta);
+  const reqRef = crs_uR(0);
   const POR_PAGINA = 50;
+  const q = crsUsarDebounce(qInput);
+
+  const filtros = { q, tipos, resultados, vendedor, desde, hasta };
+  const mensaje = F.validarQ(qInput) || F.validarRangoBitacora(desde, hasta);
+  const conFiltros = F.hayFiltros({ ...filtros, q: qInput }, base);
 
   const cargar = async (offset) => {
+    if (mensaje) return;
+    const req = ++reqRef.current;
     setCargando(true);
-    const r = await window.api.crmInteracciones({ ...window.crmLogica.rangoPreset('30d'), vendedor, limit: POR_PAGINA, offset });
+    const r = await window.api.crmInteracciones({ ...F.armarParamsBitacora(filtros), limit: POR_PAGINA, offset });
+    if (req !== reqRef.current) return;   // llegó una respuesta de filtros anteriores
     setCargando(false);
-    if (!r.ok) { setError(r.error); return; }
+    if (!r.ok) { setError(r.error || 'No se pudo cargar la bitácora'); return; }
     setError('');
     setTotal(r.data.total);
     setItems(prev => offset ? [...prev, ...r.data.items] : r.data.items);
   };
-  crs_uE(() => { cargar(0); }, [vendedor, version]);
+  // Cambiar cualquier filtro reinicia la paginación (offset 0).
+  crs_uE(() => { cargar(0); }, [vendedor, version, q, tipos.join(','), resultados.join(','), desde, hasta]);
+
+  const limpiar = () => { setQInput(''); setTipos([]); setResultados([]); setDesde(base.desde); setHasta(base.hasta); };
+  const titulo = conFiltros ? 'Resultados' : 'Últimos 30 días';
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div className="card-header"><h3 className="card-title">Últimos 30 días <span className="td-muted">({total})</span></h3></div>
-      {error && <div className="crm-error" style={{ margin: 16 }}>{error}</div>}
-      <div className="table-wrap">
-        <table className="table">
-          <thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Tipo</th><th>Resultado</th><th>Notas</th><th>Próximo</th></tr></thead>
-          <tbody>
-            {items.map(i => (
-              <tr key={i.id}>
-                <td className="mono td-muted" style={{ whiteSpace: 'nowrap' }}>{window.fmt.datetime(i.fecha)}</td>
-                <td className="td-muted">{i.vendedor}</td>
-                <td style={{ cursor: 'pointer', fontWeight: 500 }} onClick={() => onFicha(i.cliente_id)}>{i.cliente}</td>
-                <td>{L.tipo(i.tipo)?.emoji} {L.etiquetaTipo(i.tipo)}</td>
-                <td className="td-muted">{L.etiquetaResultado(i.resultado) || '—'}</td>
-                <td className="td-muted crm-notas-celda">{i.notas || '—'}</td>
-                <td className="td-muted">{i.proxima_fecha ? `${window.fmt.date(i.proxima_fecha)}${i.seguimiento_cerrado ? ' ✓' : ''}` : '—'}</td>
-              </tr>
-            ))}
-            {!cargando && items.length === 0 && <tr><td colSpan={7} className="td-muted">Sin interacciones en los últimos 30 días.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      {items.length < total && (
-        <div className="card-footer">
-          <button className="btn btn-secondary btn-sm" disabled={cargando} onClick={() => cargar(items.length)}>
-            {cargando ? <span className="spinner"/> : 'Cargar más'}
-          </button>
+    <>
+      <CrmBarraFiltros q={qInput} onQ={setQInput} mensaje={mensaje} hayFiltros={conFiltros} onLimpiar={limpiar}
+        grupos={[
+          { nombre: 'Tipo', valores: tipos, onChange: setTipos, opciones: L.TIPOS.map(t => ({ key: t.key, label: t.label })) },
+          { nombre: 'Resultado', valores: resultados, onChange: setResultados, opciones: L.RESULTADOS.map(t => ({ key: t.key, label: t.label })) },
+        ]}
+        atajos={{ opciones: F.PRESETS_BITACORA, activo: F.presetActivo(desde, hasta),
+          onElegir: (k) => { const r = F.rangoDePreset(k); setDesde(r.desde); setHasta(r.hasta); } }}
+        fechas={{ desde, hasta, onChange: (c, v) => (c === 'desde' ? setDesde(v) : setHasta(v)) }}/>
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header"><h3 className="card-title">{titulo} <span className="td-muted">({total})</span></h3></div>
+        {error && (
+          <div className="crm-error" style={{ margin: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{ flex: 1 }}>{error}</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => cargar(0)}>Reintentar</button>
+          </div>
+        )}
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Tipo</th><th>Resultado</th><th>Notas</th><th>Próximo</th></tr></thead>
+            <tbody>
+              {cargando && items.length === 0 && !error && <tr><td colSpan={7} className="td-muted"><span className="spinner"/> Cargando…</td></tr>}
+              {items.map(i => (
+                <tr key={i.id}>
+                  <td className="mono td-muted" style={{ whiteSpace: 'nowrap' }}>{window.fmt.datetime(i.fecha)}</td>
+                  <td className="td-muted">{i.vendedor}</td>
+                  <td style={{ cursor: 'pointer', fontWeight: 500 }} onClick={() => onFicha(i.cliente_id)}>{i.cliente}</td>
+                  <td>{L.tipo(i.tipo)?.emoji} {L.etiquetaTipo(i.tipo)}</td>
+                  <td className="td-muted">{L.etiquetaResultado(i.resultado) || '—'}</td>
+                  <td className="td-muted crm-notas-celda">{i.notas || '—'}</td>
+                  <td className="td-muted">{i.proxima_fecha ? `${window.fmt.date(i.proxima_fecha)}${i.seguimiento_cerrado ? ' ✓' : ''}` : '—'}</td>
+                </tr>
+              ))}
+              {!cargando && !error && items.length === 0 && (
+                <tr><td colSpan={7} className="td-muted">
+                  {conFiltros ? F.textoSinResultados(true) : 'Sin interacciones en los últimos 30 días.'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
-    </div>
+        {items.length < total && (
+          <div className="card-footer">
+            <button className="btn btn-secondary btn-sm" disabled={cargando} onClick={() => cargar(items.length)}>
+              {cargando ? <span className="spinner"/> : 'Cargar más'}
+            </button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -294,21 +383,34 @@ function PageCrmSeguimientos() {
   const [vendedor, setVendedor] = crs_uS('');
   const [vendedores, setVendedores] = crs_uS([]);          // lista de gerencia (GET /crm/vendedores)
   const [vendedoresVistos, setVendedoresVistos] = crs_uS([]);  // el resto: quienes aparecen en los seguimientos
+  const [qInput, setQInput] = crs_uS('');
+  const [tiposSeg, setTiposSeg] = crs_uS([]);
+  const [estadosSeg, setEstadosSeg] = crs_uS([]);
+  const reqSegRef = crs_uR(0);
+  const qSeg = crsUsarDebounce(qInput);
+  const FQ = window.crmFiltros;
+  const filtrosSeg = { q: qSeg, tipos: tiposSeg, estados: estadosSeg };
+  const mensajeSeg = FQ.validarQ(qInput);
+  const conFiltrosSeg = FQ.hayFiltros({ ...filtrosSeg, q: qInput, vendedor });
+  const limpiarSeg = () => { setQInput(''); setTiposSeg([]); setEstadosSeg([]); setVendedor(''); };
 
   crs_uE(() => { if (gerencia) window.api.crmVendedores().then(r => setVendedores(Array.isArray(r) ? r : (r?.data || []))); }, [gerencia]);
 
   const cargar = crs_uC(async () => {
+    if (FQ.validarQ(qSeg)) return;
+    const req = ++reqSegRef.current;
     setCargando(true);
-    const r = await window.api.crmSeguimientos(vendedor || undefined);
+    const r = await window.api.crmSeguimientos(vendedor || undefined, FQ.armarParamsSeguimientos(filtrosSeg));
+    if (req !== reqSegRef.current) return;   // respuesta vieja: otra consulta la reemplazó
     setCargando(false);
     if (r.ok) {
       setSeg(r.data); setError('');
-      if (!vendedor) {
+      if (!vendedor && !conFiltrosSeg) {
         const nombres = new Set([...r.data.vencidos, ...r.data.hoy, ...r.data.proximos].map(x => x.vendedor).filter(Boolean));
         setVendedoresVistos([...nombres].sort((a, b) => String(a).localeCompare(String(b))));
       }
     } else setError(r.error);
-  }, [vendedor]);
+  }, [vendedor, qSeg, tiposSeg.join(','), estadosSeg.join(',')]);
   crs_uE(() => { cargar(); }, [cargar, version]);
 
   const abrirRegistro = (cliente, tipo) => setRegistro({ cliente, tipo });
@@ -372,15 +474,27 @@ function PageCrmSeguimientos() {
         ))}
       </div>
 
-      {error && <div className="crm-error" style={{ marginTop: 16 }}>{error}</div>}
-
-      {tab === 'seguimientos' && (cargando && !seg.vencidos.length && !seg.hoy.length && !seg.proximos.length
-        ? <div className="empty" style={{ padding: 40 }}><span className="spinner"/></div>
-        : <>
-            <CrmSeccionSeguimientos titulo="Vencidos" tono="var(--danger)" items={seg.vencidos} vencido vacio="Nada vencido. 👌" {...filaProps}/>
-            <CrmSeccionSeguimientos titulo="Hoy" tono="var(--warn)" items={seg.hoy} vacio="Sin seguimientos para hoy." {...filaProps}/>
-            <CrmSeccionSeguimientos titulo="Próximos 7 días" items={seg.proximos} vacio="Sin seguimientos programados." {...filaProps}/>
-          </>
+      {tab === 'seguimientos' && (
+        <>
+          <CrmBarraFiltros q={qInput} onQ={setQInput} mensaje={mensajeSeg} hayFiltros={conFiltrosSeg} onLimpiar={limpiarSeg}
+            grupos={[
+              { nombre: 'Tipo', valores: tiposSeg, onChange: setTiposSeg, opciones: window.crmLogica.TIPOS.map(t => ({ key: t.key, label: t.label })) },
+              { nombre: 'Estado', valores: estadosSeg, onChange: setEstadosSeg, opciones: FQ.ESTADOS_SEGUIMIENTO },
+            ]}/>
+          {error && (
+            <div className="crm-error" style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
+              <span style={{ flex: 1 }}>{error}</span>
+              <button className="btn btn-secondary btn-sm" onClick={() => cargar()}>Reintentar</button>
+            </div>
+          )}
+          {cargando && !seg.vencidos.length && !seg.hoy.length && !seg.proximos.length && !error
+            ? <div className="empty" style={{ padding: 40 }}><span className="spinner"/></div>
+            : <>
+                <CrmSeccionSeguimientos titulo="Vencidos" tono="var(--danger)" items={seg.vencidos} vencido vacio={conFiltrosSeg ? FQ.textoSinResultados(true) : 'Nada vencido. 👌'} {...filaProps}/>
+                <CrmSeccionSeguimientos titulo="Hoy" tono="var(--warn)" items={seg.hoy} vacio={conFiltrosSeg ? FQ.textoSinResultados(true) : 'Sin seguimientos para hoy.'} {...filaProps}/>
+                <CrmSeccionSeguimientos titulo="Próximos 7 días" items={seg.proximos} vacio={conFiltrosSeg ? FQ.textoSinResultados(true) : 'Sin seguimientos programados.'} {...filaProps}/>
+              </>}
+        </>
       )}
       {tab === 'prospectos' && (
         window.PageProspectos

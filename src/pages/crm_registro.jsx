@@ -93,6 +93,8 @@ function CrmRegistroModal({ cliente: clienteInicial, tipo: tipoInicial, onClose,
         setFicha(r.data);
         const etapa = r.data?.cliente?.etapa || '';
         setForm(f => ({ ...f, etapa, etapa_original: etapa }));
+        // La ficha ya es de lectura abierta: el permiso lo dice el backend con puede_editar.
+        if (r.data?.puede_editar === false) setFichaError('Este cliente pertenece a la cartera de otro vendedor.');
       } else {
         setFichaError(r.status === 403 ? 'Este cliente pertenece a la cartera de otro vendedor.' : r.error);
       }
@@ -293,6 +295,164 @@ function CrmRegistroModal({ cliente: clienteInicial, tipo: tipoInicial, onClose,
   );
 }
 
+// Bloque «Cotizaciones» de la ficha (solo lectura): todos los estados, filtro por estado y «Mostrar más».
+const CFC_PAGINA = 50;
+function CrmFichaCotizaciones({ clienteId, onDetalle }) {
+  const CC = window.cotizacionesCliente;
+  const toast = window.useToast();
+  const [lista, setLista] = crr_uS(null);
+  const [error, setError] = crr_uS('');
+  const [filtro, setFiltro] = crr_uS('todas');
+  const [visibles, setVisibles] = crr_uS(CFC_PAGINA);
+  const [pdfCargando, setPdfCargando] = crr_uS(null);
+  const reqRef = crr_uR(0);
+  const hoy = window.crmLogica.hoyISO();
+
+  const cargar = async () => {
+    const req = ++reqRef.current;
+    setLista(null); setError('');
+    const r = await window.api.cotizacionesPorCliente(clienteId);
+    if (req !== reqRef.current) return;
+    if (r.ok) setLista(Array.isArray(r.data?.cotizaciones) ? r.data.cotizaciones : []);
+    else setError(r.error || 'No se pudieron cargar las cotizaciones');
+  };
+  crr_uE(() => { setFiltro('todas'); setVisibles(CFC_PAGINA); cargar(); return () => { reqRef.current++; }; }, [clienteId]);
+
+  const abrirPdf = async (cot) => {
+    setPdfCargando(cot.id);
+    try {
+      const pdf = await window.api.cotizacionBase64(cot.codigo_cotizacion);
+      if (!pdf) { toast.warn('Sin PDF', 'No se pudo obtener el PDF de esta cotización'); return; }
+      const bytes = atob(pdf);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      window.open(URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })), '_blank');
+    } catch (err) {
+      toast.error(`No se pudo abrir el PDF de ${cot.codigo_cotizacion}`, err.message);
+    } finally { setPdfCargando(null); }
+  };
+
+  const conteo = lista ? CC.contarPorEstado(lista, hoy) : null;
+  const filtradas = lista ? CC.filtrarPorEstado(lista, filtro, hoy) : [];
+  const mostradas = filtradas.slice(0, visibles);
+
+  return (
+    <div className="field crm-cots">
+      <label className="field-label">Cotizaciones{conteo ? ` (${conteo.todas})` : ''}</label>
+      {error && (
+        <div className="crm-error">{error} <button className="btn btn-ghost btn-sm" onClick={cargar}>Reintentar</button></div>
+      )}
+      {!lista && !error && <div className="empty"><span className="spinner"/></div>}
+      {lista && (
+        <>
+          <div className="crm-chips">
+            {CC.FILTROS.map(f => (
+              <button key={f.key} type="button" className={`crm-chip ${filtro === f.key ? 'active' : ''}`}
+                onClick={() => { setFiltro(f.key); setVisibles(CFC_PAGINA); }}>
+                {f.label} · {conteo[f.key]}
+              </button>
+            ))}
+          </div>
+          {filtradas.length === 0 ? (
+            <div className="td-muted" style={{ fontSize: 13 }}>{CC.textoVacio(filtro, lista.length)}</div>
+          ) : (
+            <div className="crm-cots-lista">
+              {mostradas.map(c => {
+                const estado = CC.estadoDe(c, hoy);
+                return (
+                  <div key={c.id} className={`crm-cot-fila ${estado === 'cancelada' ? 'crm-cot-fila-cancelada' : ''}`}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className="crm-timeline-head">
+                        <b className="mono">{c.codigo_cotizacion}</b>
+                        <span className={`badge crm-cot-${estado}`}
+                          title={estado === 'cancelada' ? (CC.tituloCancelada(c, window.fmt.datetime) || undefined) : undefined}>{CC.etiquetaEstado(estado)}</span>
+                      </div>
+                      <div className="td-muted" style={{ fontSize: 12 }}>
+                        {window.fmt.date(c.fecha)} · {CC.formatearTotal(c.total)}{c.usuario ? ` · ${c.usuario}` : ''}
+                      </div>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => onDetalle(c)}>Detalle</button>
+                    <button className="btn btn-secondary btn-sm" disabled={!c.tiene_pdf || pdfCargando === c.id}
+                      title={c.tiene_pdf ? 'Abrir PDF' : 'Sin PDF guardado'}
+                      onClick={() => abrirPdf(c)}>
+                      {pdfCargando === c.id ? <span className="spinner"/> : 'PDF'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {filtradas.length > visibles && (
+            <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setVisibles(v => v + CFC_PAGINA)}>
+              Mostrar más ({filtradas.length - visibles})
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Modal hijo con las partidas de una cotización. ESC lo cierra en fase de captura y no llega a la ficha.
+function CrmCotDetalleModal({ cot, onClose }) {
+  const CC = window.cotizacionesCliente;
+  const [items, setItems] = crr_uS(null);
+  const [error, setError] = crr_uS('');
+  const reqRef = crr_uR(0);
+
+  const cargar = async () => {
+    const req = ++reqRef.current;
+    setItems(null); setError('');
+    const r = await window.api.cotizacionDetalle(cot.id);
+    if (req !== reqRef.current) return;
+    if (Array.isArray(r)) setItems(r); else setError('No se pudo cargar el detalle de la cotización');
+  };
+  crr_uE(() => { cargar(); return () => { reqRef.current++; }; }, [cot.id]);
+  crr_uE(() => {
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <div className="modal crm-modal" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>
+        <div className="card-header" style={{ padding: '16px 20px 12px' }}>
+          <h3 className="card-title">Cotización {cot.codigo_cotizacion}</h3>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><Icon name="x" size={14}/></button>
+        </div>
+        <div className="card-body crm-form">
+          <div className="td-muted" style={{ fontSize: 12 }}>
+            {window.fmt.date(cot.fecha)} · {CC.etiquetaEstado(CC.estadoDe(cot, window.crmLogica.hoyISO()))} · Total {CC.formatearTotal(cot.total)}
+          </div>
+          {error && <div className="crm-error">{error} <button className="btn btn-ghost btn-sm" onClick={cargar}>Reintentar</button></div>}
+          {!items && !error && <div className="empty"><span className="spinner"/></div>}
+          {items && items.length === 0 && <div className="td-muted" style={{ fontSize: 13 }}>Sin partidas</div>}
+          {items && items.length > 0 && (
+            <table className="table">
+              <thead><tr><th>SKU</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Total</th></tr></thead>
+              <tbody>
+                {items.map((it, idx) => (
+                  <tr key={idx}>
+                    <td className="mono">{it.sku}</td>
+                    <td>{it.nombre_producto}</td>
+                    <td>{it.cantidad}</td>
+                    <td>{CC.formatearTotal(it.precio_unitario)}</td>
+                    <td>{CC.formatearTotal(it.total_linea)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="card-footer">
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Ficha: datos, etapa (editable), vendedor (gerencia reasigna) e historial.
 function CrmFichaModal({ clienteId, onClose, onRegistrar, onChanged }) {
   const L = window.crmLogica;
@@ -302,15 +462,23 @@ function CrmFichaModal({ clienteId, onClose, onRegistrar, onChanged }) {
   const [error, setError] = crr_uS('');
   const [vendedores, setVendedores] = crr_uS([]);
   const [guardando, setGuardando] = crr_uS(false);
+  const [detalleCot, setDetalleCot] = crr_uS(null); // cotización cuyo detalle está abierto (modal hijo)
+  const hijoAbiertoRef = crr_uR(false);
+  hijoAbiertoRef.current = !!detalleCot;
+  const fichaReqRef = crr_uR(0);
 
+  // Descarta respuestas viejas si cambia clienteId mientras había una petición en curso.
   const cargar = async () => {
+    const req = ++fichaReqRef.current;
     const r = await window.api.crmCliente(clienteId);
-    if (r.ok) setFicha(r.data); else setError(r.error);
+    if (req !== fichaReqRef.current) return;
+    if (r.ok) { setFicha(r.data); setError(''); } else setError(r.error);
   };
-  crr_uE(() => { cargar(); }, [clienteId]);
+  crr_uE(() => { setFicha(null); setError(''); setDetalleCot(null); cargar(); return () => { fichaReqRef.current++; }; }, [clienteId]);
   crr_uE(() => { if (gerencia) window.api.crmVendedores().then(setVendedores); }, [gerencia]);
   crr_uE(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    // ESC cierra primero el detalle de cotización (hijo) y solo después la ficha.
+    const onKey = (e) => { if (e.key === 'Escape' && !hijoAbiertoRef.current) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -335,6 +503,7 @@ function CrmFichaModal({ clienteId, onClose, onRegistrar, onChanged }) {
   };
 
   const c = ficha?.cliente;
+  const puedeEditar = ficha ? ficha.puede_editar !== false : false;
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal crm-modal" style={{ maxWidth: 680 }} onClick={e => e.stopPropagation()}>
@@ -364,8 +533,12 @@ function CrmFichaModal({ clienteId, onClose, onRegistrar, onChanged }) {
               <CrmEnlacesContacto cliente={c}/>
               <div className="field">
                 <label className="field-label">Etapa comercial {c.motivo_perdida && <span className="td-muted">— motivo: {c.motivo_perdida}</span>}</label>
-                <CrmChips opciones={L.ETAPAS} valor={c.etapa || ''} permitirVacio={false}
-                  onChange={v => { if (!guardando && v !== c.etapa) cambiarEtapa(v); }}/>
+                {puedeEditar ? (
+                  <CrmChips opciones={L.ETAPAS} valor={c.etapa || ''} permitirVacio={false}
+                    onChange={v => { if (!guardando && v !== c.etapa) cambiarEtapa(v); }}/>
+                ) : (
+                  <div><CrmEtapaBadge etapa={c.etapa}/> <span className="td-muted" style={{ fontSize: 12 }}>Solo lectura: el cliente es de otro vendedor</span></div>
+                )}
               </div>
               <div className="field">
                 <label className="field-label">Interacciones recientes</label>
@@ -392,6 +565,7 @@ function CrmFichaModal({ clienteId, onClose, onRegistrar, onChanged }) {
                   </div>
                 )}
               </div>
+              <CrmFichaCotizaciones clienteId={clienteId} onDetalle={setDetalleCot}/>
               {ficha.historial_etapas.length > 0 && (
                 <div className="td-muted" style={{ fontSize: 12 }}>
                   Historial de etapa: {ficha.historial_etapas.map((h, idx) => (
@@ -404,13 +578,14 @@ function CrmFichaModal({ clienteId, onClose, onRegistrar, onChanged }) {
         </div>
         <div className="card-footer">
           <button className="btn btn-secondary btn-sm" onClick={onClose}>Cerrar</button>
-          {c && onRegistrar && (
+          {c && onRegistrar && puedeEditar && (
             <button className="btn btn-primary btn-sm" onClick={() => onRegistrar({ id: c.id, nombre: c.nombre })}>
               <Icon name="plus" size={13}/> Registrar interacción
             </button>
           )}
         </div>
       </div>
+      {detalleCot && <CrmCotDetalleModal cot={detalleCot} onClose={() => setDetalleCot(null)}/>}
     </div>
   );
 }

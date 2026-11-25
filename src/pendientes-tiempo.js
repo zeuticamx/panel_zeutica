@@ -49,7 +49,11 @@
     return partes.join(' · ');
   }
 
-  const mod = { USUARIOS_CRONOMETRO, seCronometra, puedeRevisarTiempos, formatearDuracion, segundosEnVivo, formatearMarca, notaKpi };
+  // Espejo de USUARIOS_VISORES del backend: solo ven el cronómetro de los cronometrados.
+  const USUARIOS_VISORES = ['ventas'];
+  const esVisor = (usuario) => USUARIOS_VISORES.includes(normal(usuario));
+
+  const mod = { USUARIOS_CRONOMETRO, USUARIOS_VISORES, esVisor, seCronometra, puedeRevisarTiempos, formatearDuracion, segundosEnVivo, formatearMarca, notaKpi };
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.pendientesTiempo = mod;
 })(typeof self !== 'undefined' ? self : this);

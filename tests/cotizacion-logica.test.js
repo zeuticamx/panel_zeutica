@@ -170,3 +170,33 @@ test('esAbiertaVigente excluye vendidas, vencidas y canceladas', () => {
   assert.equal(logica.esAbiertaVigente({ ...viva, vendido: 1 }, hoy), false);
   assert.equal(logica.esAbiertaVigente({ ...viva, fecha_vencimiento: '2026-01-01' }, hoy), false);
 });
+
+// ---- Seguimiento (catálogo + detalle de OTROS) ----
+{
+  const test = require('node:test');
+  const assert = require('node:assert');
+  const L = require('../src/cotizacion-logica.js');
+
+  test('seguimiento: catálogo exacto', () => {
+    assert.deepStrictEqual(L.SEGUIMIENTOS, ['ESPERANDO', 'PAGADO', 'ENVIADO', 'ENTREGADO', 'OTROS']);
+  });
+  test('seguimientoDe: vacío, catálogo, OTROS y texto viejo', () => {
+    assert.deepStrictEqual(L.seguimientoDe({}), { valor: '', otros: '' });
+    assert.deepStrictEqual(L.seguimientoDe({ seguimiento: 'pagado' }), { valor: 'PAGADO', otros: '' });
+    assert.deepStrictEqual(L.seguimientoDe({ seguimiento: 'OTROS', seguimiento_otros: ' a  b ' }), { valor: 'OTROS', otros: 'a b' });
+    assert.deepStrictEqual(L.seguimientoDe({ seguimiento: 'le llamé el lunes' }), { valor: 'OTROS', otros: 'le llamé el lunes' });
+  });
+  test('validarSeguimiento: OTROS exige detalle', () => {
+    assert.strictEqual(L.validarSeguimiento('', '').ok, true);
+    assert.strictEqual(L.validarSeguimiento('ENVIADO', '').ok, true);
+    assert.strictEqual(L.validarSeguimiento('OTROS', '  ').ok, false);
+    assert.strictEqual(L.validarSeguimiento('OTROS', 'x'.repeat(256)).ok, false);
+    assert.strictEqual(L.validarSeguimiento('XX', '').ok, false);
+  });
+  test('payload y comparación', () => {
+    assert.deepStrictEqual(L.armarPayloadSeguimiento('PAGADO', 'zz'), { seguimiento: 'PAGADO', seguimiento_otros: null });
+    assert.deepStrictEqual(L.armarPayloadSeguimiento('', ''), { seguimiento: null, seguimiento_otros: null });
+    assert.strictEqual(L.mismoSeguimiento({ valor: 'OTROS', otros: 'a  b' }, { valor: 'OTROS', otros: 'a b' }), true);
+    assert.strictEqual(L.mismoSeguimiento({ valor: 'PAGADO' }, { valor: 'ENVIADO' }), false);
+  });
+}
