@@ -94,9 +94,9 @@ function CrmRegistroModal({ cliente: clienteInicial, tipo: tipoInicial, onClose,
         const etapa = r.data?.cliente?.etapa || '';
         setForm(f => ({ ...f, etapa, etapa_original: etapa }));
         // La ficha ya es de lectura abierta: el permiso lo dice el backend con puede_editar.
-        if (r.data?.puede_editar === false) setFichaError('Este cliente pertenece a la cartera de otro vendedor.');
+        if (r.data?.puede_editar === false) setFichaError('Developer solo puede consultar clientes de otros vendedores.');
       } else {
-        setFichaError(r.status === 403 ? 'Este cliente pertenece a la cartera de otro vendedor.' : r.error);
+        setFichaError(r.status === 403 ? 'Developer solo puede consultar clientes de otros vendedores.' : r.error);
       }
     });
     return () => { vivo = false; };
@@ -198,7 +198,7 @@ function CrmRegistroModal({ cliente: clienteInicial, tipo: tipoInicial, onClose,
                       <CrmEtapaBadge etapa={c.etapa}/>
                     </button>
                   ))}
-                  {!buscando && !resultados.length && <div className="crm-resultado td-muted">Sin coincidencias en tu cartera.</div>}
+                  {!buscando && !resultados.length && <div className="crm-resultado td-muted">Sin coincidencias.</div>}
                 </div>
               )}
               <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', marginTop: 6 }} onClick={() => setAltaAbierta(true)}>

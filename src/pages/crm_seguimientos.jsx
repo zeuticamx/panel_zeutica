@@ -1,9 +1,10 @@
 // ===== Zeutica — CRM: Mis Seguimientos (vista del vendedor) =====
-// Pestañas: Seguimientos (vencidos / hoy / próximos 7 días), Mi cartera (etapa en
+// Pestañas: Seguimientos (vencidos / hoy / próximos 7 días), Cartera (etapa en
 // línea) y bitácora. Seguimientos, bitácora y calendario son del equipo: todos ven todo y
 // pueden filtrar por vendedor. Cualquiera puede editar/cerrar un seguimiento ajeno (queda
 // «editado por» y bitácora en el servidor; developer solo lo suyo); eliminar, solo su autor
-// o gerencia. La cartera de clientes sigue siendo «mi cartera» (gerencia ve todas).
+// o gerencia. La cartera de clientes está abierta a todo el equipo (ver y operar; el dueño no
+// cambia; developer solo lectura); «Mis clientes» la acota a los propios.
 const { useState: crs_uS, useEffect: crs_uE, useCallback: crs_uC, useRef: crs_uR, useMemo: crs_uM } = React;
 
 function CrmSeguimientoFila({ s, gerencia, onRegistrar, onFicha, onHecho, onEditar, onEliminar, ocupado, vencido }) {
@@ -151,23 +152,24 @@ function CrmSeccionSeguimientos({ titulo, tono, items, vacio, ...rest }) {
   );
 }
 
-function CrmCartera({ gerencia, vendedor, version, onRegistrar, onFicha }) {
+function CrmCartera({ vendedor, version, onRegistrar, onFicha }) {
   const L = window.crmLogica;
   const toast = window.useToast();
   const [q, setQ] = crs_uS('');
   const [etapa, setEtapa] = crs_uS('');
+  const [soloMios, setSoloMios] = crs_uS(false); // cartera abierta: por defecto toda la del equipo
   const [lista, setLista] = crs_uS([]);
   const [cargando, setCargando] = crs_uS(true);
 
   crs_uE(() => {
     setCargando(true);
     const t = setTimeout(async () => {
-      const r = await window.api.crmClientes({ q: q.trim(), etapa, vendedor, solo_mios: true, limit: 500 });
+      const r = await window.api.crmClientes({ q: q.trim(), etapa, vendedor, solo_mios: soloMios, limit: 500 });
       setLista(r);
       setCargando(false);
     }, q ? 300 : 0);
     return () => clearTimeout(t);
-  }, [q, etapa, vendedor, version]);
+  }, [q, etapa, vendedor, soloMios, version]);
 
   const cambiarEtapa = async (c, nueva) => {
     const anterior = c.etapa;
@@ -188,16 +190,17 @@ function CrmCartera({ gerencia, vendedor, version, onRegistrar, onFicha }) {
           <input className="input" placeholder="Buscar en la cartera..." value={q} onChange={e => setQ(e.target.value)}/>
         </div>
         <window.CrmChips opciones={[{ key: '', label: 'Todas' }, ...L.ETAPAS]} valor={etapa} onChange={setEtapa} permitirVacio={false}/>
+        <window.CrmChips opciones={[{ key: 'todos', label: 'Todos los clientes' }, { key: 'mios', label: 'Mis clientes' }]} valor={soloMios ? 'mios' : 'todos'} onChange={k => setSoloMios(k === 'mios')} permitirVacio={false}/>
       </div>
       <div className="table-wrap">
         <table className="table">
           <thead><tr>
             <th>Cliente</th><th>Etapa</th><th>Última interacción</th><th>Próximo seguimiento</th>
-            {gerencia && <th>Vendedor</th>}<th>Registrar</th>
+            <th>Vendedor</th><th>Registrar</th>
           </tr></thead>
           <tbody>
             {cargando && <tr><td colSpan={6} className="td-muted"><span className="spinner"/> Cargando…</td></tr>}
-            {!cargando && lista.length === 0 && <tr><td colSpan={6} className="td-muted">Sin clientes con esos filtros. Registra una interacción para sumar clientes a tu cartera.</td></tr>}
+            {!cargando && lista.length === 0 && <tr><td colSpan={6} className="td-muted">Sin clientes con esos filtros.</td></tr>}
             {!cargando && lista.map(c => (
               <tr key={c.id}>
                 <td style={{ cursor: 'pointer' }} onClick={() => onFicha(c.id)}>
@@ -214,7 +217,7 @@ function CrmCartera({ gerencia, vendedor, version, onRegistrar, onFicha }) {
                 <td className={c.proximo_seguimiento && c.proximo_seguimiento < L.hoyISO() ? 'crm-txt-danger' : 'td-muted'}>
                   {c.proximo_seguimiento ? window.fmt.date(c.proximo_seguimiento) : '—'}
                 </td>
-                {gerencia && <td className="td-muted">{c.vendedor || 'Sin asignar'}</td>}
+                <td className="td-muted">{c.vendedor || 'Sin asignar'}</td>
                 <td><window.CrmAccionesRapidas cliente={c} onRegistrar={onRegistrar}/></td>
               </tr>
             ))}
@@ -449,7 +452,7 @@ function PageCrmSeguimientos() {
       <div className="section-header">
         <div>
           <h2 className="section-title">Seguimientos del equipo</h2>
-          <p className="section-subtitle">Contactos pendientes del equipo, tu cartera y la bitácora de llamadas, correos, WhatsApp y reuniones. Lo que cambies de otra persona queda registrado.</p>
+          <p className="section-subtitle">Contactos pendientes del equipo, la cartera de clientes del equipo y la bitácora de llamadas, correos, WhatsApp y reuniones. Lo que cambies de otra persona queda registrado.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select className="select" style={{ width: 160 }} value={vendedor} onChange={e => setVendedor(e.target.value)}>
@@ -469,7 +472,7 @@ function PageCrmSeguimientos() {
       </div>
 
       <div className="tabs" style={{ marginTop: 16 }}>
-        {[['seguimientos', 'Seguimientos'], ['prospectos', 'Prospectos'], ['cartera', gerencia ? 'Cartera' : 'Mi cartera'], ['bitacora', 'Bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
+        {[['seguimientos', 'Seguimientos'], ['prospectos', 'Prospectos'], ['cartera', 'Cartera'], ['bitacora', 'Bitácora'], ['calendario', 'Calendario']].map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -501,7 +504,7 @@ function PageCrmSeguimientos() {
           ? <window.PageProspectos embedded onConverted={refrescar}/>
           : <div className="empty" style={{ padding: 40 }}>Prospectos no disponible (revisa la versión del archivo).</div>
       )}
-      {tab === 'cartera' && <CrmCartera gerencia={gerencia} vendedor={gerencia ? (vendedor || undefined) : undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId}/>}
+      {tab === 'cartera' && <CrmCartera vendedor={vendedor || undefined} version={version} onRegistrar={abrirRegistro} onFicha={setFichaId}/>}
       {tab === 'bitacora' && <CrmBitacoraPropia vendedor={vendedor || undefined} version={version} onFicha={setFichaId}/>}
       {tab === 'calendario' && (
         window.CrmCalendario

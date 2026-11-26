@@ -110,7 +110,7 @@ function CrmEventoModal({ inicial, onClose, onSaved }) {
                         <span className="truncate"><b>{c.nombre}</b>{c.empresa && c.empresa !== c.nombre ? <span className="td-muted"> · {c.empresa}</span> : null}</span>
                       </button>
                     ))}
-                    {!buscando && !resultados.length && <div className="crm-resultado td-muted">Sin coincidencias en tu cartera.</div>}
+                    {!buscando && !resultados.length && <div className="crm-resultado td-muted">Sin coincidencias.</div>}
                   </div>
                 )}
               </>
