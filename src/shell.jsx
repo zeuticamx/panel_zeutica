@@ -222,6 +222,8 @@ function Topbar({ current, user, onOpenNotifs, notifCount, onCmd, onMenuToggle, 
               >
                 <Icon name="chart" size={14}/> Monitor Gerencia
               </button>
+              {/* Descarga del APK (URL prefirmada de S3); visible para cualquier sesión. */}
+              {window.DownloadApkButton && <window.DownloadApkButton variante="menu"/>}
             </div>
           )}
         </div>

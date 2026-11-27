@@ -478,6 +478,11 @@ const api = {
   async revertirTraspaso(id, payload) {
     return tryFetch(`/zeutica/traspasos/${encodeURIComponent(id)}/revertir`, { method: 'POST', body: JSON.stringify(payload || {}) });
   },
+  // URL prefirmada de S3 (5 min) para bajar el APK: { download_url, filename, expira_en, tamano_bytes, ultima_modificacion }.
+  // Respuesta cruda (sin avisarError): DownloadApkButton muestra su propio toast.
+  async appDescargaUrl() {
+    return tryFetch('/zeutica/app/download-url');
+  },
   // Registro de reversiones: { total, registros: [{ id, stock_actual_id, sku, cantidad, almacen, usuario_original, fecha_original, usuario, fecha, motivo }] }.
   async traspasosReversiones() {
     return tryFetch('/zeutica/traspasos/reversiones');
