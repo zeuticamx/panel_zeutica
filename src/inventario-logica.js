@@ -28,7 +28,11 @@
     return `¿Restaurar el SKU ${p.sku} (${p.nombre})? Volverá a verse en el inventario; sus tarjetas de ubicación no se recuperan.`;
   }
 
-  const mod = { puedeEliminar, mensajeConfirmarEliminar, mensajeConfirmarRestaurar };
+  // El costo (`productos.costo_total`) solo lo ven gerencia y developer. Manda el backend (GET /productos lo
+  // devuelve en null al resto); aquí solo se decide si se pintan columnas, KPIs de dinero y CSV.
+  const puedeVerCosto = (nivel) => ['gerencia', 'developer'].includes(String(nivel || '').trim().toLowerCase());
+
+  const mod = { puedeEliminar, mensajeConfirmarEliminar, mensajeConfirmarRestaurar, puedeVerCosto };
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
   else root.inventarioLogica = mod;
 })(typeof self !== 'undefined' ? self : this);

@@ -1,12 +1,13 @@
 // ===== Zeutica — Inventario =====
 const { useState: inv_uS, useEffect: inv_uE, useMemo: inv_uM } = React;
 
-function exportarInventarioCSV(productos) {
-  const headers = ['SKU','Nombre','Categoría','Ubicación','Stock Bodega','Stock FBA','Stock Clean','Stock Mínimo','Costo Total','Precio A','Precio B','Precio C'];
+function exportarInventarioCSV(productos, verCosto = false) {
+  // Sin permiso de costo, la columna ni siquiera viaja en el archivo.
+  const headers = ['SKU','Nombre','Categoría','Ubicación','Stock Bodega','Stock FBA','Stock Clean','Stock Mínimo', ...(verCosto ? ['Costo Total'] : []), 'Precio A','Precio B','Precio C'];
   const rows = productos.map(p => [
     p.sku, p.nombre, p.categoria, p.ubicacion ?? '',
     p.stock_bodega, p.stock_fba ?? '', p.stock_clean ?? '',
-    p.stock_minimo, p.costo_total, p.precio, p.precio_2 ?? '', p.precio_3 ?? ''
+    p.stock_minimo, ...(verCosto ? [p.costo_total ?? ''] : []), p.precio, p.precio_2 ?? '', p.precio_3 ?? ''
   ]);
   const csv = [headers, ...rows]
     .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
@@ -200,6 +201,9 @@ function PageInventario({ user }) {
     return true;
   }), [productos, q, cat, stockFilter]);
 
+  // Costo: solo gerencia y developer (el backend manda costo_total en null al resto).
+  const verCosto = window.inventarioLogica.puedeVerCosto(window.AppShell.nivelActual());
+
   const stats = inv_uM(() => {
     const total = productos.length;
     const bajo = productos.filter(p => p.stock_bodega < p.stock_minimo).length;
@@ -239,7 +243,7 @@ function PageInventario({ user }) {
               <Icon name="trash" size={13}/> Eliminados
             </button>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={() => exportarInventarioCSV(filtered)}><Icon name="download" size={13}/> Exportar</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => exportarInventarioCSV(filtered, verCosto)}><Icon name="download" size={13}/> Exportar</button>
           {window.AppShell.GERENCIA_USERS?.includes(user) && <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Icon name="plus" size={13}/> Nuevo producto</button>}
         </div>
       </div>
@@ -250,11 +254,11 @@ function PageInventario({ user }) {
         <InventarioEliminados askConfirm={askConfirm} onRestaurado={recargarProductos} />
       ) : (
       <>
-      <div className="dash-kpis" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="dash-kpis" style={{ gridTemplateColumns: `repeat(${verCosto ? 4 : 3}, 1fr)` }}>
         <MiniStat label="SKUs totales" value={window.fmt.int(stats.total)} icon="box"/>
         <MiniStat label="Stock bajo" value={stats.bajo} icon="alert" tone="warn"/>
         <MiniStat label="Stock crítico" value={stats.critico} icon="alert" tone="danger"/>
-        <MiniStat label="Valor en bodega" value={window.fmt.mxn(stats.valor)} icon="wallet"/>
+        {verCosto && <MiniStat label="Valor en bodega" value={window.fmt.mxn(stats.valor)} icon="wallet"/>}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -280,13 +284,13 @@ function PageInventario({ user }) {
             <thead><tr>
               <th>SKU</th><th>Producto</th><th>Categoría</th>
               <th className="td-right">Stock</th><th className="td-right">Stock FBA</th><th className="td-right">Stock Clean</th><th className="td-right">Stock Total</th><th className="td-right">Mínimo</th>
-              <th className="td-right">Costo</th><th className="td-right">Precio</th><th className="td-right">Precio B</th><th className="td-right">Precio C</th><th></th>
+              {verCosto && <th className="td-right">Costo</th>}<th className="td-right">Precio</th><th className="td-right">Precio B</th><th className="td-right">Precio C</th><th></th>
             </tr></thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={12} style={{ textAlign: 'center', padding: 40 }}><span className="spinner"/></td></tr>
+                <tr><td colSpan={verCosto ? 13 : 12} style={{ textAlign: 'center', padding: 40 }}><span className="spinner"/></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={12} className="empty">Sin resultados</td></tr>
+                <tr><td colSpan={verCosto ? 13 : 12} className="empty">Sin resultados</td></tr>
               ) : filtered.map(p => {
                 const ratio = p.stock_bodega / p.stock_minimo;
                 const tone = ratio < 0.3 ? 'danger' : ratio < 1 ? 'warn' : 'success';
@@ -302,7 +306,7 @@ function PageInventario({ user }) {
                       <td className="td-right td-muted mono">{p.stock_clean ?? '—'}</td>
                       <td className="td-right td-muted mono">{p.stock_total ?? '—'}</td>
                       <td className="td-right td-muted mono">{p.stock_minimo}</td>
-                      <td className="td-right mono">{window.fmt.mxn(p.costo_total)}</td>
+                      {verCosto && <td className="td-right mono">{p.costo_total == null ? '—' : window.fmt.mxn(p.costo_total)}</td>}
                       <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(p.precio)}</td>
                       <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(p.precio_2)}</td>
                       <td className="td-right mono" style={{ fontWeight: 500 }}>{window.fmt.mxn(p.precio_3)}</td>
@@ -326,7 +330,7 @@ function PageInventario({ user }) {
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={12} className="expanded-cell">
+                        <td colSpan={verCosto ? 13 : 12} className="expanded-cell">
                           <UbicPanel cache={ubicCache[p.sku]} sku={p.sku} />
                         </td>
                       </tr>

@@ -138,19 +138,58 @@ function PageUsuarios() {
     setForm({});
   };
 
+  // Cambiar el campo «usuario» al editar = renombrar la cuenta (solo gerencia; no la propia sesión).
+  const usuarioOriginal = String(editando?.usuario ?? '').trim();
+  const usuarioNuevo = String(form.usuario ?? '').trim();
+  const renombra = Boolean(editando) && usuarioNuevo !== usuarioOriginal;
+  const usuarioBloqueado = !esGerencia || usuarioOriginal.toLowerCase() === String(window.api.usuario || '').toLowerCase();
+
   const actualizar = async () => {
     setSaving(true);
+    if (renombra) {
+      // El backend arrastra el nombre también en empleados.usuario, así que el PUT de abajo ya usa el nombre nuevo.
+      const rn = await window.api.renombrarUsuario(usuarioOriginal, usuarioNuevo);
+      if (!rn.ok) {
+        setSaving(false);
+        toast.error('No se pudo renombrar la cuenta', rn.error);
+        return;
+      }
+    }
     const payload = { id: editando?.[idKey] ?? form[idKey], ...normalizeEmpleado(form) };
     const r = await window.api.editarEmpleadoUsuario(payload);
     setSaving(false);
     if (r.ok) {
-      toast.success('Usuario actualizado', form.nombres || form.usuario || '');
+      toast.success(renombra ? 'Cuenta renombrada' : 'Usuario actualizado', renombra ? `${usuarioOriginal} → ${usuarioNuevo}` : (form.nombres || form.usuario || ''));
       window.fireConfetti();
+      setUsuarios(await window.api.empleadosUsuarios());
+      cancelarEditar();
+    } else if (renombra) {
+      // La cuenta ya quedó renombrada; solo faltó guardar el resto de los datos.
+      toast.warn('Cuenta renombrada, pero no se guardaron los demás datos', r.error);
       setUsuarios(await window.api.empleadosUsuarios());
       cancelarEditar();
     } else {
       toast.error('Error al guardar', r.error);
     }
+  };
+
+  // Renombrar pide primero un conteo (simulación) para avisar cuánto se va a tocar.
+  const pedirGuardar = async () => {
+    if (!renombra) {
+      askConfirm(`¿Actualizar los datos de "${form.nombre || form.usuario || 'este usuario'}"?`, actualizar);
+      return;
+    }
+    if (!usuarioNuevo) { toast.error('Campo requerido', 'Ingresa el nombre de usuario'); return; }
+    setSaving(true);
+    const sim = await window.api.renombrarUsuario(usuarioOriginal, usuarioNuevo, true);
+    setSaving(false);
+    if (!sim.ok) { toast.error('No se puede renombrar', sim.error); return; }
+    const d = sim.data || {};
+    askConfirm(
+      `¿Renombrar la cuenta "${usuarioOriginal}" a "${usuarioNuevo}"? Se actualizarán ${d.total ?? 0} registros en ${d.tablas ?? 0} tablas `
+      + `(pendientes, CRM, ventas, bitácora…) y se cerrará su sesión: tendrá que entrar de nuevo con el nombre nuevo.`,
+      actualizar
+    );
   };
 
   const crearEmpleado = async () => {
@@ -353,8 +392,18 @@ function PageUsuarios() {
                 <input
                   className="input"
                   value={form[k] ?? ''}
+                  readOnly={k === 'usuario' && usuarioBloqueado}
                   onChange={e => set(k, e.target.value)}
                 />
+                {k === 'usuario' && (
+                  <span style={{ fontSize: 11, color: 'var(--fg-3)' }}>
+                    {!esGerencia
+                      ? 'Solo gerencia puede cambiar el usuario.'
+                      : usuarioBloqueado
+                        ? 'No puedes renombrar tu propia cuenta mientras la usas.'
+                        : 'Cambiarlo renombra la cuenta de acceso y todo su historial.'}
+                  </span>
+                )}
               </div>
             ))}
             <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
@@ -376,10 +425,7 @@ function PageUsuarios() {
             <button
               className="btn btn-primary btn-sm"
               disabled={saving}
-              onClick={() => askConfirm(
-                `¿Actualizar los datos de "${form.nombre || form.usuario || 'este usuario'}"?`,
-                actualizar
-              )}
+              onClick={pedirGuardar}
             >
               {saving
                 ? <><span className="spinner" /> Guardando...</>

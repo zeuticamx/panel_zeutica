@@ -185,8 +185,8 @@ function DrawerCola({ onClose }) {
   );
 }
 
-const EMPTY_FORM = { usuario: 'ventas', actividad: '', prioridad: 'Media', estado: 'Pendiente', observaciones: '', fecha_promesa: '', recurrencia: '' };
-const USUARIOS_PENDIENTE = ['fparra', 'ventas', 'gerencia'];
+// Sin usuario preseleccionado: hay que elegir a quién se asigna (la lista sale de la BD).
+const EMPTY_FORM = { usuario: '', actividad: '', prioridad: 'Media', estado: 'Pendiente', observaciones: '', fecha_promesa: '', recurrencia: '' };
 const PRIO_OPTS   = ['Alta', 'Media', 'Baja'];
 const ESTADO_OPTS = ['Pendiente', 'En proceso', 'Completado', 'Cancelado'];
 // '' = no repite. Al cerrarla, api_java clona la siguiente instancia con esta
@@ -210,7 +210,7 @@ const toDateInput = (v) => (v ? String(v).slice(0, 10) : ''); // ISO/datetime �
 function formFromPendiente(p) {
   if (!p) return { ...EMPTY_FORM };
   return {
-    usuario:       p.usuario || USUARIOS_PENDIENTE[0],
+    usuario:       p.usuario || '',
     actividad:     p.actividad ?? '',
     prioridad:     matchOpt(p.prioridad, PRIO_OPTS, 'Media'),
     estado:        matchOpt(p.estado, ESTADO_OPTS, 'Pendiente'),
@@ -229,11 +229,31 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
   const backdropRef = gm_uR(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  // Conservar el usuario original aunque no esté en la lista base.
-  const usuarioOpts = Array.from(new Set([...USUARIOS_PENDIENTE, form.usuario].filter(Boolean)));
+  // Usuarios de la BD (consulta fresca al abrir el modal, sin caché). null = cargando.
+  const [cuentas, setCuentas] = gm_uS(null);
+  const [errCuentas, setErrCuentas] = gm_uS('');
+  const reqCuentas = gm_uR(0);
+  const cargarCuentas = async () => {
+    const id = ++reqCuentas.current;
+    setCuentas(null);
+    setErrCuentas('');
+    const r = await window.api.cuentasUsuarios();
+    if (id !== reqCuentas.current) return; // respuesta vieja
+    if (!r.ok || !Array.isArray(r.data)) {
+      setErrCuentas(r.error || 'No se pudo cargar la lista de usuarios');
+      return;
+    }
+    setCuentas(r.data);
+    // Si el dueño solo difiere en mayúsculas de una cuenta, se toma esa cuenta.
+    setForm(f => f.usuario ? { ...f, usuario: window.pendientesUsuarios.usuarioCanonico(r.data, f.usuario) } : f);
+  };
+  gm_uE(() => { cargarCuentas(); return () => { reqCuentas.current++; }; }, []);
+  // El dueño original se conserva (marcado) aunque ya no exista en la BD.
+  const usuarioOpts = cuentas ? window.pendientesUsuarios.opcionesUsuarios(cuentas, pendiente?.usuario) : [];
 
   const submit = async (e) => {
     e.preventDefault();
+    if (cuentas === null) return; // la lista de usuarios aún no llega
     if (!form.usuario.trim() || !form.actividad.trim()) {
       toast.warn('Campos requeridos', 'Usuario y actividad son obligatorios');
       return;
@@ -323,9 +343,21 @@ function ModalAgregarPendiente({ pendiente, onClose, onSaved }) {
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="field">
             <label className="field-label">Usuario <span style={{ color: 'var(--danger)' }}>*</span></label>
-            <select className="input" value={form.usuario} onChange={e => set('usuario', e.target.value)} required>
-              {usuarioOpts.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
+            {errCuentas ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--danger)' }}>
+                <span style={{ flex: 1 }}>{errCuentas}</span>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={cargarCuentas}>Reintentar</button>
+              </div>
+            ) : cuentas === null ? (
+              <select className="input" disabled><option>Cargando usuarios…</option></select>
+            ) : usuarioOpts.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--fg-2)' }}>No hay usuarios registrados a quienes asignar pendientes.</p>
+            ) : (
+              <select className="input" value={form.usuario} onChange={e => set('usuario', e.target.value)} required>
+                <option value="" disabled>Elige un usuario…</option>
+                {usuarioOpts.map(u => <option key={u.valor} value={u.valor}>{u.etiqueta}</option>)}
+              </select>
+            )}
           </div>
 
           <div className="field">

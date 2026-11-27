@@ -1122,6 +1122,11 @@ const api = {
   async cambiarNivelUsuario(nombre, nivel) {
     return tryFetch(`/zeutica/usuarios/${encodeURIComponent(nombre)}/nivel`, { method: 'PUT', body: JSON.stringify({ nivel }) });
   },
+  // Renombra la cuenta y arrastra el nombre en el resto de tablas (solo gerencia). `simular` solo cuenta lo que cambiaría.
+  // Responde { status, nombre_anterior, nombre_usuario, total, tablas, afectados: [{ tabla, columna, filas }] }.
+  async renombrarUsuario(nombre, nuevoNombre, simular = false) {
+    return tryFetch(`/zeutica/usuarios/${encodeURIComponent(nombre)}/nombre`, { method: 'PUT', body: JSON.stringify({ nuevo_nombre: nuevoNombre, simular }) });
+  },
   // Alta de cuenta de acceso (solo gerencia): { nombre_usuario, password, nivel: 'ventas'|'developer' }
   async crearUsuario(payload) {
     return tryFetch('/zeutica/usuarios/nuevo', { method: 'POST', body: JSON.stringify(payload) });

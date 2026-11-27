@@ -173,6 +173,8 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
   const [filtro, setFiltro] = co_uS('todos');
   const [sending, setSending] = co_uS(false);
   const [enviado, setEnviado] = co_uS(false);
+  // El costo solo lo ven gerencia y developer (el backend lo manda en null al resto): sin él no hay valores en dinero.
+  const verCosto = window.inventarioLogica.puedeVerCosto(window.AppShell.nivelActual());
 
   const stats = co_uM(() => {
     const counted = resultados.filter(r => r.contado !== null);
@@ -195,7 +197,7 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
   const descargarReporte = () => {
     const fechaStr = fecha ? fecha.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
     const rows = [
-      ['SKU', 'Producto', 'Categoría', 'Ubicación', 'Stock DB', 'Conteo Físico', 'Diferencia', 'Valor Diferencia MXN'],
+      ['SKU', 'Producto', 'Categoría', 'Ubicación', 'Stock DB', 'Conteo Físico', 'Diferencia', ...(verCosto ? ['Valor Diferencia MXN'] : [])],
       ...resultados
         .filter(r => r.contado !== null)
         .map(r => [
@@ -206,7 +208,7 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
           r.stock_bodega,
           r.contado,
           r.diferencia > 0 ? `+${r.diferencia}` : r.diferencia,
-          r.diferencia !== 0 ? (Math.abs(r.diferencia) * r.costo_total).toFixed(2) : '0.00',
+          ...(verCosto ? [r.diferencia !== 0 ? (Math.abs(r.diferencia) * r.costo_total).toFixed(2) : '0.00'] : []),
         ]),
     ];
     const csv = rows
@@ -275,11 +277,11 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
         </div>
       </div>
 
-      <div className="dash-kpis" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="dash-kpis" style={{ gridTemplateColumns: `repeat(${verCosto ? 4 : 3}, 1fr)` }}>
         <window.MiniStat label="Productos contados" value={window.fmt.int(stats.counted)} icon="box"/>
         <window.MiniStat label="Sin diferencia" value={stats.exactos} icon="ok" tone="success"/>
         <window.MiniStat label="Faltantes" value={stats.faltantes} icon="alert" tone="danger"/>
-        <window.MiniStat label="Valor faltante" value={window.fmt.mxn(stats.valorFaltante)} icon="wallet" tone="danger"/>
+        {verCosto && <window.MiniStat label="Valor faltante" value={window.fmt.mxn(stats.valorFaltante)} icon="wallet" tone="danger"/>}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -316,12 +318,12 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
                 <th className="td-right">Stock DB</th>
                 <th className="td-right">Conteo</th>
                 <th className="td-right">Diferencia</th>
-                <th className="td-right">Valor dif.</th>
+                {verCosto && <th className="td-right">Valor dif.</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="empty">Sin resultados</td></tr>
+                <tr><td colSpan={verCosto ? 8 : 7} className="empty">Sin resultados</td></tr>
               ) : filtered.map(r => {
                 const noContado = r.contado === null;
                 const dif = r.diferencia;
@@ -350,14 +352,14 @@ function ResultadoConteo({ resultados, fecha, onReiniciar, user, ubicaciones = {
                           </span>
                       }
                     </td>
-                    <td className="td-right mono">
+                    {verCosto && <td className="td-right mono">
                       {noContado
                         ? <span style={{ color: 'var(--fg-3)' }}>—</span>
                         : valorDif
                           ? <span style={{ color: dif < 0 ? 'var(--danger)' : 'var(--warn)' }}>{valorDif}</span>
                           : <span style={{ color: 'var(--success)' }}>✓</span>
                       }
-                    </td>
+                    </td>}
                   </tr>
                 );
               })}

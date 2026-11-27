@@ -32,3 +32,12 @@ test('mensajeConfirmarEliminar: nombra el SKU y avisa de las tarjetas de ubicaci
 test('mensajeConfirmarRestaurar: nombra el SKU', () => {
   assert.match(L.mensajeConfirmarRestaurar({ sku: 'GUA-M', nombre: 'Guante M' }), /GUA-M \(Guante M\)/);
 });
+
+test('puedeVerCosto: solo gerencia y developer', () => {
+  const { puedeVerCosto } = require('../src/inventario-logica.js');
+  assert.equal(puedeVerCosto('gerencia'), true);
+  assert.equal(puedeVerCosto(' Developer '), true);
+  assert.equal(puedeVerCosto('ventas'), false);
+  assert.equal(puedeVerCosto(''), false);
+  assert.equal(puedeVerCosto(undefined), false);
+});
